@@ -29,7 +29,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from socra_server.adapters.tool_summary import summarize_tool_input as _summarize
+from socra_server.adapters.tool_summary import summarize_tool_input as _summarize, tool_path
 from socra_server.domain.agent import (
     AgentError,
     AgentEvent,
@@ -91,7 +91,7 @@ class ClaudeCodeConversation:
                             last_text = block.text
                             yield TextDelta(block.text)
                         elif isinstance(block, ToolUseBlock):
-                            yield ToolActivity(block.name, _summarize(block.input))
+                            yield ToolActivity(block.name, _summarize(block.input), tool_path(block.input))
                 elif isinstance(message, ResultMessage):
                     if message.is_error:
                         detail = "; ".join(message.errors or []) or message.result

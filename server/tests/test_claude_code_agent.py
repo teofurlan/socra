@@ -142,7 +142,7 @@ async def test_send_streams_text_tools_and_final_reply(tmp_path):
     assert FakeClient.instances[-1].queries == ["what is in app.py?"]
     assert events == [
         TextDelta("Let me look."),
-        ToolActivity("Read", "src/app.py"),
+        ToolActivity("Read", "src/app.py", "src/app.py"),
         TextDelta("It defines ExamApp."),
         ReplyDone("It defines ExamApp."),
     ]

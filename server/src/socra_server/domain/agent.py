@@ -41,6 +41,7 @@ class BackendInfo:
     label: str
     models: list[ModelOption]
     status: BackendStatus
+    supports_modes: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,6 +71,8 @@ class ToolActivity:
 
     tool: str
     summary: str = ""
+    # File the tool acts on, when it names one; Socra records it as a fact.
+    path: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
