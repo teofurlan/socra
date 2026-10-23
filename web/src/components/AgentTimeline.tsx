@@ -16,6 +16,7 @@ const WHO: Record<TimelineEntry['kind'], { label: string; color: string }> = {
   tool: { label: 'tool', color: 'var(--warn)' },
   reply: { label: 'socra', color: 'var(--accent)' },
   error: { label: 'error', color: 'var(--danger)' },
+  handoff: { label: '', color: 'var(--label-3)' },
 }
 
 /** Code goes to the code pane; the log keeps a pointer to it where the block was. */
@@ -61,6 +62,14 @@ function Body({ entry }: { entry: TimelineEntry }) {
       return <MarkdownBody text={entry.text} color={entry.kind === 'text' ? 'var(--label-2)' : 'var(--label)'} />
     case 'error':
       return <span style={{ color: 'var(--danger)' }}>{entry.text}</span>
+    case 'handoff':
+      return (
+        <span className="t-small flex items-center gap-[1ch]" style={{ color: 'var(--label-3)' }}>
+          <span className="h-px w-[3ch] shrink-0" style={{ background: 'var(--hairline, currentColor)', opacity: 0.5 }} aria-hidden="true" />
+          {entry.text}
+          <span className="h-px min-w-0 flex-1" style={{ background: 'var(--hairline, currentColor)', opacity: 0.5 }} aria-hidden="true" />
+        </span>
+      )
   }
 }
 

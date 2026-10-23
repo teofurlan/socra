@@ -24,6 +24,20 @@ describe('AgentTimeline', () => {
     expect(items[4]).toHaveTextContent('Rate limited')
   })
 
+  it('marks where the context was condensed without a speaker label', () => {
+    const entries: TimelineEntry[] = [
+      { id: 1, kind: 'reply', text: 'Login added.' },
+      { id: 2, kind: 'handoff', text: 'Context condensed · Exam' },
+      { id: 3, kind: 'reply', text: 'Shall I quiz you?' },
+    ]
+    render(<AgentTimeline entries={entries} protocolState="listening" />)
+
+    const items = screen.getAllByRole('listitem')
+    expect(items.map((item) => item.dataset.kind)).toEqual(['reply', 'handoff', 'reply'])
+    expect(items[1]).toHaveTextContent('Context condensed · Exam')
+    expect(items[1].textContent).not.toMatch(/socra|you/)
+  })
+
   it('shows inline code and tool paths in mono, without the backticks', () => {
     const entries: TimelineEntry[] = [
       { id: 1, kind: 'tool', text: 'web/src/lib/retry.ts', tool: 'Read' },
