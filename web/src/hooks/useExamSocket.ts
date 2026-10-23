@@ -235,8 +235,9 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
   /** Pause, repeat, go back, skip or stop the walkthrough; the clip in the air is silenced at once. */
   const controlWalkthrough = useCallback(
     (action: WalkthroughAction) => {
-      stopAudio()
+      // Queue the control before stopAudio reports playback_done for the current step.
       send({ type: 'walkthrough_control', action })
+      stopAudio()
     },
     [send, stopAudio]
   )
