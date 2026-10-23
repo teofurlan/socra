@@ -37,6 +37,7 @@ class FakeBackend:
     ) -> None:
         self.id = backend_id
         self.label = backend_id.title()
+        self.supports_modes = backend_id == "alpha"
         self._models = models if models is not None else ["small", "large"]
         self._status = status or BackendStatus("ready")
 
@@ -70,6 +71,7 @@ async def test_describe_lists_backends_with_models_and_status():
     assert [m.id for m in infos[0].models] == ["a1", "a2"]
     assert infos[0].status == BackendStatus("ready")
     assert infos[1].status == BackendStatus("not_configured", "Missing login")
+    assert [i.supports_modes for i in infos] == [True, False]
 
 
 async def test_describe_reports_failing_check_as_unreachable_without_hiding_others():

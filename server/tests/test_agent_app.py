@@ -102,10 +102,13 @@ class FakeBackend:
     def __init__(self, script=None, fail_open: Exception | None = None) -> None:
         self.id = "fake"
         self.label = "Fake"
+        self.supports_modes = True
         self.script = script if script is not None else [ReplyDone("Done.")]
         self.fail_open = fail_open
         self.opened: list[tuple[str, Path]] = []
         self.conversations: list[ScriptedConversation] = []
+        self.modes: list = []
+        self.toolboxes: list = []
 
     def models(self) -> list[ModelOption]:
         return [ModelOption("small", "Small"), ModelOption("large", "Large")]
@@ -113,10 +116,12 @@ class FakeBackend:
     async def check(self) -> BackendStatus:
         return BackendStatus("not_configured", "Log in first")
 
-    async def open(self, model, cwd, decide_permission):
+    async def open(self, model, cwd, decide_permission, *, mode=None, toolbox=None):
         if self.fail_open is not None:
             raise self.fail_open
         self.opened.append((model, cwd))
+        self.modes.append(mode)
+        self.toolboxes.append(toolbox)
         conversation = ScriptedConversation(self.script, decide_permission)
         self.conversations.append(conversation)
         return conversation

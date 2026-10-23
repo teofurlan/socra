@@ -93,6 +93,16 @@ def test_prune_drops_empty_project_folders_and_tolerates_a_missing_root(tmp_path
     assert list((tmp_path / "s").iterdir()) == []
 
 
+def test_unencodable_text_and_corrupt_bytes_never_break_append_or_search(tmp_path):
+    transcript = TranscriptStore(tmp_path).start(tmp_path / "p")
+    transcript.append("user", "lone surrogate \ud800 here")
+    transcript.append("user", "needle after")
+    with transcript.path.open("ab") as handle:
+        handle.write(b"\xff\xfe broken\n")
+
+    assert [h.turn for h in transcript.search("needle")] == [1]
+
+
 def test_write_failures_never_raise_into_the_conversation(tmp_path):
     blocker = tmp_path / "file"
     blocker.write_text("not a folder")
