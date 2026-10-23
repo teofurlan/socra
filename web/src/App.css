@@ -72,6 +72,7 @@
 .agent-context-row {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -90,6 +91,12 @@
 }
 .agent-folder-control {
   min-height: 36px;
+}
+.agent-mode-control {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
 }
 .agent-folder-button {
   min-width: 32px;

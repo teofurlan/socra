@@ -1,6 +1,7 @@
 import { FolderOpen, LoaderCircle } from 'lucide-react'
 import { ModelPicker } from '@/components/ModelPicker'
-import type { AgentBackendInfo, AgentSelection } from '@/types/agent'
+import { ModeSelector } from '@/components/ModeSelector'
+import type { AgentBackendInfo, AgentMode, AgentSelection } from '@/types/agent'
 
 interface AgentComposerControlsProps {
   backends: AgentBackendInfo[]
@@ -10,9 +11,17 @@ interface AgentComposerControlsProps {
   pickingFolder: boolean
   onPickFolder: () => void
   connected: boolean
+  /** The project mode control; absent where modes do not apply. */
+  modeControl?: {
+    mode: AgentMode
+    onChange: (mode: AgentMode) => void
+    disabled: boolean
+    reason?: string
+    switching: AgentMode | null
+  }
 }
 
-/** Folder and model context sit together at the conversation's lower edge. */
+/** Folder, model and mode context sit together at the conversation's lower edge. */
 export function AgentComposerControls({
   backends,
   selection,
@@ -21,6 +30,7 @@ export function AgentComposerControls({
   pickingFolder,
   onPickFolder,
   connected,
+  modeControl,
 }: AgentComposerControlsProps) {
   const folderName = folder?.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) ?? null
 
@@ -32,6 +42,17 @@ export function AgentComposerControls({
           <span className="min-w-0 truncate">{folderName ?? 'Choose folder'}</span>
         </button>
       </div>
+      {modeControl && (
+        <div className="agent-mode-control">
+          <ModeSelector
+            mode={modeControl.mode}
+            onChange={modeControl.onChange}
+            disabled={modeControl.disabled || !connected}
+            reason={modeControl.reason}
+            switching={modeControl.switching}
+          />
+        </div>
+      )}
       <div className="agent-model-control">
         <ModelPicker backends={backends} selection={selection} onChange={onSelectionChange} placement="above" />
       </div>

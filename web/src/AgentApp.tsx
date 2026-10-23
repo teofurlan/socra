@@ -11,6 +11,7 @@ import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { AgentComposerControls } from '@/components/AgentComposerControls'
 import { AgentTimeline } from '@/components/AgentTimeline'
 import { PermissionPromptCard } from '@/components/PermissionPromptCard'
+import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -190,6 +191,15 @@ export const AgentApp: React.FC = () => {
   const session = state.session
   const sessionBackend = state.backends.find((backend) => backend.id === session?.backend)
   const sessionModel = sessionBackend?.models.find((model) => model.id === session?.model)
+  // Modes switch inside a running session, and only on a backend that supports it.
+  const modesSupported = sessionBackend?.supports_modes === true
+  const modeControl = {
+    mode: session?.mode ?? 'agent',
+    onChange: socket.switchMode,
+    disabled: !session || !modesSupported,
+    reason: session && !modesSupported ? 'Mode switching needs Claude Code' : undefined,
+    switching: state.switching,
+  } as const
   const lastEntry = state.timeline.at(-1)
   const setupError = lastEntry?.kind === 'error' ? lastEntry.text : null
   // The letter looks spell the latest reply, or the latest turn before any reply.
@@ -327,6 +337,7 @@ export const AgentApp: React.FC = () => {
 
             {/* A pending tool call stays answerable from either view. */}
             <PermissionPromptCard prompts={state.permissions} onAnswer={socket.answerPermission} />
+            <ModeSwitchCard request={state.modeRequest} onAnswer={socket.answerModeSwitch} />
 
             <div className="flex w-full max-w-[80ch] flex-1 flex-col">
               <AgentTimeline entries={state.timeline} protocolState={state.protocolState} />
@@ -350,6 +361,7 @@ export const AgentApp: React.FC = () => {
                   pickingFolder={state.pickingFolder}
                   onPickFolder={handlePickFolder}
                   connected={connected}
+                  modeControl={modeControl}
                 />
               }
           />

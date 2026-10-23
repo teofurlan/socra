@@ -118,6 +118,29 @@ as the exam MCP server), it only opens the page. The page talks to
   `defaultMode: bypassPermissions` nothing asks.
 - Claude Code must be logged in (`claude auth login`); the page shows the
   backend as not configured otherwise.
+- **Modes.** A project session has a mode: agent, mentor or exam. Pick one in
+  the prompt bar (next to the folder and model), or ask for it by voice: the
+  agent calls Socra's `switch_mode` tool and the page asks you to confirm, so a
+  misheard phrase never switches. Mentor is a read-only explainer placeholder
+  (the real mentor instructions belong to issue #18); in exam mode the agent
+  asks spoken questions and records each verdict with `record_exam_result`.
+  The MCP-driven exam on `/` is unchanged. Modes need Claude Code: on Pi the
+  selector is disabled and a switch request is refused.
+- **Handoff.** A switch does not resume the session (that would keep the old
+  system prompt and an ever-growing context). Socra asks the outgoing agent for
+  a JSON summary (`goal`, `decisions`, `open_items`, `user_doubts`), asks again
+  up to twice if a field is missing, and aborts with an error, staying in the
+  current mode, if it still is not valid. It then opens a new session in the new
+  mode before closing the old one, so a failed start loses nothing. The new
+  session is seeded with what Socra recorded itself (files changed, tools
+  used, permission decisions, exam results), the summary and the last 4 turns
+  verbatim (replies capped at about 1,500 characters). It says one spoken
+  sentence of what it understood, which you can correct, and can call
+  `search_transcript` for details from the previous session. The timeline
+  continues across the switch with a "Context condensed" marker.
+- **Transcripts.** Socra keeps its own JSONL transcript per session under
+  `%LOCALAPPDATA%\Socra\sessions\<project-hash>\` (`~/.cache/Socra/sessions` on
+  other systems) and deletes files older than 30 days when the server starts.
 - Pi is found on `PATH` or in `~/.pi/agent/bin`. Its model list shows the
   models of every provider Pi is logged in to (`/login` inside `pi`), in
   Pi's order; Pi's default provider is not preferred, and the session always
@@ -234,6 +257,8 @@ socra_server/
 ├── domain/                   # Pure types and rules, no I/O
 │   ├── session.py            # ExamSession state
 │   ├── agent.py              # Agent mode types (backends, models, events)
+│   ├── modes.py              # Agent, mentor and exam: instructions and tools
+│   ├── handoff.py            # Summary template, recorded facts, seed for a mode switch
 │   ├── speakable.py          # Markdown reply -> text worth speaking
 │   └── voices.py             # Voice catalogue
 ├── adapters/
@@ -242,6 +267,7 @@ socra_server/
 │   ├── claude_code_agent.py  # AgentBackend over the Claude Agent SDK
 │   ├── pi_agent.py           # AgentBackend over `pi --mode rpc`
 │   ├── tool_summary.py       # One-line tool call summaries for both agents
+│   ├── transcript_store.py   # Session transcripts (JSONL), search, 30-day retention
 │   ├── browser.py            # Opens the page in an Edge/Chrome app window
 │   ├── folder_dialog.py      # Native folder picker for agent mode
 │   └── preferences_file.py   # Shared preferences.json store
@@ -252,6 +278,7 @@ socra_server/
 ├── app.py                    # ExamApp: ties session + ports + PageChannel
 ├── agent_app.py              # AgentApp: drives an agent by voice
 ├── agent_registry.py         # Which agent backends exist and what a selection means
+├── socra_tools.py            # Socra's own agent tools (switch_mode, search_transcript, ...)
 ├── ports.py                  # Speech, agent and channel protocols
 └── __main__.py               # One asyncio loop for MCP, WebSocket and HTTP
 ```
@@ -297,5 +324,8 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 | `voice` | optional `voice`: voice id to select; the server answers with `voices` |
 
 The agent route `/ws/agent` accepts `agent_hello`, `pick_folder`,
-`start_agent`, `turn_text`, `turn_audio`, `permission_response`, `interrupt`,
-`playback_done` and `voice`; see `entrypoints/ws_server.py` for its fields.
+`start_agent` (optional `mode`), `turn_text`, `turn_audio`, `permission_response`,
+`interrupt`, `playback_done`, `voice`, `switch_mode` (`mode`) and
+`mode_switch_response` (`mode`, `allow`); the server answers a switch with
+`agent_switching`, `agent_mode_changed`, `mode_switch_request`,
+`mode_switch_closed` and `mode_switch_failed`. See `entrypoints/ws_server.py` for its fields.
