@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Panel } from '@/components/shell/Panel'
 import { highlight, type TokenKind } from '@/lib/highlight'
@@ -20,13 +21,22 @@ interface CodePaneProps {
   label: string
   /** Fence language, when known; it decides how comments are read. */
   lang?: string
+  /** 1-based inclusive line range being talked about; null or absent highlights nothing. */
+  focus?: [number, number] | null
   onClose: () => void
 }
 
 /** The right-hand panel: line-numbered code, scrolling inside its own region. */
-export function CodePane({ code, name, label, lang = '', onClose }: CodePaneProps) {
+export function CodePane({ code, name, label, lang = '', focus = null, onClose }: CodePaneProps) {
   const lines = code.replace(/\n$/, '').split('\n')
   const width = String(lines.length).length
+  const firstFocused = useRef<HTMLSpanElement | null>(null)
+  const focusStart = focus?.[0]
+  const focusEnd = focus?.[1]
+
+  useEffect(() => {
+    firstFocused.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  }, [focusStart, focusEnd])
 
   return (
     <Panel
@@ -56,7 +66,12 @@ export function CodePane({ code, name, label, lang = '', onClose }: CodePaneProp
         {/* As wide as the longest line, so its right padding scrolls clear of the edge. */}
         <code className="block w-max min-w-full">
           {lines.map((line, i) => (
-            <span key={i} className="block whitespace-pre pr-4">
+            <span
+              key={i}
+              ref={i + 1 === focusStart ? firstFocused : undefined}
+              data-focused={focusStart !== undefined && focusEnd !== undefined && i + 1 >= focusStart && i + 1 <= focusEnd ? 'true' : undefined}
+              className="code-line block whitespace-pre pr-4"
+            >
               <span
                 aria-hidden="true"
                 className="mr-4 inline-block select-none text-right tabular-nums"

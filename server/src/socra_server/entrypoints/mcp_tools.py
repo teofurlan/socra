@@ -32,7 +32,7 @@ def create_mcp() -> FastMCP:
         "socra-server",
         instructions=(
             "Local oral exam tools. Start with open_page(). Use say() for spoken feedback, "
-            "ask() for questions with optional display-only code, and call get_answer() "
+            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, and call get_answer() "
             "repeatedly while it returns listening. Answers are verbatim transcripts, "
             "not cleaned or rewritten. End with finish()."
         ),
@@ -77,6 +77,24 @@ def create_mcp() -> FastMCP:
         status is listening; answers are verbatim transcripts, never cleaned.
         """
         return await get_app().ask(question, index, total, glossary, code)
+
+    @mcp.tool()
+    async def explain(code: str, language: str = "", steps: list[dict] | None = None) -> dict:
+        """Use to explain code out loud while the page highlights the lines being discussed.
+
+        code is shown verbatim in the code panel; language (e.g. "python") only
+        affects syntax colours. steps is an ordered list of
+        {"say": "spoken explanation", "focus": {"lines": [start, end]}}: lines
+        are 1-based and inclusive, and focus may be omitted for a step that
+        highlights nothing. Each step is spoken separately and its lines are
+        highlighted when its audio starts. Blocks until the walkthrough ends;
+        the user may pause, repeat, go back, skip or stop meanwhile.
+        Returns completed (steps), stopped (step, total: the user ended it),
+        invalid (errors: one per bad step with step, field and message; nothing
+        was shown, fix the steps and call again), busy, page_disconnected, error (message), or
+        no_client with a URL.
+        """
+        return await get_app().explain(code, language, steps)
 
     @mcp.tool()
     async def get_answer(wait_s: float = 20) -> dict:

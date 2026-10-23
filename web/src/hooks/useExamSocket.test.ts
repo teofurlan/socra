@@ -546,4 +546,82 @@ describe('useExamSocket', () => {
       window.history.replaceState(null, '', '/')
     }
   })
+
+  describe('walkthrough', () => {
+    const stepClip = (index: number, seq: number, lines: [number, number] | null = [index, index]) => ({
+      type: 'tts_audio',
+      format: 'wav',
+      data: 'UklGRg==',
+      step: { index, total: 2, say: `Step ${index}.`, lines, seq },
+    })
+
+    const open = () => {
+      const hook = renderHook(() => useExamSocket({ forceMock: false }))
+      const ws = MockWebSocket.instances[0]
+      act(() => ws.simulateOpen())
+      act(() => ws.simulateMessage({ type: 'walkthrough', code: 'a\nb', language: '', total: 2 }))
+      return { ...hook, ws }
+    }
+
+    it('focuses a step only once its audio starts playing', async () => {
+      let release: (buffer: AudioBuffer) => void = () => {}
+      vi.stubGlobal('AudioContext', class extends MockAudioContext {
+        constructor() {
+          super()
+          this.decodeAudioData = vi.fn(() => new Promise<AudioBuffer>((resolve) => { release = resolve }))
+        }
+      })
+      const { result, ws } = open()
+
+      await act(async () => ws.simulateMessage(stepClip(1, 7)))
+      expect(result.current.state.walkthrough?.step).toBeNull()
+
+      await act(async () => {
+        release({ duration: 0.25 } as AudioBuffer)
+        for (let i = 0; i < 5; i++) await Promise.resolve()
+      })
+      expect(result.current.state.walkthrough?.step).toEqual({ index: 1, total: 2, say: 'Step 1.', lines: [1, 1] })
+    })
+
+    it('reports the clip it finished with its sequence number', async () => {
+      const { ws } = open()
+      await act(async () => ws.simulateMessage(stepClip(1, 7)))
+
+      act(() => MockAudioContext.instances[0].sources[0].onended?.())
+
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'playback_done', seq: 7 }))
+    })
+
+    it('a new step silences the clip still playing', async () => {
+      const { ws } = open()
+      await act(async () => ws.simulateMessage(stepClip(1, 7)))
+      const first = MockAudioContext.instances[0].sources[0]
+
+      await act(async () => ws.simulateMessage(stepClip(2, 8)))
+
+      expect(first.stop).toHaveBeenCalled()
+      expect(MockAudioContext.instances[0].sources).toHaveLength(2)
+    })
+
+    it('controls stop the audio and are sent to the server', async () => {
+      const { result, ws } = open()
+      await act(async () => ws.simulateMessage(stepClip(1, 7)))
+      const source = MockAudioContext.instances[0].sources[0]
+
+      act(() => result.current.controlWalkthrough('pause'))
+
+      expect(source.stop).toHaveBeenCalled()
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'walkthrough_control', action: 'pause' }))
+    })
+
+    it('a paused status from the server silences the audio', async () => {
+      const { ws } = open()
+      await act(async () => ws.simulateMessage(stepClip(1, 7)))
+      const source = MockAudioContext.instances[0].sources[0]
+
+      act(() => ws.simulateMessage({ type: 'walkthrough_status', status: 'paused' }))
+
+      expect(source.stop).toHaveBeenCalled()
+    })
+  })
 })

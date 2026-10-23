@@ -13,6 +13,11 @@ When code arrives (question code, or fenced blocks in an agent reply) a code pan
 opens on the right and the conversation narrows, so the particles glide left; on
 phones the code panel stacks below. Closing it hides that code until new code arrives.
 
+A narrated walkthrough (`explain` over MCP) replaces the question with the step being
+spoken, opens the code panel with that code, and highlights the step's lines when its
+audio starts. Back, Repeat, Pause/Resume, Next and Stop buttons steer it; while paused
+the microphone listens (or the composer accepts) repeat, back, next, continue or stop.
+
 Settings offer a System/Light/Dark theme; the choice is stored in `socra_theme` and
 applied before the first paint by a script in `index.html`. Tokens live in
 `src/index.css` (dark on `:root`, light on `:root[data-theme="light"]`).

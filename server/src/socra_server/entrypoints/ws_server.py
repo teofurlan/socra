@@ -257,6 +257,8 @@ async def _handle(ws: ServerConnection) -> None:
                 q_msg["code"] = session.question_code
             await ws.send(json.dumps(q_msg))
         await ws.send(json.dumps({"type": "state", "state": session.turn_state}))
+        for snapshot_msg in app.walkthrough.snapshot():
+            await ws.send(json.dumps(snapshot_msg))
     except Exception as exc:
         logger.error("Failed to send initial messages on connect: %s", exc)
 
@@ -292,7 +294,10 @@ async def _handle(ws: ServerConnection) -> None:
                         continue
                     await app.handle_answer_text(text)
                 elif msg_type == "playback_done":
-                    app.handle_playback_done()
+                    seq = msg.get("seq")
+                    app.handle_playback_done(seq if isinstance(seq, int) and not isinstance(seq, bool) else None)
+                elif msg_type == "walkthrough_control":
+                    await app.handle_walkthrough_control(msg.get("action"))
                 elif msg_type == "reanswer":
                     await app.handle_reanswer()
                 elif msg_type == "mode":
@@ -313,6 +318,7 @@ async def _handle(ws: ServerConnection) -> None:
         # Clear the connection only if it's still this socket
         if app.channel._ws is ws:
             app.channel.set_connection(None, loop)
+            app.handle_page_gone()
         if audio_tasks:
             await asyncio.gather(*audio_tasks)
         close_code = getattr(ws, "close_code", None)

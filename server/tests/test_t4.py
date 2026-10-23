@@ -172,7 +172,7 @@ async def test_finish_sends_optional_summary_then_idle_and_finished(summary):
 @pytest.mark.asyncio
 async def test_tool_descriptions_explain_polling_and_verbatim_transcripts():
     tools = {tool.name: tool for tool in await create_mcp().list_tools()}
-    assert set(tools) == {"open_page", "say", "ask", "get_answer", "finish"}
+    assert set(tools) == {"open_page", "say", "ask", "explain", "get_answer", "finish"}
     description = tools["get_answer"].description.lower()
     assert "repeatedly" in description and "listening" in description and "verbatim" in description
     assert "code" in tools["ask"].inputSchema["properties"]

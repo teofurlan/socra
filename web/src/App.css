@@ -163,3 +163,9 @@
     gap: 5px;
   }
 }
+
+/* The lines a walkthrough step is talking about. */
+.code-line[data-focused] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}

@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from socra_server.domain.session import ExamSession
+from socra_server.domain.walkthrough import parse_command, parse_walkthrough
+from socra_server.walkthrough import WalkthroughRunner
 from socra_server.adapters.piper_tts import PiperTTS
 from socra_server.adapters.whisper_stt import WhisperSTT, is_valid_answer
 from socra_server.adapters.browser import launch_page
@@ -174,6 +176,13 @@ class ExamApp:
         self._glossary: list[str] | None = None
         self._stt_lock = asyncio.Lock()
         self._playback_done_event: asyncio.Event = asyncio.Event()
+        self.walkthrough = WalkthroughRunner(
+            synthesize=lambda text: self.loader.tts.synthesize(text),
+            wav_duration=get_wav_duration,
+            send=self.channel.send,
+            set_state=self._send_state,
+            is_connected=lambda: self.channel.is_connected,
+        )
 
     # ------------------------------------------------------------------ #
     # Helpers                                                              #
@@ -189,9 +198,16 @@ class ExamApp:
         b64 = base64.b64encode(wav).decode()
         await self.channel.send({"type": "tts_audio", "format": "wav", "data": b64})
 
-    def handle_playback_done(self) -> None:
-        """Page reported that a tts_audio clip finished playing (or failed)."""
-        self._playback_done_event.set()
+    def handle_playback_done(self, seq: int | None = None) -> None:
+        """Page reported that a tts_audio clip finished playing (or failed).
+
+        Walkthrough clips carry a ``seq`` so a clip the user cut short cannot
+        complete the step that follows it.
+        """
+        if seq is not None:
+            self.walkthrough.handle_playback_done(seq)
+        else:
+            self._playback_done_event.set()
 
     async def _send_tts_and_wait(self, text: str) -> None:
         """Synthesize text, push tts_audio to page, and wait for playback_done (timeout = duration + 2s)."""
@@ -272,6 +288,22 @@ class ExamApp:
         await self._send_state("listening")
         return {"status": "asked"}
 
+    async def explain(self, code: str, language: str = "", steps: list[dict] | None = None) -> dict:
+        """Speak ``steps`` one by one while the page highlights each step's lines.
+
+        Invalid input is reported back untouched: nothing is shown or spoken.
+        """
+        walkthrough, errors = parse_walkthrough(code, language, steps)
+        if walkthrough is None:
+            return {"status": "invalid", "errors": errors}
+        if not self.channel.is_connected:
+            return self._no_client()
+        if self.walkthrough.active:
+            return {"status": "busy"}
+        await self.loader.ready()
+        self._finished = False
+        return await self.walkthrough.run(walkthrough)
+
     async def finish(self, summary: str | None = None) -> dict:
         """Optionally speak a summary, then show the question-less end screen."""
         if not self.channel.is_connected:
@@ -336,6 +368,28 @@ class ExamApp:
     # Page → server message handlers                                       #
     # ------------------------------------------------------------------ #
 
+    async def handle_walkthrough_control(self, action: object) -> None:
+        """A walkthrough control pressed on the page."""
+        if action in ("pause", "resume", "repeat", "back", "next", "stop"):
+            self.walkthrough.command(action)  # type: ignore[arg-type]
+
+    def handle_page_gone(self) -> None:
+        """The page connection ended: a walkthrough has nobody left to talk to."""
+        self.walkthrough.abort()
+
+    async def _route_walkthrough_speech(self, text: str) -> None:
+        """While a walkthrough runs, what the user says or types is a command, not an answer."""
+        command = parse_command(text)
+        if command is not None:
+            self.walkthrough.command(command)
+            return
+        await self.channel.send({
+            "type": "notice",
+            "text": "Say repeat, back, next, continue or stop.",
+        })
+        if self.walkthrough.paused:
+            await self._send_state("listening")
+
     async def handle_answer_audio(self, b64_data: str, glossary: list[str] | None = None) -> None:
         """Transcribe incoming WAV, store as pending answer, push transcript to page."""
         if self._finished:
@@ -353,6 +407,9 @@ class ExamApp:
             )
         if generation != self._answer_generation or page is not self.channel._ws:
             return
+        if text and self.walkthrough.active:
+            await self._route_walkthrough_speech(text)
+            return
         if not text or not is_valid_answer(text):
             await self.channel.send({
                 "type": "notice",
@@ -368,6 +425,9 @@ class ExamApp:
         """Store a typed answer as the final answer, exactly as typed."""
         text = text.strip()
         if self._finished or not text:
+            return
+        if self.walkthrough.active:
+            await self._route_walkthrough_speech(text)
             return
         self.session.store_answer(text)
         await self.channel.send({"type": "transcript", "text": text, "final": True})

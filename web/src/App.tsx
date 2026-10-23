@@ -10,6 +10,7 @@ import { SettingsMenu } from '@/components/SettingsMenu'
 import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
+import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
 import { PromptLine } from '@/components/shell/PromptLine'
@@ -38,7 +39,7 @@ const STATE_LABEL: Record<string, string> = {
 }
 
 export const App: React.FC = () => {
-  const { state, setMode, reanswer, sendText, sendAudio, getOutputVolume, listeningEpoch, voices, setVoice } = useExamSocket()
+  const { state, setMode, reanswer, sendText, sendAudio, controlWalkthrough, getOutputVolume, listeningEpoch, voices, setVoice } = useExamSocket()
 
   const [silenceTimeoutMs, setSilenceTimeoutMs] = useState<number>(getStoredSilenceTimeout)
   const [paletteId, setPaletteId] = useState<string>(getStoredOrbPalette)
@@ -67,9 +68,15 @@ export const App: React.FC = () => {
   })
 
   const question = state.question
-  const codeKey = question?.code !== undefined && !state.finished ? `${question.index}:${question.code}` : null
+  const walkthrough = state.walkthrough
+  const codeKey = walkthrough
+    ? `walkthrough:${walkthrough.code}`
+    : question?.code !== undefined && !state.finished
+      ? `${question.index}:${question.code}`
+      : null
   const showCode = codeKey !== null && codeKey !== closedCode
-  const canAnswer = !!question && !state.finished && state.connectionStatus !== 'disconnected'
+  const walkthroughRunning = !!walkthrough && walkthrough.status !== 'ended'
+  const canAnswer = (walkthroughRunning || (!!question && !state.finished)) && state.connectionStatus !== 'disconnected'
 
   const settings = (
     <SettingsMenu
@@ -115,7 +122,13 @@ export const App: React.FC = () => {
       <TopBar
         page="exam"
         connection={state.connectionStatus}
-        chips={question && !state.finished ? <Chip mono>{`Question ${question.index}/${question.total}`}</Chip> : undefined}
+        chips={
+          walkthrough
+            ? <Chip mono>Walkthrough</Chip>
+            : question && !state.finished
+              ? <Chip mono>{`Question ${question.index}/${question.total}`}</Chip>
+              : undefined
+        }
         menu={settings}
       />
       <div className="shell-panels" data-split={showCode}>
@@ -167,7 +180,9 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {state.finished ? (
+            {walkthrough ? (
+              <WalkthroughPanel walkthrough={walkthrough} onControl={controlWalkthrough} />
+            ) : state.finished ? (
               <section role="status" className="w-full max-w-[72ch] py-6 text-center">
                 <h2 className="m-0 text-[1.0625rem] font-semibold">Exam finished</h2>
               </section>
@@ -183,7 +198,7 @@ export const App: React.FC = () => {
 
           <PromptLine
             label="Type your answer"
-            placeholder={canAnswer ? 'Type your answer' : 'Waiting for a question'}
+            placeholder={walkthroughRunning ? 'Type repeat, back, next or stop' : canAnswer ? 'Type your answer' : 'Waiting for a question'}
             disabled={!canAnswer}
             onSend={sendText}
             aside={!state.finished && state.mode === 'push-to-talk' ? <PushToTalkControl onTalkingChange={onTalkingChange} /> : undefined}
@@ -192,7 +207,16 @@ export const App: React.FC = () => {
 
         <div className="shell-seam" aria-hidden="true" />
         <div className="code-slot" aria-hidden={!showCode} inert={!showCode}>
-          {question?.code !== undefined && (
+          {walkthrough ? (
+            <CodePane
+              code={walkthrough.code}
+              name={walkthrough.language || 'walkthrough'}
+              lang={walkthrough.language}
+              focus={walkthrough.step?.lines ?? null}
+              label="Walkthrough code"
+              onClose={() => setClosedCode(codeKey)}
+            />
+          ) : question?.code !== undefined && (
             <CodePane code={question.code} name={`question ${question.index}`} label="Question code" onClose={() => setClosedCode(codeKey)} />
           )}
         </div>

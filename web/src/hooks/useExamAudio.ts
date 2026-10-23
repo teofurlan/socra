@@ -15,7 +15,8 @@ interface Playback {
 export function useExamAudio() {
   const playbackRef = useRef<Playback | null>(null)
 
-  const playAudio = useCallback((base64: string, onDone?: () => void) => {
+  /** ``onStart`` runs when this clip's sound begins, not when it is queued. */
+  const playAudio = useCallback((base64: string, onDone?: () => void, onStart?: () => void) => {
     let doneCalled = false
     const notifyDone = () => {
       if (!doneCalled) {
@@ -69,6 +70,16 @@ export function useExamAudio() {
       const start = Math.max(context.currentTime, playback.nextStart)
       source.start(start)
       playback.nextStart = start + buffer.duration
+      if (onStart) {
+        const delayMs = (start - context.currentTime) * 1000
+        if (delayMs > 20) {
+          setTimeout(() => {
+            if (!playback.disposed && playback.generation === generation) onStart()
+          }, delayMs)
+        } else {
+          onStart()
+        }
+      }
     }).catch((error) => {
       if (!playback.disposed) console.error('Failed to play exam audio:', error)
       notifyDone()

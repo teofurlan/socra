@@ -19,6 +19,7 @@ export const initialExamState: ExamState = {
   },
   mode: 'auto',
   notice: null,
+  walkthrough: null,
 }
 
 export function examReducer(state: ExamState, action: ExamAction): ExamState {
@@ -44,6 +45,7 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
           final: false,
         },
         notice: null,
+        walkthrough: null,
       }
 
     case 'finished':
@@ -54,6 +56,7 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
         transcript: { text: '', final: false },
         finished: true,
         notice: null,
+        walkthrough: null,
       }
 
     case 'notice':
@@ -75,6 +78,32 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
           text: action.text,
           final: action.final,
         },
+      }
+
+    case 'walkthrough':
+      return {
+        ...state,
+        walkthrough: {
+          code: action.code,
+          language: action.language,
+          total: action.total,
+          step: null,
+          status: 'playing',
+          reason: null,
+        },
+      }
+
+    case 'walkthrough_step': {
+      if (!state.walkthrough) return state
+      const { index, total, say, lines } = action
+      return { ...state, walkthrough: { ...state.walkthrough, step: { index, total, say, lines } } }
+    }
+
+    case 'walkthrough_status':
+      if (!state.walkthrough) return state
+      return {
+        ...state,
+        walkthrough: { ...state.walkthrough, status: action.status, reason: action.reason ?? null },
       }
 
     case 'tts_audio':

@@ -38,3 +38,28 @@ describe('CodePane', () => {
     expect(onClose).toHaveBeenCalled()
   })
 })
+
+describe('CodePane focus', () => {
+  const code = 'one\ntwo\nthree\nfour'
+
+  it('marks only the focused lines', () => {
+    render(<CodePane code={code} name="ts" label="Code" focus={[2, 3]} onClose={vi.fn()} />)
+    const lines = Array.from(screen.getByRole('region', { name: 'Code' }).querySelectorAll('code > span'))
+    expect(lines.map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, true, false])
+  })
+
+  it('marks nothing without a focus', () => {
+    render(<CodePane code={code} name="ts" label="Code" focus={null} onClose={vi.fn()} />)
+    expect(document.querySelector('[data-focused]')).toBeNull()
+  })
+
+  it('scrolls the first focused line into view when the focus changes', () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const { rerender } = render(<CodePane code={code} name="ts" label="Code" focus={[1, 1]} onClose={vi.fn()} />)
+    scrollIntoView.mockClear()
+    rerender(<CodePane code={code} name="ts" label="Code" focus={[3, 4]} onClose={vi.fn()} />)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.querySelectorAll('code > span')[2])
+  })
+})

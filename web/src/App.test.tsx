@@ -240,4 +240,46 @@ describe('App Integration', () => {
     expect(banner).toBeInTheDocument()
     expect(banner).toHaveTextContent("Didn't catch that. Please answer again.")
   })
+
+  describe('walkthrough', () => {
+    const start = () => {
+      render(<App />)
+      const ws = MockWebSocket.instances[0]
+      act(() => {
+        ws.simulateMessage({ type: 'walkthrough', code: 'one\ntwo\nthree', language: 'python', total: 2 })
+        ws.simulateMessage({ type: 'walkthrough_step', index: 1, total: 2, say: 'The middle one.', lines: [2, 2] })
+      })
+      return ws
+    }
+
+    it('shows the code with the step lines highlighted and what is being said', () => {
+      start()
+      const pane = screen.getByRole('region', { name: 'Walkthrough code' })
+      const lines = Array.from(pane.querySelectorAll('code > span'))
+      expect(lines.map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, false])
+      expect(screen.getByTestId('walkthrough-panel')).toHaveTextContent('The middle one.')
+      expect(screen.queryByTestId('question-panel')).not.toBeInTheDocument()
+    })
+
+    it('sends the control buttons to the server', async () => {
+      const user = userEvent.setup()
+      const ws = start()
+      await user.click(screen.getByRole('button', { name: 'Repeat' }))
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'walkthrough_control', action: 'repeat' }))
+    })
+
+    it('lets the user type a command while it runs', async () => {
+      const user = userEvent.setup()
+      const ws = start()
+      await user.type(screen.getByLabelText('Type your answer'), 'back{Enter}')
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'answer_text', text: 'back' }))
+    })
+
+    it('goes back to the question view when the next question arrives', () => {
+      const ws = start()
+      act(() => ws.simulateMessage({ type: 'question', index: 1, total: 1, text: 'Why?' }))
+      expect(screen.queryByTestId('walkthrough-panel')).not.toBeInTheDocument()
+      expect(screen.getByTestId('question-panel')).toHaveTextContent('Why?')
+    })
+  })
 })

@@ -5,6 +5,7 @@ import type {
   ClientMessage,
   ServerMessage,
   TurnMode,
+  WalkthroughAction,
 } from '@/types/exam'
 import { EMPTY_VOICE_CATALOG, type VoiceCatalog } from '@/types/voice'
 import { examReducer, initialExamState } from '@/state/examReducer'
@@ -57,7 +58,7 @@ export interface UseExamSocketOptions {
 
 export function useExamSocket(options: UseExamSocketOptions = {}) {
   const { url = socketUrl('/ws'), forceMock } = options
-  const { playAudio, getOutputVolume } = useExamAudio()
+  const { playAudio, stopAudio, getOutputVolume } = useExamAudio()
   const [state, dispatch] = useReducer(examReducer, {
     ...initialExamState,
     mode: getStoredTurnMode('auto'),
@@ -231,6 +232,15 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
     [send, clearMockTimers, startMockDriver]
   )
 
+  /** Pause, repeat, go back, skip or stop the walkthrough; the clip in the air is silenced at once. */
+  const controlWalkthrough = useCallback(
+    (action: WalkthroughAction) => {
+      stopAudio()
+      send({ type: 'walkthrough_control', action })
+    },
+    [send, stopAudio]
+  )
+
   const sendAudio = useCallback(
     (base64Data: string) => {
       send({ type: 'answer_audio', format: 'wav', data: base64Data })
@@ -336,14 +346,20 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
             }
 
             if (data.type === 'tts_audio') {
+              const step = data.step
+              const done = () => send(step ? { type: 'playback_done', seq: step.seq } : { type: 'playback_done' })
+              // A walkthrough step replaces whatever clip is still playing; its focus lands when its sound begins.
+              if (step) stopAudio()
               if (data.format === 'wav') {
-                playAudio(data.data, () => {
-                  send({ type: 'playback_done' })
-                })
+                const focus = step
+                  ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, say: step.say, lines: step.lines })
+                  : undefined
+                playAudio(data.data, done, focus)
               } else {
-                send({ type: 'playback_done' })
+                done()
               }
             } else {
+              if (data.type === 'walkthrough_status' && data.status !== 'playing') stopAudio()
               if (data.type === 'state' && data.state === 'listening') {
                 setListeningEpoch((epoch) => epoch + 1)
               }
@@ -398,7 +414,7 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
       if (!fellBack) socket?.close()
       socketRef.current = null
     }
-  }, [url, forceMock, startMockDriver, clearMockTimers, playAudio])
+  }, [url, forceMock, startMockDriver, clearMockTimers, playAudio, stopAudio])
 
   return {
     state,
@@ -406,6 +422,7 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
     reanswer,
     sendText,
     sendAudio,
+    controlWalkthrough,
     getOutputVolume,
     listeningEpoch,
     dispatch,

@@ -272,10 +272,12 @@ socra_server/
 │   ├── folder_dialog.py      # Native folder picker for agent mode
 │   └── preferences_file.py   # Shared preferences.json store
 ├── entrypoints/
-│   ├── mcp_tools.py          # open_page, say, ask, get_answer, finish
+│   ├── mcp_tools.py          # open_page, say, ask, explain, get_answer, finish
 │   ├── http_server.py        # Built page and /api/preferences on 127.0.0.1:8767
 │   └── ws_server.py          # WebSocket routes /ws (exam) and /ws/agent
 ├── app.py                    # ExamApp: ties session + ports + PageChannel
+├── walkthrough.py            # WalkthroughRunner: plays a narrated walkthrough, no MCP inside
+├── domain/walkthrough.py     # Validation, spoken commands and step cursor (pure)
 ├── agent_app.py              # AgentApp: drives an agent by voice
 ├── agent_registry.py         # Which agent backends exist and what a selection means
 ├── socra_tools.py            # Socra's own agent tools (switch_mode, search_transcript, ...)
@@ -296,6 +298,34 @@ socra_server/
 5. `finish(summary=None)` optionally speaks a summary, then sends idle and
    finished. The page replaces the question panel with **Exam finished**.
 
+### Narrated walkthrough
+
+`explain(code, language="", steps)` speaks code out loud while the page
+highlights the lines being discussed. Each step is
+`{"say": "...", "focus": {"lines": [start, end]}}` (1-based, inclusive; `focus`
+may be omitted for a step that highlights nothing). Every step is synthesized
+separately and its lines are highlighted when its audio starts playing; there
+are no word-level timestamps. The call blocks until the walkthrough ends and
+returns one of:
+
+| Status | Meaning |
+|---|---|
+| `completed` | All steps were spoken (`steps`). |
+| `stopped` | The user stopped it (`step`, `total`). |
+| `invalid` | `errors` lists each bad step (`step`, `field`, `message`); nothing was shown or spoken and the session is untouched. |
+| `busy` | Another walkthrough is running. |
+| `page_disconnected` / `error` | The page left, or voice synthesis failed. |
+| `no_client` | No page is connected; includes the URL. |
+
+The user can pause, repeat the step, go back, skip ahead or stop with the
+buttons. **By voice:** the page only listens in the `listening` state, so
+Pause stops the audio and opens the microphone; the next utterance (or typed
+text) is matched against a small phrase table (repeat, back, next, continue,
+stop, in English and Spanish) instead of being stored as an answer. Anything
+else gets a notice listing the commands. The logic lives in `walkthrough.py`
+and `domain/walkthrough.py`, independent of MCP, so an in-process tool server
+can reuse it.
+
 Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) with timeout = WAV duration + 2 s before returning or transitioning to `listening`.
 
 ### WebSocket protocol
@@ -306,11 +336,14 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 |---|---|
 | `state` | `state`: `"idle"` \| `"speaking"` \| `"listening"` \| `"thinking"` |
 | `question` | `index`, `total`, `text`, optional display-only `code` |
-| `tts_audio` | `format: "wav"`, `data: <base64>` |
+| `tts_audio` | `format: "wav"`, `data: <base64>`, optional walkthrough `step` (`index`, `total`, `say`, `lines`, `seq`) applied when the clip starts |
 | `transcript` | `text`, `final: true` |
 | `notice` | `text`: temporary notice (e.g. non-answer rejection) |
 | `voices` | `voices`: `[{id, label}]`, `current`: selected voice id |
 | `finished` | No fields; sent after `state: idle` |
+| `walkthrough` | `code`, `language`, `total`: a walkthrough starts |
+| `walkthrough_step` | `index`, `total`, `say`, `lines` (`[start, end]` or null); sent on reconnect, otherwise carried by `tts_audio` |
+| `walkthrough_status` | `status`: `playing` \| `paused` \| `ended`, optional `reason` |
 
 **Page → server**
 
@@ -318,7 +351,8 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 |---|---|
 | `answer_audio` | `format: "wav"`, `data: <base64>` |
 | `answer_text` | `text`: a typed answer, sent as the final answer |
-| `playback_done` | Sent when `tts_audio` playback completes or fails |
+| `playback_done` | Sent when `tts_audio` playback completes or fails; echoes `seq` for walkthrough clips, and a stale `seq` is ignored |
+| `walkthrough_control` | `action`: `pause` \| `resume` \| `repeat` \| `back` \| `next` \| `stop` |
 | `reanswer` | _(none)_ |
 | `mode` | `mode`: `"auto"` \| `"push-to-talk"` |
 | `voice` | optional `voice`: voice id to select; the server answers with `voices` |
