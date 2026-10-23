@@ -40,6 +40,8 @@ class Convo:
             await self.gate.wait()
         script = self.scripts.pop(0) if self.scripts else [ReplyDone("ok")]
         for item in script:
+            if isinstance(item, Exception):
+                raise item
             if isinstance(item, PermissionRequest):
                 await self.decide(item)
             else:
@@ -311,6 +313,21 @@ async def test_a_summary_turn_error_counts_as_a_failed_attempt(tmp_path):
 
     assert _texts(channel, "agent_mode_changed")
     assert not channel.of_type("agent_error")
+
+
+async def test_a_summary_turn_that_raises_aborts_the_switch_cleanly(tmp_path):
+    old = Convo([[RuntimeError("pipe closed")]] * 3)
+    backend = ModeBackend([old, Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+
+    await _switch(app, channel, "exam")
+
+    assert not old.closed
+    assert len(backend.opens) == 1
+    assert channel.of_type("agent_error")
+    assert _texts(channel, "mode_switch_failed")
+    assert channel.of_type("state")[-1]["state"] == "listening"
 
 
 async def test_same_or_unknown_modes_are_not_switched(tmp_path):

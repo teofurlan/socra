@@ -507,14 +507,18 @@ class AgentApp:
     async def _silent_turn(self, conversation: AgentConversation, prompt: str) -> str | None:
         """Run a turn nobody sees or hears; the reply text, or None when it failed."""
         reply: str | None = None
-        async for event in conversation.send(prompt):
-            if isinstance(event, ToolActivity):
-                self._facts.record_tool(event)
-            elif isinstance(event, ReplyDone):
-                reply = event.text
-            elif isinstance(event, AgentError):
-                logger.warning("Handoff summary turn failed: %s", event.message)
-                return None
+        try:
+            async for event in conversation.send(prompt):
+                if isinstance(event, ToolActivity):
+                    self._facts.record_tool(event)
+                elif isinstance(event, ReplyDone):
+                    reply = event.text
+                elif isinstance(event, AgentError):
+                    logger.warning("Handoff summary turn failed: %s", event.message)
+                    return None
+        except Exception as exc:
+            logger.warning("Handoff summary turn raised: %s", exc)
+            return None
         return reply
 
     async def _switch_failed(self) -> None:
