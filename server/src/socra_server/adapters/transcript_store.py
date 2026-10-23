@@ -42,7 +42,7 @@ class SessionTranscript:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+                handle.write(json.dumps(record) + "\n")
         except (OSError, ValueError) as exc:
             logger.warning("Could not write the session transcript: %s", exc)
 

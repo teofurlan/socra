@@ -100,7 +100,7 @@ def test_unencodable_text_and_corrupt_bytes_never_break_append_or_search(tmp_pat
     with transcript.path.open("ab") as handle:
         handle.write(b"\xff\xfe broken\n")
 
-    assert [h.turn for h in transcript.search("needle")] == [1]
+    assert [h.turn for h in transcript.search("needle")] == [2]
 
 
 def test_write_failures_never_raise_into_the_conversation(tmp_path):

@@ -26,13 +26,29 @@ from socra_server.domain.agent import (
     TextDelta,
     ToolActivity,
 )
+from socra_server.domain.handoff import (
+    SUMMARY_PROMPT,
+    HandoffSummary,
+    InvalidSummary,
+    SessionFacts,
+    Turn,
+    last_turns,
+    parse_summary,
+    render_seed,
+    retry_prompt,
+)
+from socra_server.domain.modes import DEFAULT_MODE, UnknownMode, get_mode
 from socra_server.domain.speakable import speakable_text
-from socra_server.ports import AgentConversation
+from socra_server.ports import AgentBackend, AgentConversation
+from socra_server.socra_tools import CallbackToolbox
 
 logger = logging.getLogger(__name__)
 
 FolderPicker = Callable[[], str | None]
 PLAYBACK_GRACE_S = 2.0
+# One request plus two retries for a summary that lacks fields.
+SUMMARY_ATTEMPTS = 3
+NEEDS_CLAUDE_CODE = "Mode switching needs Claude Code."
 
 
 class AgentApp:
@@ -43,14 +59,27 @@ class AgentApp:
         registry: BackendRegistry,
         loader: Any,
         folder_picker: FolderPicker,
+        transcripts: Any = None,
     ) -> None:
         self.channel = channel
         self.registry = registry
         self.loader = loader
         self._folder_picker = folder_picker
+        self._transcripts = transcripts
         self._conversation: AgentConversation | None = None
+        self._backend: AgentBackend | None = None
         # What the page needs to resync after a reconnect; None without a conversation.
         self._session: dict[str, str] | None = None
+        # Mode switching: what Socra records for the handoff, and the switch in flight.
+        self._facts = SessionFacts()
+        self._turns: list[Turn] = []
+        self._transcript: Any = None
+        self._previous_transcript: Any = None
+        self._toolbox = CallbackToolbox(
+            switch=self._tool_switch, record=self._tool_record, search=self._tool_search
+        )
+        self._switch_request: str | None = None
+        self.switch_task: asyncio.Task | None = None
         self._pending: dict[str, asyncio.Future[bool]] = {}
         self._start_task: asyncio.Task | None = None
         self._start_generation = 0
@@ -74,6 +103,7 @@ class AgentApp:
                     "label": info.label,
                     "models": [{"id": m.id, "label": m.label} for m in info.models],
                     "status": {"state": info.status.state, "message": info.status.message},
+                    "supports_modes": info.supports_modes,
                 }
                 for info in infos
             ],
@@ -87,26 +117,38 @@ class AgentApp:
         path = await asyncio.to_thread(self._folder_picker)
         await self.channel.send({"type": "agent_folder", "path": path or None})
 
-    async def handle_start(self, backend_id: str, model: str, cwd: str) -> None:
+    async def handle_start(
+        self, backend_id: str, model: str, cwd: str, mode: str = DEFAULT_MODE
+    ) -> None:
         folder = Path(cwd)
         if not folder.is_dir():
             await self._error(f"Folder not found: {cwd}")
             return
         try:
             backend = self.registry.resolve(AgentSelection(backend_id, model))
-        except UnknownSelection as exc:
+            get_mode(mode)
+        except (UnknownSelection, UnknownMode) as exc:
             await self._error(str(exc))
             return
+        if mode != DEFAULT_MODE and not backend.supports_modes:
+            await self._error(NEEDS_CLAUDE_CODE)
+            return
+        await self._cancel_switch()
         await self._cancel_turn()
         await self._cancel_start()
         await self._close_conversation()
-        self._session = {"backend": backend_id, "model": model, "cwd": str(folder)}
+        self._backend = backend
+        self._facts = SessionFacts()
+        self._turns = []
+        self._previous_transcript = None
+        self._transcript = self._transcripts.start(folder) if self._transcripts else None
+        self._session = {"backend": backend_id, "model": model, "cwd": str(folder), "mode": mode}
         await self.channel.send({"type": "agent_started", **self._session})
         await self._state("idle")
         self._start_generation += 1
         generation = self._start_generation
         self._start_task = asyncio.create_task(
-            self._open_start(backend, backend_id, model, folder, generation),
+            self._open_start(backend, backend_id, model, folder, generation, mode),
             name="agent-start",
         )
         # Let the owned task begin without waiting for backend.open to finish.
@@ -168,6 +210,17 @@ class AgentApp:
             future.set_result(allow is True)
 
     async def handle_interrupt(self) -> None:
+        if self._switching:
+            conversation = self._conversation
+            await self._cancel_switch()
+            if conversation is not None:
+                try:
+                    await conversation.interrupt()
+                except Exception as exc:
+                    logger.warning("Interrupting the mode switch failed: %s", exc)
+            await self.channel.send({"type": "notice", "text": "Mode switch cancelled."})
+            await self._switch_failed()
+            return
         if self._start_task is not None and not self._start_task.done():
             await self._cancel_start()
             await self._close_conversation()
@@ -186,9 +239,11 @@ class AgentApp:
         for future in self._pending.values():
             if not future.done():
                 future.set_result(False)
+        self._switch_request = None
 
     async def shutdown(self) -> None:
         await self.handle_disconnect()
+        await self._cancel_switch()
         await self._cancel_start()
         await self._cancel_turn()
         await self._close_conversation()
@@ -202,10 +257,19 @@ class AgentApp:
         return self.turn_task is not None and not self.turn_task.done()
 
     @property
+    def _switching(self) -> bool:
+        return self.switch_task is not None and not self.switch_task.done()
+
+    @property
     def _startup_pending(self) -> bool:
         return self._start_task is not None and not self._start_task.done()
 
     async def _can_take_turn(self) -> bool:
+        if self._switching:
+            await self.channel.send({
+                "type": "notice", "text": "Wait for the mode switch to finish.",
+            })
+            return False
         starting = self._startup_pending
         if self._conversation is None and not starting:
             await self._error("Choose a folder and start the agent first.")
@@ -217,9 +281,20 @@ class AgentApp:
             return False
         return True
 
-    async def _open_start(self, backend, backend_id: str, model: str, folder: Path, generation: int) -> None:
+    async def _open_conversation(self, backend, model: str, folder: Path, mode_id: str):
+        if not backend.supports_modes:
+            return await backend.open(model, folder, self._decide_permission)
+        return await backend.open(
+            model, folder, self._decide_permission,
+            mode=get_mode(mode_id), toolbox=self._toolbox,
+        )
+
+    async def _open_start(
+        self, backend, backend_id: str, model: str, folder: Path, generation: int,
+        mode_id: str = DEFAULT_MODE,
+    ) -> None:
         try:
-            conversation = await backend.open(model, folder, self._decide_permission)
+            conversation = await self._open_conversation(backend, model, folder, mode_id)
         except asyncio.CancelledError:
             return
         except Exception as exc:
@@ -252,8 +327,10 @@ class AgentApp:
         if task is not None and not task.done():
             task.cancel()
 
-    def _start_turn(self, text: str) -> None:
-        self.turn_task = asyncio.create_task(self._run_turn(text), name="agent-turn")
+    def _start_turn(self, text: str, *, hidden: bool = False) -> None:
+        self.turn_task = asyncio.create_task(
+            self._run_turn(text, hidden=hidden), name="agent-turn"
+        )
 
     async def _cancel_turn(self) -> None:
         """Stop a running turn before its conversation goes away."""
@@ -268,19 +345,27 @@ class AgentApp:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    async def _run_turn(self, text: str) -> None:
+    async def _run_turn(self, text: str, *, hidden: bool = False) -> None:
+        """Run one turn; a hidden turn (the handoff seed) is not recorded as a user turn."""
         conversation = self._conversation
         assert conversation is not None
         await self._state("thinking")
+        if not hidden and self._transcript is not None:
+            self._transcript.append("user", text)
         try:
             async for event in conversation.send(text):
                 if isinstance(event, TextDelta):
                     await self.channel.send({"type": "agent_text", "text": event.text})
                 elif isinstance(event, ToolActivity):
+                    self._facts.record_tool(event)
                     await self.channel.send({
                         "type": "agent_tool", "tool": event.tool, "summary": event.summary,
                     })
                 elif isinstance(event, ReplyDone):
+                    if self._transcript is not None:
+                        self._transcript.append("agent", event.text)
+                    if not hidden:
+                        self._turns.append(Turn(text, event.text))
                     await self.channel.send({"type": "agent_reply", "text": event.text})
                     spoken = speakable_text(event.text)
                     if spoken:
@@ -307,13 +392,173 @@ class AgentApp:
                 "title": request.title,
                 "detail": request.detail,
             })
-            return await future
+            allowed = await future
+            self._facts.record_permission(request.tool, request.title, allowed)
+            return allowed
         except asyncio.CancelledError:
             # The turn was interrupted or restarted: take the prompt off the page.
             await self.channel.send({"type": "permission_closed", "id": request.request_id})
             raise
         finally:
             self._pending.pop(request.request_id, None)
+
+    # ------------------------------------------------------------------ #
+    # Mode switching                                                       #
+    # ------------------------------------------------------------------ #
+
+    async def handle_switch_mode(self, target: str) -> None:
+        """The user picked a mode in the selector: switch at once."""
+        if await self._switch_problem(target):
+            return
+        self.switch_task = asyncio.create_task(self._run_switch(target), name="agent-switch")
+        await asyncio.sleep(0)
+
+    async def handle_mode_switch_response(self, target: str, allow: Any) -> None:
+        """The user answered the on-screen confirmation of a voice-requested switch."""
+        if self._switch_request != target:
+            return
+        self._switch_request = None
+        if allow is not True:
+            await self.channel.send({"type": "mode_switch_closed", "mode": target})
+            return
+        await self.handle_switch_mode(target)
+
+    async def _switch_problem(self, target: str) -> str | None:
+        """Report why a switch cannot start (to the page), or None when it can."""
+        try:
+            mode = get_mode(target)
+        except UnknownMode as exc:
+            await self._error(str(exc))
+            return str(exc)
+        if self._backend is None or self._conversation is None or self._session is None:
+            await self._error("Choose a folder and start the agent first.")
+            return "no session"
+        if not self._backend.supports_modes:
+            await self._error(NEEDS_CLAUDE_CODE)
+            return NEEDS_CLAUDE_CODE
+        if target == self._session["mode"]:
+            text = f"Already in {mode.label} mode."
+            await self.channel.send({"type": "notice", "text": text})
+            return text
+        if self._switching:
+            text = "A mode switch is already running."
+            await self.channel.send({"type": "notice", "text": text})
+            return text
+        return None
+
+    async def _run_switch(self, target: str) -> None:
+        assert self._session is not None and self._backend is not None
+        mode = get_mode(target)
+        session = self._session
+        await self.channel.send({"type": "agent_switching", "mode": target})
+        await self._state("thinking")
+        # A voice request can arrive while the agent is still answering: let it finish.
+        running = self.turn_task
+        if running is not None and not running.done():
+            await asyncio.wait({running})
+        old = self._conversation
+        assert old is not None
+        summary = await self._request_summary(old)
+        if summary is None:
+            await self._error(
+                f"Could not switch to {mode.label} mode: the agent did not produce a "
+                "valid summary. You stay in the current mode."
+            )
+            await self._switch_failed()
+            return
+        seed = render_seed(mode, self._facts, summary, last_turns(self._turns))
+        try:
+            new = await self._open_conversation(
+                self._backend, session["model"], Path(session["cwd"]), target
+            )
+        except Exception as exc:
+            logger.error("Could not start %s mode: %s", target, exc)
+            await self._error(
+                f"Could not start {mode.label} mode: {exc}. You stay in the current mode."
+            )
+            await self._switch_failed()
+            return
+        # The new session is up: adopt it first, so a failure to close the old one
+        # can never leave the app without a conversation.
+        self._conversation = new
+        self._session = {**session, "mode": target}
+        self._previous_transcript = self._transcript
+        self._transcript = self._transcripts.start(session["cwd"]) if self._transcripts else None
+        await self.channel.send({"type": "agent_mode_changed", **self._session})
+        try:
+            await old.close()
+        except Exception as exc:
+            logger.warning("Closing the previous agent session failed: %s", exc)
+        self._start_turn(seed, hidden=True)
+
+    async def _request_summary(self, conversation: AgentConversation) -> HandoffSummary | None:
+        prompt = SUMMARY_PROMPT
+        for _ in range(SUMMARY_ATTEMPTS):
+            reply = await self._silent_turn(conversation, prompt)
+            if reply is None:
+                prompt = SUMMARY_PROMPT
+                continue
+            try:
+                return parse_summary(reply)
+            except InvalidSummary as exc:
+                prompt = retry_prompt(exc.missing)
+        return None
+
+    async def _silent_turn(self, conversation: AgentConversation, prompt: str) -> str | None:
+        """Run a turn nobody sees or hears; the reply text, or None when it failed."""
+        reply: str | None = None
+        async for event in conversation.send(prompt):
+            if isinstance(event, ToolActivity):
+                self._facts.record_tool(event)
+            elif isinstance(event, ReplyDone):
+                reply = event.text
+            elif isinstance(event, AgentError):
+                logger.warning("Handoff summary turn failed: %s", event.message)
+                return None
+        return reply
+
+    async def _switch_failed(self) -> None:
+        mode = self._session["mode"] if self._session else DEFAULT_MODE
+        await self.channel.send({"type": "mode_switch_failed", "mode": mode})
+        await self._state("listening")
+
+    async def _cancel_switch(self) -> None:
+        self._switch_request = None
+        task, self.switch_task = self.switch_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    # The three Socra tools the agent can call (see socra_tools).
+
+    async def _tool_switch(self, target: str) -> str:
+        try:
+            mode = get_mode(target)
+        except UnknownMode:
+            return f"Unknown mode {target!r}. Use agent, mentor or exam."
+        if self._session is not None and target == self._session["mode"]:
+            return f"Already in {mode.label} mode."
+        if self._switching:
+            return "A mode switch is already running."
+        if self._switch_request and self._switch_request != target:
+            await self.channel.send({"type": "mode_switch_closed", "mode": self._switch_request})
+        self._switch_request = target
+        await self.channel.send({
+            "type": "mode_switch_request", "mode": target, "label": mode.label,
+        })
+        return (
+            f"Asked the user to confirm switching to {mode.label} mode. Tell them you asked "
+            "and wait; the switch happens only if they accept."
+        )
+
+    async def _tool_record(self, question: str, verdict: str, note: str) -> str:
+        self._facts.record_exam_result(question, verdict, note)
+        return "Recorded."
+
+    async def _tool_search(self, query: str, limit: int) -> list[Any]:
+        if self._previous_transcript is None:
+            return []
+        return await asyncio.to_thread(self._previous_transcript.search, query, limit)
 
     # ------------------------------------------------------------------ #
     # Helpers                                                              #

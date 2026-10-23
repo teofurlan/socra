@@ -35,8 +35,14 @@ class FakeAgentApp:
     async def handle_pick_folder(self):
         self._record("pick_folder")
 
-    async def handle_start(self, backend, model, cwd):
-        self._record("start", backend, model, cwd)
+    async def handle_start(self, backend, model, cwd, mode=None):
+        self._record("start", backend, model, cwd, *([mode] if mode else []))
+
+    async def handle_switch_mode(self, mode):
+        self._record("switch_mode", mode)
+
+    async def handle_mode_switch_response(self, mode, allow):
+        self._record("mode_switch_response", mode, allow)
 
     async def handle_turn_text(self, text):
         self._record("turn_text", text)
@@ -103,17 +109,26 @@ async def test_agent_route_dispatches_every_page_message(server):
         {"type": "permission_response", "id": "req-1", "allow": True},
         {"type": "interrupt"},
         {"type": "playback_done"},
+        {"type": "switch_mode", "mode": "exam"},
+        {"type": "mode_switch_response", "mode": "mentor", "allow": True},
+        {"type": "start_agent", "backend": "claude-code", "model": "opus", "cwd": "C:/w", "mode": "exam"},
+        {"type": "switch_mode"},
     ]
     async with connect(f"{base}/ws/agent") as ws:
         for message in messages:
             await ws.send(json.dumps(message))
-        await _wait_for(agent, lambda: len(agent.calls) >= 9)
+        await _wait_for(agent, lambda: len(agent.calls) >= 11)
 
     names = [call[0] for call in agent.calls]
     for expected in ("hello", "pick_folder", "turn_audio_done", "interrupt", "playback_done"):
         assert expected in names
     assert ("start", "claude-code", "opus", "C:/work") in agent.calls
     assert ("turn_text", "list the files") in agent.calls
+    assert ("switch_mode", "exam") in agent.calls
+    assert ("mode_switch_response", "mentor", True) in agent.calls
+    assert ("start", "claude-code", "opus", "C:/w", "exam") in agent.calls
+    # A switch_mode without a mode is malformed and dropped.
+    assert sum(1 for call in agent.calls if call[0] == "switch_mode") == 1
     assert ("permission", "req-1", True) in agent.calls
 
 

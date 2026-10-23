@@ -21,6 +21,7 @@ from socra_server.adapters.browser import launch_page
 from socra_server.adapters.claude_code_agent import ClaudeCodeBackend
 from socra_server.adapters.folder_dialog import pick_folder
 from socra_server.adapters.pi_agent import PiBackend
+from socra_server.adapters.transcript_store import TranscriptStore
 from socra_server.agent_app import AgentApp
 from socra_server.agent_registry import BackendRegistry
 from socra_server.app import ExamApp, ModelLoader, PageChannel
@@ -70,11 +71,14 @@ def _build_apps(loop: asyncio.AbstractEventLoop) -> tuple[ExamApp, AgentApp, Mod
     loader = ModelLoader()
     loader.attach_loop(loop)
     exam = ExamApp(channel=PageChannel(), loader=loader)
+    transcripts = TranscriptStore()
+    transcripts.prune()
     agent = AgentApp(
         channel=PageChannel(),
         registry=BackendRegistry(agent_backends()),
         loader=loader,
         folder_picker=pick_folder,
+        transcripts=transcripts,
     )
     mcp_tools.wire_app(exam)
     ws_server.wire_app(exam)
