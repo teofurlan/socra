@@ -295,7 +295,7 @@ export const AgentApp: React.FC = () => {
           }
           label="Conversation"
         >
-          <div className="shell-scroll flex flex-col items-center gap-5">
+          <div className="voice-stage flex shrink-0 flex-col items-center">
             <div className="viz-slot w-full shrink-0 max-w-64">
               <OrbVisualizer
                 protocolState={visualizerProtocolState}
@@ -315,7 +315,9 @@ export const AgentApp: React.FC = () => {
               mode={mode}
               countdownMs={silenceCountdownMs}
             />
+          </div>
 
+          <div className="shell-scroll flex flex-col items-center gap-5">
             {(micError || setupError) && (
               <div
                 role="alert"

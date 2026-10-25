@@ -4,9 +4,10 @@
 
 Both pages (exam at `/`, agent at `/?mode=agent`) share one console shell: a top bar
 (wordmark, Exam/Agent tabs, context chips, connection, the `…` settings menu) over
-full-bleed panels. The conversation panel holds the particle visualizer (Lines by
-default; Letters and Grid in settings), the state line, the question or log, and a
-composer that is always available, so every turn can be typed instead of spoken. In
+full-bleed panels. The particle visualizer and state line reside in a non-scrolling
+voice stage outside the scroll container, keeping the orb fixed while question or
+timeline content scrolls independently below it. The conversation panel also holds
+a composer that is always available, so every turn can be typed instead of spoken. In
 exam mode a typed answer is sent as the final answer (`answer_text`).
 
 When code arrives (question code, or fenced blocks in an agent reply) a code panel

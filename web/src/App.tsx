@@ -136,7 +136,7 @@ export const App: React.FC = () => {
           className="h-full"
           title={<span>Exam</span>}
         >
-          <div className="shell-scroll flex flex-col items-center gap-5">
+          <div className="voice-stage flex shrink-0 flex-col items-center">
             <div className="viz-slot w-full max-w-64 shrink-0">
               <OrbVisualizer
                 protocolState={state.protocolState}
@@ -156,7 +156,9 @@ export const App: React.FC = () => {
               mode={state.mode}
               countdownMs={silenceCountdownMs}
             />
+          </div>
 
+          <div className="shell-scroll flex flex-col items-center gap-5">
             {micError && (
               <div
                 role="alert"

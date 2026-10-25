@@ -73,6 +73,14 @@ describe('App Integration', () => {
     expect(screen.getByTestId('ptt-button')).toBeInTheDocument()
   })
 
+  it('keeps the voice stage outside the scrolling conversation', () => {
+    render(<App />)
+    const stage = document.querySelector('.voice-stage')!
+    expect(stage.querySelector('[data-testid="orb-visualizer"]')).toBeInTheDocument()
+    expect(stage.querySelector('[data-testid="state-label"]')).toBeInTheDocument()
+    expect(stage.closest('.shell-scroll')).toBeNull()
+  })
+
   it('shows the title Socra and hides settings until the gear is opened', async () => {
     const user = userEvent.setup()
     render(<App />)

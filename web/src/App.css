@@ -32,11 +32,23 @@
 .shell-panels > .panel:first-child {
   background: transparent;
 }
-/* ...but not its header: like the top bar, it stays solid, so a scrolled sphere slides under it. */
+/* ...but not its header: like the top bar, it stays solid, anchoring the panel above the voice stage. */
 .shell-panels > .panel:first-child > .panel-head {
   position: relative;
   z-index: 1;
   background: var(--bg);
+}
+
+/* The voice target is fixed above the independently scrolling conversation. */
+.voice-stage {
+  width: 100%;
+  max-height: 42%;
+  overflow: hidden;
+}
+.voice-stage .viz-slot {
+  width: min(100%, 16rem, 34vh);
+  max-height: 34vh;
+  margin-block: clamp(4px, 1.5vh, 18px) clamp(4px, 1.5vh, 22px);
 }
 
 /* The sphere swells past its slot with perspective and voice; keep the words clear of it. */
@@ -148,9 +160,12 @@
     grid-template-rows: minmax(0, 1fr) 1px minmax(0, 0.7fr);
   }
   /* Stacked under code, the conversation is short: the sphere gives way to the words. */
-  .shell-panels[data-split="true"] .viz-slot {
-    max-width: 5rem;
-    margin-block: 8px 14px;
+  .shell-panels[data-split="true"] .voice-stage .viz-slot {
+    width: min(100%, 5rem, 18vh);
+    margin-block: 4px;
+  }
+  .shell-panels[data-split="true"] .voice-stage {
+    max-height: 32%;
   }
 }
 

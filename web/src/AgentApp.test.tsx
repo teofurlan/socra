@@ -73,6 +73,14 @@ describe('AgentApp', () => {
     })
   }
 
+  it('keeps the voice stage outside the scrolling conversation', () => {
+    openPage()
+    const stage = document.querySelector('.voice-stage')!
+    expect(stage.querySelector('[data-testid="orb-visualizer"]')).toBeInTheDocument()
+    expect(stage.querySelector('[data-testid="state-label"]')).toBeInTheDocument()
+    expect(stage.closest('.shell-scroll')).toBeNull()
+  })
+
   it('restores the chosen model and folder after a reload', () => {
     window.localStorage.setItem(STORAGE_KEY_AGENT_SELECTION, JSON.stringify({ backend: 'claude-code', model: 'opus' }))
     window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')

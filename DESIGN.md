@@ -268,7 +268,7 @@ Graphite neutrals with one blue accent and a small set of syntax-derived state h
 
 A full-height shell with two rows: a 44px top bar (wordmark, Exam/Agent tabs, context chips, connection chip, the menu) and the panel area. The panel area is a three-column grid: conversation, a seam, and the code panel. Closed, the template is `1fr 0 0fr`; open, it is `1fr 1px 0.8fr`, which gives the code panel about 44% of the width. The page does not scroll; each panel scrolls inside itself.
 
-The conversation panel stacks the particle visualizer (with 18px above and 22px below), one centred state line, the log or question at the 72ch measure, and the composer. Its scroll area has 24px top padding and `clamp(14px, 3vw, 32px)` side padding. Conversation entries use a two-column grid: a 6ch right-aligned speaker gutter ("you", "socra", "tool", "error") and the text, separated by 1.5ch, with 12px between entries. The agent setup form uses the same idea with a 3ch step-number gutter at a 60ch measure.
+The conversation panel places the particle visualizer and centred state line inside a non-scrolling voice stage (`.voice-stage`) above the scroll container (`.shell-scroll`). The question or conversation timeline scrolls independently below it at the 72ch measure with 24px top padding and `clamp(14px, 3vw, 32px)` side padding, while the floating composer and code split layout remain preserved. Conversation entries use a two-column grid: a 6ch right-aligned speaker gutter ("you", "socra", "tool", "error") and the text, separated by 1.5ch, with 12px between entries. The agent setup form uses the same idea with a 3ch step-number gutter at a 60ch measure.
 
 The composer floats centred above the bottom edge at `min(100% - 32px, max(55%, 520px), 780px)` with 28px below it. Under 1024px it spans the panel with one 12px gap to the bottom and both sides. Under 768px the panels stack vertically instead of side by side (code takes `0.7fr` below the conversation) and the particle slot shrinks to 5rem when code is open. Context chips hide below 768px; the phone keeps question progress in the speaker gutter.
 
@@ -281,7 +281,7 @@ Spacing is tight and console-dense: 8px between controls, 10-14px inside headers
 
 ## Elevation & Depth
 
-The console is flat. Regions separate by 1px seams and by tone: ground, panel, and one raised step for hover and selection. Panels carry no shadow. In the conversation panel the header stays solid ground while the content area is transparent, so the particle sphere scrolls under the header rather than over it. Only the two layers that float above the panels cast a shadow, both soft and pulled up under the element (a negative spread), never an offset slab.
+The console is flat. Regions separate by 1px seams and by tone: ground, panel, and one raised step for hover and selection. Panels carry no shadow. In the conversation panel the header stays solid ground while the content area is transparent, anchoring above the non-scrolling voice stage while the timeline scrolls below. Only the two layers that float above the panels cast a shadow, both soft and pulled up under the element (a negative spread), never an offset slab.
 
 ### Shadow Vocabulary
 - **Dock shadow** (`box-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.55)`): the floating composer.
