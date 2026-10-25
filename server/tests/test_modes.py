@@ -16,6 +16,14 @@ def test_every_mode_can_switch_and_search_the_previous_session():
         assert {"switch_mode", "search_transcript"} <= mode.tools
 
 
+def test_every_mode_replies_in_the_language_socra_listens_and_speaks():
+    from socra_server.domain.speech import SPEECH_LANGUAGE, SPEECH_LANGUAGE_NAME
+
+    assert SPEECH_LANGUAGE == "es"
+    for mode in MODES.values():
+        assert f"Always reply in {SPEECH_LANGUAGE_NAME}" in mode.instructions
+
+
 def test_only_exam_records_exam_results():
     assert "record_exam_result" in get_mode("exam").tools
     assert "record_exam_result" not in get_mode("agent").tools

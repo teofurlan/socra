@@ -4,6 +4,8 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
+from socra_server.domain.speech import SPEECH_LANGUAGE_NAME
+
 ModeId = Literal["agent", "mentor", "exam"]
 
 SWITCH_MODE = "switch_mode"
@@ -27,6 +29,9 @@ class Mode:
 
 _COMMON = (
     "Socra is a voice layer: your replies are spoken aloud, so keep them short and plain. "
+    f"Always reply in {SPEECH_LANGUAGE_NAME}: Socra listens and speaks only "
+    f"{SPEECH_LANGUAGE_NAME}, so a message that reads like another language was misheard; "
+    "ask the user to repeat it instead of switching language. "
     "When the user asks to switch to the agent, mentor or exam mode, call the switch_mode "
     "tool; Socra asks the user to confirm on screen. If the notes you were given lack a "
     "detail, call search_transcript to look it up in the previous session."

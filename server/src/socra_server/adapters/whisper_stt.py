@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from socra_server.domain.speech import SPEECH_LANGUAGE
+
 SILENCE_HALLUCINATIONS: tuple[str, ...] = (
     "subtítulos realizados por",
     "amara.org",
@@ -192,7 +194,7 @@ class WhisperSTT:
         try:
             segments, _info = self._transcriber.model.transcribe(
                 audio_array,
-                language="es",
+                language=SPEECH_LANGUAGE,
                 vad_filter=True,
                 initial_prompt=initial_prompt or None,
             )
