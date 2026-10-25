@@ -63,6 +63,13 @@
   padding: 24px clamp(14px, 3vw, 32px) 14px;
 }
 
+/* Pending permission and mode-switch cards sit between the conversation and the composer. */
+.decision-dock {
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 10px clamp(14px, 3vw, 32px) 0;
+}
+
 /* Composer: floats centred above the bottom edge on wide screens, about half to two thirds
    of the conversation; on tablets and phones it keeps one even gap to the three edges. */
 .composer-dock {

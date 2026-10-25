@@ -337,14 +337,18 @@ export const AgentApp: React.FC = () => {
               </div>
             )}
 
-            {/* A pending tool call stays answerable from either view. */}
-            <PermissionPromptCard prompts={state.permissions} onAnswer={socket.answerPermission} />
-            <ModeSwitchCard request={state.modeRequest} onAnswer={socket.answerModeSwitch} />
-
             <div className="flex w-full max-w-[80ch] flex-1 flex-col">
               <AgentTimeline entries={state.timeline} protocolState={state.protocolState} />
             </div>
           </div>
+
+          {/* Pending decisions stay in view while the conversation scrolls to its end. */}
+          {(state.permissions.length > 0 || state.modeRequest) && (
+            <div className="decision-dock flex shrink-0 flex-col items-center gap-3">
+              <PermissionPromptCard prompts={state.permissions} onAnswer={socket.answerPermission} />
+              <ModeSwitchCard request={state.modeRequest} onAnswer={socket.answerModeSwitch} />
+            </div>
+          )}
 
           <PromptLine
               label="Message the agent"

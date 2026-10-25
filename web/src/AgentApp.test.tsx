@@ -204,6 +204,22 @@ describe('AgentApp', () => {
     expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'start_agent' }))
   })
 
+  it('keeps pending decisions outside the scrolling conversation', () => {
+    const { ws } = openPage()
+    startSession(ws)
+    act(() => {
+      ws.receive({ type: 'permission_request', id: 'r1', tool: 'Bash', title: 'Run git status', detail: '' })
+      ws.receive({ type: 'mode_switch_request', mode: 'mentor', label: 'Mentor' })
+    })
+
+    const permission = screen.getByRole('button', { name: 'Allow' })
+    const modeSwitch = screen.getByRole('group', { name: 'Switch to Mentor mode?' })
+    for (const card of [permission, modeSwitch]) {
+      expect(card.closest('.decision-dock')).not.toBeNull()
+      expect(card.closest('.shell-scroll')).toBeNull()
+    }
+  })
+
   it('starts before the first recorded voice turn when context is ready', () => {
     window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
     const { ws } = openPage()
