@@ -430,6 +430,10 @@ class AgentApp:
         except UnknownMode as exc:
             await self._error(str(exc))
             return str(exc)
+        if self._conversation is None and self._startup_pending:
+            text = "Wait for the agent to start, then switch modes."
+            await self.channel.send({"type": "notice", "text": text})
+            return text
         if self._backend is None or self._conversation is None or self._session is None:
             await self._error("Choose a folder and start the agent first.")
             return "no session"

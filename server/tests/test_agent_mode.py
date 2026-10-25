@@ -343,6 +343,28 @@ async def test_same_or_unknown_modes_are_not_switched(tmp_path):
     assert "Unknown mode" in channel.of_type("agent_error")[-1]["message"]
 
 
+async def test_a_switch_while_the_agent_is_still_starting_asks_to_wait(tmp_path):
+    release = asyncio.Event()
+    backend = ModeBackend([Convo([])])
+    plain_open = backend.open
+
+    async def slow_open(model, cwd, decide, **kw):
+        await release.wait()
+        return await plain_open(model, cwd, decide, **kw)
+
+    backend.open = slow_open
+    app, channel, _ = _make(backend, tmp_path)
+    await app.handle_start("fake", "small", str(tmp_path))
+
+    await app.handle_switch_mode("mentor")
+
+    assert app.switch_task is None
+    assert not channel.of_type("agent_error")
+    assert channel.of_type("notice")[-1]["text"] == "Wait for the agent to start, then switch modes."
+    release.set()
+    await app.shutdown()
+
+
 async def test_a_voice_request_waits_for_the_confirmation_on_screen(tmp_path):
     old = Convo([[ReplyDone(VALID)]])
     new = Convo([[ReplyDone("ok")]])
