@@ -123,6 +123,31 @@ async def test_pause_opens_listening_and_repeat_replays_the_same_step():
 
 
 @pytest.mark.asyncio
+async def test_pause_before_playback_done_stays_on_the_step_that_was_playing():
+    page = Page()
+    page.hold = True
+    runner = make_runner(page)
+    task = asyncio.create_task(runner.run(make_walkthrough(2)))
+    try:
+        await settle()
+        assert page.steps_heard() == [1]
+        seq = next(m["step"]["seq"] for m in page.messages if m["type"] == "tts_audio")
+
+        runner.command("pause")
+        runner.handle_playback_done(seq)
+        await settle()
+
+        assert runner.paused
+        assert page.statuses()[-1] == "paused" and page.states[-1] == "listening"
+        assert runner.snapshot()[1]["index"] == 1
+        assert page.steps_heard() == [1]
+    finally:
+        runner.command("stop")
+        result = await asyncio.wait_for(task, 2)
+    assert result == {"status": "stopped", "step": 1, "total": 2}
+
+
+@pytest.mark.asyncio
 async def test_back_goes_to_the_previous_step_and_next_skips_one():
     page = Page()
     page.hold = True

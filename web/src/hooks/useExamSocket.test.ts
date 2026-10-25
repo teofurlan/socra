@@ -614,6 +614,21 @@ describe('useExamSocket', () => {
       expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'walkthrough_control', action: 'pause' }))
     })
 
+    it.each(['pause', 'repeat', 'back', 'next', 'stop'] as const)('sends %s before the stopped clip reports playback_done', async (action) => {
+      const { result, ws } = open()
+      await act(async () => ws.simulateMessage(stepClip(1, 7)))
+      const source = MockAudioContext.instances[0].sources[0]
+      ws.send.mockClear()
+
+      act(() => result.current.controlWalkthrough(action))
+
+      expect(ws.sent()).toEqual([
+        { type: 'walkthrough_control', action },
+        { type: 'playback_done', seq: 7 },
+      ])
+      expect(source.stop).toHaveBeenCalledOnce()
+    })
+
     it('a paused status from the server silences the audio', async () => {
       const { ws } = open()
       await act(async () => ws.simulateMessage(stepClip(1, 7)))
