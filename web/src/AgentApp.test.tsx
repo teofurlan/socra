@@ -410,10 +410,27 @@ describe('AgentApp', () => {
       expect(screen.getByRole('radio', { name: 'Exam' })).toBeEnabled()
     })
 
-    it('keeps the selector disabled until a session runs', () => {
+    it('picks the starting mode before a session runs and starts in it', async () => {
+      const user = userEvent.setup()
+      window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
+      const { ws } = openPage()
+
+      await user.click(screen.getByRole('radio', { name: 'Mentor' }))
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+      expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'switch_mode' }))
+
+      await user.type(screen.getByLabelText('Message the agent'), 'explain the server{Enter}')
+      expect(ws.sent()).toContainEqual(
+        { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
+      )
+    })
+
+    it('keeps the selector disabled before a session when the chosen agent has no modes', () => {
+      window.localStorage.setItem(STORAGE_KEY_AGENT_SELECTION, JSON.stringify({ backend: 'pi', model: 'anthropic/sonnet' }))
       openPage()
 
       expect(screen.getByRole('radio', { name: 'Exam' })).toBeDisabled()
+      expect(screen.getByText('Mode switching needs Claude Code')).toBeVisible()
     })
 
     it('switches from the selector and continues the timeline with a condensed-context marker', async () => {
