@@ -79,6 +79,8 @@ class AgentApp:
             switch=self._tool_switch, record=self._tool_record, search=self._tool_search
         )
         self._switch_request: str | None = None
+        # What the user said while a switch ran; the session that comes out of it answers it.
+        self._switch_turns: list[str] = []
         self.switch_task: asyncio.Task | None = None
         self._pending: dict[str, asyncio.Future[bool]] = {}
         self._start_task: asyncio.Task | None = None
@@ -157,6 +159,9 @@ class AgentApp:
     async def handle_turn_text(self, text: str) -> None:
         if not text.strip():
             return
+        if self._switching:
+            self._switch_turns.append(text)
+            return
         if await self._can_take_turn():
             if self._conversation is None and self._startup_pending:
                 self._queued_turn = text
@@ -167,7 +172,7 @@ class AgentApp:
                 self._start_turn(text)
 
     async def handle_turn_audio(self, b64_data: str) -> None:
-        if not await self._can_take_turn():
+        if not self._switching and not await self._can_take_turn():
             return
         starting = self._conversation is None
         try:
@@ -189,6 +194,10 @@ class AgentApp:
         if not text or not is_valid_answer(text):
             await self.channel.send({"type": "notice", "text": "Didn't catch that. Please say it again."})
             await self._state("listening")
+            return
+        if self._switching:
+            await self.channel.send({"type": "transcript", "text": text, "final": True})
+            self._switch_turns.append(text)
             return
         if self._turn_running or self._queued_turn is not None:
             await self.channel.send({
@@ -470,7 +479,6 @@ class AgentApp:
             )
             await self._switch_failed()
             return
-        seed = render_seed(mode, self._facts, summary, last_turns(self._turns))
         try:
             new = await self._open_conversation(
                 self._backend, session["model"], Path(session["cwd"]), target
@@ -493,6 +501,12 @@ class AgentApp:
             await old.close()
         except Exception as exc:
             logger.warning("Closing the previous agent session failed: %s", exc)
+        # Read only now: the user can keep talking until the new session takes over.
+        pending, self._switch_turns = self._switch_turns, []
+        if self._transcript is not None:
+            for text in pending:
+                self._transcript.append("user", text)
+        seed = render_seed(mode, self._facts, summary, last_turns(self._turns), pending)
         self._start_turn(seed, hidden=True)
 
     async def _request_summary(self, conversation: AgentConversation) -> HandoffSummary | None:
@@ -528,10 +542,16 @@ class AgentApp:
     async def _switch_failed(self) -> None:
         mode = self._session["mode"] if self._session else DEFAULT_MODE
         await self.channel.send({"type": "mode_switch_failed", "mode": mode})
-        await self._state("listening")
+        # The old session is still open: it answers what the user said meanwhile.
+        pending, self._switch_turns = self._switch_turns, []
+        if pending and self._conversation is not None:
+            self._start_turn("\n".join(pending))
+        else:
+            await self._state("listening")
 
     async def _cancel_switch(self) -> None:
         self._switch_request = None
+        self._switch_turns = []
         task, self.switch_task = self.switch_task, None
         if task is not None and not task.done():
             task.cancel()

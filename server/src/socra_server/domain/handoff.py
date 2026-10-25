@@ -124,9 +124,17 @@ def _bullets(items: list[str], empty: str = "none") -> str:
 
 
 def render_seed(
-    mode: Mode, facts: SessionFacts, summary: HandoffSummary, turns: list[Turn]
+    mode: Mode,
+    facts: SessionFacts,
+    summary: HandoffSummary,
+    turns: list[Turn],
+    pending: list[str] | None = None,
 ) -> str:
-    """The hidden first message of the new session."""
+    """The hidden first message of the new session.
+
+    ``pending`` holds what the user said while the switch ran; the new session answers it
+    instead of restating the situation.
+    """
     tools = [f"{tool}: {count}" for tool, count in facts.tools_used.items()]
     permissions = [
         f"{tool}: {title} ({'allowed' if allowed else 'denied'})"
@@ -137,6 +145,19 @@ def render_seed(
         for question, verdict, note in facts.exam_results
     ]
     conversation = "\n".join(f"User: {t.user}\nAgent: {t.reply}" for t in turns) or "none"
+    if pending:
+        closing = (
+            f"## Said by the user during the switch\n{_bullets(pending)}\n\n"
+            "If something is missing, call search_transcript to look it up in the previous "
+            "session. Answer what the user said during the switch directly; do not restate "
+            "the situation first."
+        )
+    else:
+        closing = (
+            "If something is missing, call search_transcript to look it up in the previous "
+            "session. Now say, in one spoken sentence, what you understand the situation to be, "
+            "so the user can correct you. Do not start any work yet."
+        )
     return (
         f"You are continuing earlier work in {mode.label.lower()} mode. The previous session "
         "was closed; this is what Socra carries over.\n\n"
@@ -147,7 +168,5 @@ def render_seed(
         f"Decisions:\n{_bullets(summary.decisions)}\nOpen items:\n{_bullets(summary.open_items)}\n"
         f"User doubts:\n{_bullets(summary.user_doubts)}\n\n"
         f"## Last turns, verbatim\n{conversation}\n\n"
-        "If something is missing, call search_transcript to look it up in the previous "
-        "session. Now say, in one spoken sentence, what you understand the situation to be, "
-        "so the user can correct you. Do not start any work yet."
+        f"{closing}"
     )

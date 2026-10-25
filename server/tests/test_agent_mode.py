@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 
 from socra_server.adapters.transcript_store import TranscriptStore
@@ -16,7 +17,7 @@ from socra_server.domain.agent import (
     ToolActivity,
 )
 from socra_server.domain.handoff import SUMMARY_PROMPT
-from tests.test_agent_app import FakeChannel, FakeLoader, _finish_turn
+from tests.test_agent_app import FakeChannel, FakeLoader, _finish_turn, _wav
 
 VALID = json.dumps({
     "goal": "Add login", "decisions": ["Use Auth0"], "open_items": ["Tests"], "user_doubts": [],
@@ -421,20 +422,65 @@ async def test_the_tool_refuses_the_current_or_an_unknown_mode(tmp_path):
     assert not channel.of_type("mode_switch_request")
 
 
-async def test_turns_wait_while_a_switch_is_running(tmp_path):
+async def test_words_typed_during_a_switch_are_answered_by_the_new_session(tmp_path):
     gate = asyncio.Event()
     old = Convo([[ReplyDone(VALID)]], gate=gate)
-    backend = ModeBackend([old, Convo([[ReplyDone("ok")]])])
+    new = Convo([[ReplyDone("Let's fix the login.")]])
+    backend = ModeBackend([old, new])
     app, channel, _ = _make(backend, tmp_path)
     await _started(app, tmp_path)
 
     await app.handle_switch_mode("exam")
     await asyncio.sleep(0)
-    await app.handle_turn_text("hi")
-
-    assert channel.of_type("notice")[-1]["text"] == "Wait for the mode switch to finish."
+    await app.handle_turn_text("fix the login")
     gate.set()
     await asyncio.wait_for(app.switch_task, timeout=3)
+    await _finish_turn(app, channel)
+
+    assert not channel.of_type("notice")
+    assert len(new.turns) == 1
+    assert "fix the login" in new.turns[0]
+    assert app._transcript.search("fix the login")
+
+
+async def test_words_spoken_during_a_switch_are_transcribed_and_carried_over(tmp_path):
+    gate = asyncio.Event()
+    old = Convo([[ReplyDone(VALID)]], gate=gate)
+    new = Convo([[ReplyDone("ok")]])
+    backend = ModeBackend([old, new])
+    app, channel, loader = _make(backend, tmp_path)
+    loader.stt.text = "start with the tests"
+    await _started(app, tmp_path)
+
+    await app.handle_switch_mode("exam")
+    await asyncio.sleep(0)
+    await app.handle_turn_audio(base64.b64encode(_wav()).decode())
+    gate.set()
+    await asyncio.wait_for(app.switch_task, timeout=3)
+    await _finish_turn(app, channel)
+
+    assert channel.of_type("transcript")[-1] == {
+        "type": "transcript", "text": "start with the tests", "final": True,
+    }
+    assert "start with the tests" in new.turns[0]
+
+
+async def test_words_said_during_a_failed_switch_go_to_the_old_session(tmp_path):
+    gate = asyncio.Event()
+    old = Convo([[ReplyDone("no json")]] * 3 + [[ReplyDone("ok")]], gate=gate)
+    backend = ModeBackend([old, Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+
+    await app.handle_switch_mode("exam")
+    await asyncio.sleep(0)
+    await app.handle_turn_text("fix the login")
+    gate.set()
+    await asyncio.wait_for(app.switch_task, timeout=3)
+    await _finish_turn(app, channel)
+
+    assert _texts(channel, "mode_switch_failed")
+    assert old.turns[-1] == "fix the login"
 
 
 async def test_interrupt_cancels_a_running_switch(tmp_path):

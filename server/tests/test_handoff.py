@@ -109,3 +109,13 @@ def test_seed_carries_facts_summary_turns_and_the_restatement_request():
                      "Add login", "Use Auth0", "Write tests", "Is the token stored?",
                      "hi", "hello", "search_transcript", "one spoken sentence"):
         assert expected in seed
+
+
+def test_seed_asks_to_answer_what_the_user_said_during_the_switch():
+    summary = HandoffSummary("Add login", [], [], [])
+
+    seed = render_seed(get_mode("agent"), SessionFacts(), summary, [], ["fix the login first"])
+
+    assert "fix the login first" in seed
+    assert "Answer what the user said during the switch directly" in seed
+    assert "one spoken sentence" not in seed
