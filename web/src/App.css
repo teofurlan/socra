@@ -63,6 +63,13 @@
   padding: 24px clamp(14px, 3vw, 32px) 14px;
 }
 
+/* Pending permission and mode-switch cards sit between the conversation and the composer. */
+.decision-dock {
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 10px clamp(14px, 3vw, 32px) 0;
+}
+
 /* Composer: floats centred above the bottom edge on wide screens, about half to two thirds
    of the conversation; on tablets and phones it keeps one even gap to the three edges. */
 .composer-dock {
@@ -84,6 +91,7 @@
 .agent-context-row {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -102,6 +110,12 @@
 }
 .agent-folder-control {
   min-height: 36px;
+}
+.agent-mode-control {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
 }
 .agent-folder-button {
   min-width: 32px;

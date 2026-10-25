@@ -21,7 +21,7 @@ Speaking and listening replace typing for a coding agent, on the user's own mach
 ## Operating Context
 
 - Exam mode (`/`): Claude Code runs an oral exam about a project through Socra's MCP tools. It speaks each question, can show display-only code with it, listens to the spoken answer, and gives spoken feedback.
-- Agent mode (`?mode=agent`): a voice-driven Claude Code session inside a folder the user picks. Replies stream into a timeline, tool use is summarised, and permission requests appear on the page with Allow/Deny. The user can also type a turn.
+- Agent mode (`?mode=agent`): a voice-driven Claude Code session inside a folder the user picks. Replies stream into a timeline, tool use is summarised, and permission requests appear on the page with Allow/Deny. The user can also type a turn. The session can switch between agent, mentor and exam modes from the prompt bar or by voice (confirmed on screen); each switch starts a new session seeded with a handoff of what happened.
 - Opened from a desktop shortcut or by the MCP server in a local browser window, usually beside the editor.
 
 ## Capabilities and Constraints

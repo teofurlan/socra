@@ -161,7 +161,23 @@ async def _handle_agent(ws: ServerConnection) -> None:
                     if backend is None or model is None or cwd is None:
                         logger.warning("Malformed start_agent (expected backend, model, cwd)")
                         continue
-                    await agent.handle_start(backend, model, cwd)
+                    mode = _agent_text(msg, "mode")
+                    if mode is None:
+                        await agent.handle_start(backend, model, cwd)
+                    else:
+                        await agent.handle_start(backend, model, cwd, mode=mode)
+                elif msg_type == "switch_mode":
+                    mode = _agent_text(msg, "mode")
+                    if mode is None:
+                        logger.warning("Malformed switch_mode (expected mode)")
+                        continue
+                    spawn(agent.handle_switch_mode(mode), msg_type)
+                elif msg_type == "mode_switch_response":
+                    mode = _agent_text(msg, "mode")
+                    if mode is None:
+                        logger.warning("Malformed mode_switch_response (expected mode)")
+                        continue
+                    await agent.handle_mode_switch_response(mode, msg.get("allow"))
                 elif msg_type == "turn_text":
                     text = _agent_text(msg, "text")
                     if text is None:

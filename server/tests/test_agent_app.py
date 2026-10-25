@@ -102,10 +102,13 @@ class FakeBackend:
     def __init__(self, script=None, fail_open: Exception | None = None) -> None:
         self.id = "fake"
         self.label = "Fake"
+        self.supports_modes = True
         self.script = script if script is not None else [ReplyDone("Done.")]
         self.fail_open = fail_open
         self.opened: list[tuple[str, Path]] = []
         self.conversations: list[ScriptedConversation] = []
+        self.modes: list = []
+        self.toolboxes: list = []
 
     def models(self) -> list[ModelOption]:
         return [ModelOption("small", "Small"), ModelOption("large", "Large")]
@@ -113,10 +116,12 @@ class FakeBackend:
     async def check(self) -> BackendStatus:
         return BackendStatus("not_configured", "Log in first")
 
-    async def open(self, model, cwd, decide_permission):
+    async def open(self, model, cwd, decide_permission, *, mode=None, toolbox=None):
         if self.fail_open is not None:
             raise self.fail_open
         self.opened.append((model, cwd))
+        self.modes.append(mode)
+        self.toolboxes.append(toolbox)
         conversation = ScriptedConversation(self.script, decide_permission)
         self.conversations.append(conversation)
         return conversation
@@ -159,6 +164,7 @@ async def test_hello_lists_backends_with_status_and_default_selection():
         "label": "Fake",
         "models": [{"id": "small", "label": "Small"}, {"id": "large", "label": "Large"}],
         "status": {"state": "not_configured", "message": "Log in first"},
+        "supports_modes": True,
     }]
     assert message["default"] == {"backend": "fake", "model": "small"}
     assert message["session"] is None
@@ -171,7 +177,7 @@ async def test_hello_reports_the_running_session_so_a_reconnected_page_can_resyn
     await app.handle_hello()
 
     assert channel.of_type("agent_backends")[-1]["session"] == {
-        "backend": "fake", "model": "large", "cwd": str(tmp_path),
+        "backend": "fake", "model": "large", "cwd": str(tmp_path), "mode": "agent",
     }
 
 
@@ -204,6 +210,7 @@ async def test_start_opens_the_selected_model_in_the_folder(tmp_path):
     assert backend.opened == [("large", tmp_path)]
     assert channel.of_type("agent_started") == [{
         "type": "agent_started", "backend": "fake", "model": "large", "cwd": str(tmp_path),
+        "mode": "agent",
     }]
     assert channel.sent[-1] == {"type": "state", "state": "listening"}
 
@@ -214,10 +221,10 @@ async def test_start_announces_before_open_and_delivers_queued_text_once(tmp_pat
     backend = FakeBackend()
     app, channel, _, _ = _app(backend)
 
-    async def slow_open(model, cwd, decide):
+    async def slow_open(model, cwd, decide, **kw):
         entered.set()
         await release.wait()
-        return await FakeBackend.open(backend, model, cwd, decide)
+        return await FakeBackend.open(backend, model, cwd, decide, **kw)
 
     backend.open = slow_open
     await asyncio.wait_for(app.handle_start("fake", "small", str(tmp_path)), timeout=0.1)
@@ -245,10 +252,10 @@ async def test_second_turn_while_start_and_one_turn_are_pending_is_refused(tmp_p
     backend = FakeBackend()
     app, channel, _, _ = _app(backend)
 
-    async def slow_open(model, cwd, decide):
+    async def slow_open(model, cwd, decide, **kw):
         entered.set()
         await release.wait()
-        return await FakeBackend.open(backend, model, cwd, decide)
+        return await FakeBackend.open(backend, model, cwd, decide, **kw)
 
     backend.open = slow_open
     await app.handle_start("fake", "small", str(tmp_path))
@@ -272,10 +279,10 @@ async def test_audio_turn_can_be_transcribed_and_queued_during_startup(tmp_path)
     backend = FakeBackend()
     app, channel, _, _ = _app(backend, heard="list files")
 
-    async def slow_open(model, cwd, decide):
+    async def slow_open(model, cwd, decide, **kw):
         entered.set()
         await release.wait()
-        return await FakeBackend.open(backend, model, cwd, decide)
+        return await FakeBackend.open(backend, model, cwd, decide, **kw)
 
     backend.open = slow_open
     await app.handle_start("fake", "small", str(tmp_path))
@@ -300,13 +307,13 @@ async def test_interrupt_cancels_pending_start_and_stale_open_is_closed(tmp_path
     backend = FakeBackend()
     app, channel, _, _ = _app(backend)
 
-    async def slow_open(model, cwd, decide):
+    async def slow_open(model, cwd, decide, **kw):
         entered.set()
         try:
             await release.wait()
         except asyncio.CancelledError:
             await release.wait()  # emulate a provider that suppresses cancellation
-        return await FakeBackend.open(backend, model, cwd, decide)
+        return await FakeBackend.open(backend, model, cwd, decide, **kw)
 
     backend.open = slow_open
     await app.handle_start("fake", "small", str(tmp_path))
@@ -330,7 +337,7 @@ async def test_interrupt_pending_start_resyncs_session_before_retry(tmp_path):
     app, channel, _, _ = _app(backend)
     open_count = 0
 
-    async def open_with_stale_completion(model, cwd, decide):
+    async def open_with_stale_completion(model, cwd, decide, **kw):
         nonlocal open_count
         open_count += 1
         if open_count == 1:
@@ -339,7 +346,7 @@ async def test_interrupt_pending_start_resyncs_session_before_retry(tmp_path):
                 await release.wait()
             except asyncio.CancelledError:
                 await release.wait()
-        return await FakeBackend.open(backend, model, cwd, decide)
+        return await FakeBackend.open(backend, model, cwd, decide, **kw)
 
     backend.open = open_with_stale_completion
     await app.handle_start("fake", "small", str(tmp_path))
@@ -372,7 +379,7 @@ async def test_failed_pending_start_resyncs_session_and_discards_server_queue(tm
     backend = FakeBackend()
     app, channel, _, _ = _app(backend)
 
-    async def failed_open(model, cwd, decide):
+    async def failed_open(model, cwd, decide, **kw):
         entered.set()
         await release.wait()
         raise RuntimeError("CLI missing")
@@ -517,7 +524,7 @@ async def test_second_turn_while_one_runs_is_refused(tmp_path):
     backend = FakeBackend()
     app, channel, _, _ = _app(backend)
 
-    async def open_slow(model, cwd, decide):
+    async def open_slow(model, cwd, decide, **kw):
         conversation = Slow([], decide)
         backend.conversations.append(conversation)
         return conversation
@@ -607,7 +614,7 @@ async def test_interrupt_reaches_the_running_conversation(tmp_path):
     backend = FakeBackend()
     app, channel, _, _ = _app(backend)
 
-    async def open_slow(model, cwd, decide):
+    async def open_slow(model, cwd, decide, **kw):
         conversation = Slow([], decide)
         backend.conversations.append(conversation)
         return conversation

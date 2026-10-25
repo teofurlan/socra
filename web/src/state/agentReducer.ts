@@ -1,4 +1,4 @@
-import type { AgentAction, AgentState, TimelineEntry } from '@/types/agent'
+import { AGENT_MODES, type AgentAction, type AgentMode, type AgentState, type TimelineEntry } from '@/types/agent'
 
 export const initialAgentState: AgentState = {
   connectionStatus: 'connecting',
@@ -11,8 +11,12 @@ export const initialAgentState: AgentState = {
   timeline: [],
   permissions: [],
   notice: null,
+  switching: null,
+  modeRequest: null,
   nextEntryId: 1,
 }
+
+const modeLabel = (mode: AgentMode) => AGENT_MODES.find((m) => m.id === mode)?.label ?? mode
 
 function append(state: AgentState, entry: Omit<TimelineEntry, 'id'>): AgentState {
   return {
@@ -31,13 +35,22 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
         // The server no longer runs the conversation this page shows (it restarted).
         return state.session ? { ...next, session: null, permissions: [] } : next
       }
+      const mode = action.session.mode ?? 'agent'
       const same =
         state.session?.backend === action.session.backend &&
         state.session.model === action.session.model &&
         state.session.cwd === action.session.cwd
-      return same
-        ? next
-        : { ...next, session: action.session, folder: action.session.cwd, timeline: [], permissions: [] }
+      // The server dropped any switch request or handoff of the page that went away.
+      const settled = { ...next, switching: null, modeRequest: null }
+      return same && state.session
+        ? { ...settled, session: { ...state.session, mode } }
+        : {
+            ...settled,
+            session: { ...action.session, mode },
+            folder: action.session.cwd,
+            timeline: [],
+            permissions: [],
+          }
     }
     case 'agent_folder':
       // A cancelled dialog (null) keeps the folder already chosen.
@@ -49,12 +62,36 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'agent_started':
       return {
         ...state,
-        session: { backend: action.backend, model: action.model, cwd: action.cwd },
+        session: { backend: action.backend, model: action.model, cwd: action.cwd, mode: action.mode ?? 'agent' },
         folder: action.cwd,
+        switching: null,
+        modeRequest: null,
         // Keep the optimistic first turn; the server accepts startup before it drains that turn.
         timeline: state.timeline.at(-1)?.kind === 'user' ? state.timeline.slice(-1) : [],
         permissions: [],
       }
+    case 'agent_switching':
+      return { ...state, switching: action.mode }
+    case 'agent_mode_changed':
+      // Same conversation on screen: the timeline stays and only gains the marker.
+      return append(
+        {
+          ...state,
+          session: { backend: action.backend, model: action.model, cwd: action.cwd, mode: action.mode },
+          folder: action.cwd,
+          switching: null,
+          modeRequest: null,
+        },
+        { kind: 'handoff', text: `Context condensed · ${modeLabel(action.mode)}` },
+      )
+    case 'mode_switch_request':
+      return { ...state, modeRequest: { mode: action.mode, label: action.label } }
+    case 'mode_switch_answered':
+      return { ...state, modeRequest: null }
+    case 'mode_switch_closed':
+      return state.modeRequest?.mode === action.mode ? { ...state, modeRequest: null } : state
+    case 'mode_switch_failed':
+      return { ...state, switching: null }
     case 'state':
       return { ...state, protocolState: action.state }
     case 'transcript':
@@ -95,7 +132,7 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       // The server denies pending prompts when the page goes away; drop them here too.
       return action.status === 'connected'
         ? { ...state, connectionStatus: action.status }
-        : { ...state, connectionStatus: action.status, permissions: [] }
+        : { ...state, connectionStatus: action.status, permissions: [], modeRequest: null, switching: null }
     default:
       return state
   }

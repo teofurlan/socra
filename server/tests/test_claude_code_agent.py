@@ -142,7 +142,7 @@ async def test_send_streams_text_tools_and_final_reply(tmp_path):
     assert FakeClient.instances[-1].queries == ["what is in app.py?"]
     assert events == [
         TextDelta("Let me look."),
-        ToolActivity("Read", "src/app.py"),
+        ToolActivity("Read", "src/app.py", "src/app.py"),
         TextDelta("It defines ExamApp."),
         ReplyDone("It defines ExamApp."),
     ]
@@ -279,3 +279,86 @@ async def test_check_ready_has_no_message():
     status = await _backend(status_output=json.dumps({"loggedIn": True})).check()
 
     assert status == BackendStatus("ready")
+
+
+# --------------------------------------------------------------------------- #
+# Modes: instructions and Socra tools                                          #
+# --------------------------------------------------------------------------- #
+
+class _Toolbox:
+    def __init__(self):
+        self.calls = []
+
+    async def switch_mode(self, target):
+        self.calls.append(target)
+        return "asked the user"
+
+    async def record_exam_result(self, question, verdict, note):
+        return "recorded"
+
+    async def search_transcript(self, query, limit):
+        return []
+
+
+def test_claude_code_supports_modes():
+    assert _backend().supports_modes is True
+
+
+async def test_open_in_a_mode_appends_its_instructions_and_exposes_socra_tools(tmp_path):
+    from socra_server.domain.modes import get_mode
+
+    toolbox = _Toolbox()
+    await _backend().open("opus", tmp_path, _never_asked, mode=get_mode("exam"), toolbox=toolbox)
+
+    options = FakeClient.instances[-1].options
+    assert options.system_prompt == {
+        "type": "preset", "preset": "claude_code", "append": get_mode("exam").instructions,
+    }
+    assert set(options.mcp_servers) == {"socra"}
+    assert options.mcp_servers["socra"]["type"] == "sdk"
+    # Socra's own tools are pre-approved: they must not raise an Allow / Deny prompt.
+    assert sorted(options.allowed_tools) == [
+        "mcp__socra__record_exam_result",
+        "mcp__socra__search_transcript",
+        "mcp__socra__switch_mode",
+    ]
+
+
+async def test_socra_tool_calls_reach_the_toolbox_and_return_text(tmp_path):
+    from socra_server.adapters.claude_code_agent import sdk_tools
+    from socra_server.domain.modes import get_mode
+
+    toolbox = _Toolbox()
+    tools = {t.name: t for t in sdk_tools(get_mode("agent"), toolbox)}
+
+    result = await tools["switch_mode"].handler({"mode": "mentor"})
+
+    assert toolbox.calls == ["mentor"]
+    assert result == {"content": [{"type": "text", "text": "asked the user"}]}
+
+
+async def test_a_failing_socra_tool_reports_an_error_result(tmp_path):
+    from socra_server.adapters.claude_code_agent import sdk_tools
+    from socra_server.domain.modes import get_mode
+
+    class Broken(_Toolbox):
+        async def switch_mode(self, target):
+            raise RuntimeError("boom")
+
+    tools = {t.name: t for t in sdk_tools(get_mode("agent"), Broken())}
+
+    result = await tools["switch_mode"].handler({"mode": "exam"})
+
+    assert result["is_error"] is True
+    assert "boom" in result["content"][0]["text"]
+
+
+async def test_a_mode_without_a_toolbox_only_appends_instructions(tmp_path):
+    from socra_server.domain.modes import get_mode
+
+    await _backend().open("opus", tmp_path, _never_asked, mode=get_mode("mentor"))
+
+    options = FakeClient.instances[-1].options
+    assert options.system_prompt["append"] == get_mode("mentor").instructions
+    assert not options.mcp_servers
+    assert not options.allowed_tools

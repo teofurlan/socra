@@ -15,3 +15,12 @@ def summarize_tool_input(tool_input: dict[str, Any]) -> str:
             text = " ".join(value.split())
             return text if len(text) <= _SUMMARY_MAX else text[: _SUMMARY_MAX - 1] + "…"
     return ""
+
+
+def tool_path(tool_input: dict[str, Any]) -> str:
+    """The file a tool call acts on, or an empty string when it names none."""
+    for key in ("file_path", "notebook_path", "path"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""

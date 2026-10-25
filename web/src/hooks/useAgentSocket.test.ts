@@ -70,6 +70,33 @@ describe('useAgentSocket', () => {
     ])
   })
 
+  it('sends mode switches and answers to a voice-requested switch', () => {
+    const { result, ws } = connected()
+    act(() => ws.receive({ type: 'mode_switch_request', mode: 'exam', label: 'Exam' }))
+    expect(result.current.state.modeRequest).toEqual({ mode: 'exam', label: 'Exam' })
+
+    act(() => {
+      result.current.switchMode('mentor')
+      result.current.answerModeSwitch('exam', true)
+    })
+
+    expect(ws.sent().slice(2)).toEqual([
+      { type: 'switch_mode', mode: 'mentor' },
+      { type: 'mode_switch_response', mode: 'exam', allow: true },
+    ])
+    expect(result.current.state.modeRequest).toBeNull()
+  })
+
+  it('starts a session in the chosen mode', () => {
+    const { result, ws } = connected()
+
+    act(() => result.current.start({ backend: 'claude-code', model: 'opus' }, 'C:\\work', 'exam'))
+
+    expect(ws.sent().at(-1)).toEqual({
+      type: 'start_agent', backend: 'claude-code', model: 'opus', cwd: 'C:\\work', mode: 'exam',
+    })
+  })
+
   it('shows typed turns in the timeline and marks folder picks and answered prompts', () => {
     const { result, ws } = connected()
     act(() => ws.receive({ type: 'permission_request', id: 'r1', tool: 'Bash', title: 'Run', detail: '' }))

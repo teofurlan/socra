@@ -29,7 +29,10 @@ class BackendRegistry:
             *(self._status(b) for b in self._backends.values())
         )
         return [
-            BackendInfo(id=b.id, label=b.label, models=b.models(), status=status)
+            BackendInfo(
+                id=b.id, label=b.label, models=b.models(), status=status,
+                supports_modes=b.supports_modes,
+            )
             for b, status in zip(self._backends.values(), statuses)
         ]
 

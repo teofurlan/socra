@@ -11,6 +11,7 @@ import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { AgentComposerControls } from '@/components/AgentComposerControls'
 import { AgentTimeline } from '@/components/AgentTimeline'
 import { PermissionPromptCard } from '@/components/PermissionPromptCard'
+import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -40,7 +41,7 @@ import {
 } from '@/lib/storage'
 import type { ShapeId, VisualizerId } from '@/components/visualizers'
 import type { ProtocolState, TurnMode } from '@/types/exam'
-import type { AgentSelection } from '@/types/agent'
+import type { AgentMode, AgentSelection } from '@/types/agent'
 
 const STATE_LABEL: Record<string, string> = {
   speaking: 'Agent speaking',
@@ -58,6 +59,8 @@ export const AgentApp: React.FC = () => {
 
   const [storedSelection, setStoredSelection] = useState<AgentSelection | null>(getStoredAgentSelection)
   const [startNotice, setStartNotice] = useState<string | null>(null)
+  // The mode the next session starts in; once a session runs, the selector switches instead.
+  const [startMode, setStartMode] = useState<AgentMode>('agent')
   const pendingStartRef = useRef<{ selection: AgentSelection; cwd: string } | null>(null)
   const folderPickerBaselineRef = useRef<{ cwd: string | null } | null>(null)
   const [mode, setMode] = useState<TurnMode>(() => getStoredTurnMode('auto'))
@@ -122,7 +125,8 @@ export const AgentApp: React.FC = () => {
     const pendingMatches = pending?.selection.backend === next.backend && pending.selection.model === next.model && folderKey(pending.cwd) === folderKey(cwd)
     if (!sessionMatches && !pendingMatches) {
       pendingStartRef.current = { selection: next, cwd }
-      socket.start(next, cwd)
+      const supportsModes = state.backends.find((backend) => backend.id === next.backend)?.supports_modes === true
+      socket.start(next, cwd, supportsModes && startMode !== 'agent' ? startMode : undefined)
     }
   }
 
@@ -190,6 +194,17 @@ export const AgentApp: React.FC = () => {
   const session = state.session
   const sessionBackend = state.backends.find((backend) => backend.id === session?.backend)
   const sessionModel = sessionBackend?.models.find((model) => model.id === session?.model)
+  // Before a session the selector picks the starting mode; during one it switches with a
+  // handoff. Either way only a backend that supports modes offers them.
+  const modeBackend = session ? sessionBackend : state.backends.find((backend) => backend.id === selection?.backend)
+  const modesSupported = modeBackend?.supports_modes === true
+  const modeControl = {
+    mode: session?.mode ?? (modesSupported ? startMode : 'agent'),
+    onChange: session ? socket.switchMode : setStartMode,
+    disabled: !modesSupported,
+    reason: modeBackend && !modesSupported ? 'Mode switching needs Claude Code' : undefined,
+    switching: state.switching,
+  } as const
   const lastEntry = state.timeline.at(-1)
   const setupError = lastEntry?.kind === 'error' ? lastEntry.text : null
   // The letter looks spell the latest reply, or the latest turn before any reply.
@@ -327,13 +342,18 @@ export const AgentApp: React.FC = () => {
               </div>
             )}
 
-            {/* A pending tool call stays answerable from either view. */}
-            <PermissionPromptCard prompts={state.permissions} onAnswer={socket.answerPermission} />
-
             <div className="flex w-full max-w-[80ch] flex-1 flex-col">
               <AgentTimeline entries={state.timeline} protocolState={state.protocolState} />
             </div>
           </div>
+
+          {/* Pending decisions stay in view while the conversation scrolls to its end. */}
+          {(state.permissions.length > 0 || state.modeRequest) && (
+            <div className="decision-dock flex shrink-0 flex-col items-center gap-3">
+              <PermissionPromptCard prompts={state.permissions} onAnswer={socket.answerPermission} />
+              <ModeSwitchCard request={state.modeRequest} onAnswer={socket.answerModeSwitch} />
+            </div>
+          )}
 
           <PromptLine
               label="Message the agent"
@@ -352,6 +372,7 @@ export const AgentApp: React.FC = () => {
                   pickingFolder={state.pickingFolder}
                   onPickFolder={handlePickFolder}
                   connected={connected}
+                  modeControl={modeControl}
                 />
               }
           />

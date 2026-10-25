@@ -28,6 +28,14 @@ const backends = {
       label: 'Claude Code',
       models: [{ id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }],
       status: { state: 'ready', message: '' },
+      supports_modes: true,
+    },
+    {
+      id: 'pi',
+      label: 'Pi',
+      models: [{ id: 'anthropic/sonnet', label: 'Sonnet' }],
+      status: { state: 'ready', message: '' },
+      supports_modes: false,
     },
   ],
   default: { backend: 'claude-code', model: 'sonnet' },
@@ -194,6 +202,22 @@ describe('AgentApp', () => {
     expect(screen.getByTestId('session-bar')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /agent and model/i })).toBeInTheDocument()
     expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'start_agent' }))
+  })
+
+  it('keeps pending decisions outside the scrolling conversation', () => {
+    const { ws } = openPage()
+    startSession(ws)
+    act(() => {
+      ws.receive({ type: 'permission_request', id: 'r1', tool: 'Bash', title: 'Run git status', detail: '' })
+      ws.receive({ type: 'mode_switch_request', mode: 'mentor', label: 'Mentor' })
+    })
+
+    const permission = screen.getByRole('button', { name: 'Allow' })
+    const modeSwitch = screen.getByRole('group', { name: 'Switch to Mentor mode?' })
+    for (const card of [permission, modeSwitch]) {
+      expect(card.closest('.decision-dock')).not.toBeNull()
+      expect(card.closest('.shell-scroll')).toBeNull()
+    }
   })
 
   it('starts before the first recorded voice turn when context is ready', () => {
@@ -374,5 +398,83 @@ describe('AgentApp', () => {
     act(() => ws.receive({ type: 'agent_error', message: 'Folder not found: C:\\gone' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('Folder not found: C:\\gone')
+  })
+
+  describe('project modes', () => {
+    it('offers the three modes next to the folder and model once a session runs', () => {
+      const { ws } = openPage()
+      startSession(ws)
+
+      expect(screen.getByRole('radiogroup', { name: /mode/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: 'Agent' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Exam' })).toBeEnabled()
+    })
+
+    it('picks the starting mode before a session runs and starts in it', async () => {
+      const user = userEvent.setup()
+      window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
+      const { ws } = openPage()
+
+      await user.click(screen.getByRole('radio', { name: 'Mentor' }))
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+      expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'switch_mode' }))
+
+      await user.type(screen.getByLabelText('Message the agent'), 'explain the server{Enter}')
+      expect(ws.sent()).toContainEqual(
+        { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
+      )
+    })
+
+    it('keeps the selector disabled before a session when the chosen agent has no modes', () => {
+      window.localStorage.setItem(STORAGE_KEY_AGENT_SELECTION, JSON.stringify({ backend: 'pi', model: 'anthropic/sonnet' }))
+      openPage()
+
+      expect(screen.getByRole('radio', { name: 'Exam' })).toBeDisabled()
+      expect(screen.getByText('Mode switching needs Claude Code')).toBeVisible()
+    })
+
+    it('switches from the selector and continues the timeline with a condensed-context marker', async () => {
+      const { ws } = openPage()
+      startSession(ws)
+      act(() => ws.receive({ type: 'agent_reply', text: 'Login added.' }))
+
+      await userEvent.setup().click(screen.getByRole('radio', { name: 'Exam' }))
+      expect(ws.sent().at(-1)).toEqual({ type: 'switch_mode', mode: 'exam' })
+      act(() => ws.receive({ type: 'agent_switching', mode: 'exam' }))
+      expect(screen.getByText('Switching to Exam…')).toBeVisible()
+      act(() => ws.receive({
+        type: 'agent_mode_changed', backend: 'claude-code', model: 'opus', cwd: 'C:\\work\\socra', mode: 'exam',
+      }))
+
+      expect(screen.getByRole('radio', { name: 'Exam' })).toBeChecked()
+      const items = screen.getAllByRole('listitem')
+      expect(items.map((item) => item.dataset.kind)).toEqual(['reply', 'handoff'])
+      expect(items[0]).toHaveTextContent('Login added.')
+      expect(items[1]).toHaveTextContent('Context condensed')
+    })
+
+    it('blocks mode switching on Pi and says why', () => {
+      const { ws } = openPage()
+      act(() => {
+        ws.receive({ type: 'agent_started', backend: 'pi', model: 'anthropic/sonnet', cwd: 'C:\\work\\socra', mode: 'agent' })
+        ws.receive({ type: 'state', state: 'listening' })
+      })
+
+      for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled()
+      expect(screen.getByText('Mode switching needs Claude Code')).toBeVisible()
+    })
+
+    it('asks for confirmation of a voice-requested switch and answers it', async () => {
+      const { ws } = openPage()
+      startSession(ws)
+
+      act(() => ws.receive({ type: 'mode_switch_request', mode: 'mentor', label: 'Mentor' }))
+      expect(screen.getByRole('group', { name: 'Switch to Mentor mode?' })).toBeInTheDocument()
+      expect(ws.sent().some((m) => (m as { type: string }).type === 'mode_switch_response')).toBe(false)
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Switch' }))
+
+      expect(ws.sent().at(-1)).toEqual({ type: 'mode_switch_response', mode: 'mentor', allow: true })
+      expect(screen.queryByRole('group', { name: /switch to/i })).toBeNull()
+    })
   })
 })

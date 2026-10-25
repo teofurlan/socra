@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { wasReplaced } from '@/lib/replacedPage'
 import { PINNED_ATTEMPTS, pinnedToServer, socketUrl } from '@/lib/socketUrl'
-import type { AgentClientMessage, AgentSelection, AgentServerMessage } from '@/types/agent'
+import type { AgentClientMessage, AgentMode, AgentSelection, AgentServerMessage } from '@/types/agent'
 import { EMPTY_VOICE_CATALOG, type VoiceCatalog } from '@/types/voice'
 import { agentReducer, initialAgentState } from '@/state/agentReducer'
 import { getStoredVoice, setStoredVoice } from '@/lib/storage'
@@ -40,8 +40,20 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     send({ type: 'pick_folder' })
   }, [send])
 
-  const start = useCallback((selection: AgentSelection, cwd: string) => {
-    send({ type: 'start_agent', backend: selection.backend, model: selection.model, cwd })
+  const start = useCallback((selection: AgentSelection, cwd: string, mode?: AgentMode) => {
+    send({
+      type: 'start_agent', backend: selection.backend, model: selection.model, cwd,
+      ...(mode ? { mode } : {}),
+    })
+  }, [send])
+
+  const switchMode = useCallback((mode: AgentMode) => {
+    send({ type: 'switch_mode', mode })
+  }, [send])
+
+  const answerModeSwitch = useCallback((mode: AgentMode, allow: boolean) => {
+    dispatch({ type: 'mode_switch_answered' })
+    send({ type: 'mode_switch_response', mode, allow })
   }, [send])
 
   const sendText = useCallback((text: string) => {
@@ -180,6 +192,8 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     getOutputVolume,
     pickFolder,
     start,
+    switchMode,
+    answerModeSwitch,
     sendText,
     sendAudio,
     answerPermission,

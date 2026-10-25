@@ -428,6 +428,8 @@ class PiConversation:
 class PiBackend:
     id = "pi"
     label = "Pi"
+    # Mode switching needs Socra tools and instructions Pi does not get yet.
+    supports_modes = False
 
     def __init__(
         self,

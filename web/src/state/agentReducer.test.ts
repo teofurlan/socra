@@ -37,7 +37,7 @@ describe('agentReducer', () => {
     const startedState = agentReducer(withTurn, started)
 
     expect(startedState.timeline).toEqual(withTurn.timeline)
-    expect(startedState.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work' })
+    expect(startedState.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'agent' })
   })
 
   it('stores the backends and the server default', () => {
@@ -67,7 +67,7 @@ describe('agentReducer', () => {
       { ...started, model: 'opus' },
     )
 
-    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'C:\\work' })
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'C:\\work', mode: 'agent' })
     expect(state.timeline).toEqual([])
     expect(state.permissions).toEqual([])
   })
@@ -162,14 +162,14 @@ describe('agentReducer', () => {
       { ...backends, session: { backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work' } },
     )
 
-    expect(state.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work' })
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'agent' })
     expect(state.timeline).toHaveLength(1)
   })
 
   it('a page opened while the server runs a session joins it', () => {
     const state = run({ ...backends, session: { backend: 'claude-code', model: 'opus', cwd: 'D:\\app' } })
 
-    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'D:\\app' })
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'D:\\app', mode: 'agent' })
     expect(state.folder).toBe('D:\\app')
   })
 
@@ -177,5 +177,93 @@ describe('agentReducer', () => {
     const unknown = { type: 'surprise' } as unknown as AgentAction
 
     expect(agentReducer(initialAgentState, unknown)).toBe(initialAgentState)
+  })
+})
+
+describe('agentReducer mode switching', () => {
+  const inExam = {
+    type: 'agent_mode_changed', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'exam',
+  } as const satisfies AgentAction
+
+  it('starts in agent mode with no switch or request pending', () => {
+    expect(initialAgentState.switching).toBeNull()
+    expect(initialAgentState.modeRequest).toBeNull()
+    expect(run(started).session?.mode).toBe('agent')
+  })
+
+  it('takes the mode a started session reports', () => {
+    expect(run({ ...started, mode: 'mentor' }).session?.mode).toBe('mentor')
+  })
+
+  it('shows the target mode while the handoff runs', () => {
+    expect(run(started, { type: 'agent_switching', mode: 'exam' }).switching).toBe('exam')
+  })
+
+  it('keeps the timeline across a switch and marks where the context was condensed', () => {
+    const state = run(
+      started,
+      { type: 'user_text', text: 'add login' },
+      { type: 'agent_reply', text: 'Done.' },
+      { type: 'agent_switching', mode: 'exam' },
+      inExam,
+    )
+
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'exam' })
+    expect(state.switching).toBeNull()
+    expect(state.timeline.map((entry) => entry.kind)).toEqual(['user', 'reply', 'handoff'])
+    expect(state.timeline.at(-1)?.text).toBe('Context condensed · Exam')
+  })
+
+  it('keeps the page prompts that survive a switch and clears the pending request', () => {
+    const state = run(
+      started,
+      { type: 'mode_switch_request', mode: 'exam', label: 'Exam' },
+      { type: 'agent_switching', mode: 'exam' },
+      inExam,
+    )
+
+    expect(state.modeRequest).toBeNull()
+  })
+
+  it('holds a voice-requested switch until it is answered or withdrawn', () => {
+    const asked = run(started, { type: 'mode_switch_request', mode: 'exam', label: 'Exam' })
+    expect(asked.modeRequest).toEqual({ mode: 'exam', label: 'Exam' })
+
+    expect(agentReducer(asked, { type: 'mode_switch_answered' }).modeRequest).toBeNull()
+    expect(agentReducer(asked, { type: 'mode_switch_closed', mode: 'exam' }).modeRequest).toBeNull()
+    // A close for another mode does not clear the live request.
+    expect(agentReducer(asked, { type: 'mode_switch_closed', mode: 'mentor' }).modeRequest).not.toBeNull()
+  })
+
+  it('a failed switch ends the switching state and stays in the old mode', () => {
+    const state = run(started, { type: 'agent_switching', mode: 'exam' }, { type: 'mode_switch_failed', mode: 'agent' })
+
+    expect(state.switching).toBeNull()
+    expect(state.session?.mode).toBe('agent')
+  })
+
+  it('a reconnect to the same session adopts the server mode and drops pending switch state', () => {
+    const state = run(
+      started,
+      { type: 'agent_reply', text: 'kept' },
+      { type: 'mode_switch_request', mode: 'exam', label: 'Exam' },
+      { ...backends, session: { backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'mentor' } },
+    )
+
+    expect(state.session?.mode).toBe('mentor')
+    expect(state.modeRequest).toBeNull()
+    expect(state.timeline).toHaveLength(1)
+  })
+
+  it('losing the connection drops a pending request and a running switch', () => {
+    const state = run(
+      started,
+      { type: 'mode_switch_request', mode: 'exam', label: 'Exam' },
+      { type: 'agent_switching', mode: 'exam' },
+      { type: 'set_status', status: 'reconnecting' },
+    )
+
+    expect(state.modeRequest).toBeNull()
+    expect(state.switching).toBeNull()
   })
 })

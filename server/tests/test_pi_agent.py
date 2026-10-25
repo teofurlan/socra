@@ -188,6 +188,8 @@ def test_backend_satisfies_port_and_has_no_models_before_any_check(tmp_path):
     assert isinstance(backend, AgentBackend)
     assert backend.id == "pi"
     assert backend.label == "Pi"
+    # Mode switching needs Socra tools and instructions Pi does not get yet.
+    assert backend.supports_modes is False
     # No model is offered from Pi's settings: its default provider is never preferred.
     assert backend.models() == []
 
