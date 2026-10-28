@@ -177,6 +177,72 @@ describe('useAgentSocket', () => {
     expect(ws.sent()).toContainEqual({ type: 'playback_done' })
   })
 
+  describe('scenes', () => {
+    const sceneClip = (index: number, seq: number) => ({
+      type: 'tts_audio',
+      format: 'wav',
+      data: 'UklGRg==',
+      step: { index, total: 2, id: `s${index}`, say: `Step ${index}.`, state: { code: { visible: true, lines: [index, index] } }, seq },
+    })
+
+    const withScene = () => {
+      const hook = connected()
+      act(() => hook.ws.receive({
+        type: 'walkthrough', title: 'Two', objects: [{ id: 'code', primitive: 'code', params: { code: 'a\nb' }, hidden: false }], total: 2,
+      }))
+      return hook
+    }
+
+    it('shows a step once its audio plays and reports the clip by its sequence number', async () => {
+      const { result, ws } = withScene()
+      await act(async () => {
+        ws.receive(sceneClip(1, 7))
+        await vi.runAllTimersAsync()
+      })
+      expect(result.current.state.walkthrough?.step?.id).toBe('s1')
+
+      act(() => FakeAudioContext.latest().sources[0].onended?.())
+      expect(ws.sent()).toContainEqual({ type: 'playback_done', seq: 7 })
+    })
+
+    it('a new step silences the clip still playing', async () => {
+      const { ws } = withScene()
+      await act(async () => {
+        ws.receive(sceneClip(1, 7))
+        await vi.runAllTimersAsync()
+      })
+      const first = FakeAudioContext.latest().sources[0]
+      await act(async () => {
+        ws.receive(sceneClip(2, 8))
+        await vi.runAllTimersAsync()
+      })
+      expect(first.stop).toHaveBeenCalled()
+    })
+
+    it('sends the controls and silences the clip at once', async () => {
+      const { result, ws } = withScene()
+      await act(async () => {
+        ws.receive(sceneClip(1, 7))
+        await vi.runAllTimersAsync()
+      })
+      const source = FakeAudioContext.latest().sources[0]
+      act(() => result.current.controlWalkthrough('pause'))
+      expect(ws.sent()).toContainEqual({ type: 'walkthrough_control', action: 'pause' })
+      expect(source.stop).toHaveBeenCalled()
+    })
+
+    it('an ended scene silences what is still playing', async () => {
+      const { ws } = withScene()
+      await act(async () => {
+        ws.receive(sceneClip(1, 7))
+        await vi.runAllTimersAsync()
+      })
+      const source = FakeAudioContext.latest().sources[0]
+      act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'stopped' }))
+      expect(source.stop).toHaveBeenCalled()
+    })
+  })
+
   it('clears a notice after a few seconds', () => {
     const { result, ws } = connected()
 

@@ -43,15 +43,19 @@ export interface WalkthroughData {
   reason: string | null
 }
 
+/** The messages that drive a narrated scene, on the exam and the agent page alike. */
+export type WalkthroughMessage =
+  | { type: 'walkthrough'; title: string; objects: SceneObject[]; total: number }
+  | ({ type: 'walkthrough_step' } & WalkthroughStepInfo)
+  | { type: 'walkthrough_status'; status: WalkthroughStatus; reason?: string }
+
 // Server -> Client messages
 export type ServerMessage =
   | { type: 'state'; state: ProtocolState }
   | { type: 'question'; index: number; total: number; text: string; code?: string }
   | { type: 'finished' }
   | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number } }
-  | { type: 'walkthrough'; title: string; objects: SceneObject[]; total: number }
-  | ({ type: 'walkthrough_step' } & WalkthroughStepInfo)
-  | { type: 'walkthrough_status'; status: WalkthroughStatus; reason?: string }
+  | WalkthroughMessage
   | { type: 'transcript'; text: string; final: boolean }
   | { type: 'notice'; text: string }
   | VoicesMessage

@@ -1,4 +1,5 @@
 import type { ExamState, ProtocolState, ServerMessage, TurnMode, ConnectionStatus } from '@/types/exam'
+import { reduceWalkthrough } from '@/state/walkthroughReducer'
 
 export type ExamAction =
   | ServerMessage
@@ -81,30 +82,11 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
       }
 
     case 'walkthrough':
-      return {
-        ...state,
-        walkthrough: {
-          title: action.title,
-          objects: action.objects,
-          total: action.total,
-          step: null,
-          status: 'playing',
-          reason: null,
-        },
-      }
-
-    case 'walkthrough_step': {
-      if (!state.walkthrough) return state
-      const { index, total, id, say, state: sceneState } = action
-      return { ...state, walkthrough: { ...state.walkthrough, step: { index, total, id, say, state: sceneState } } }
+    case 'walkthrough_step':
+    case 'walkthrough_status': {
+      const walkthrough = reduceWalkthrough(state.walkthrough, action)
+      return walkthrough === state.walkthrough ? state : { ...state, walkthrough }
     }
-
-    case 'walkthrough_status':
-      if (!state.walkthrough) return state
-      return {
-        ...state,
-        walkthrough: { ...state.walkthrough, status: action.status, reason: action.reason ?? null },
-      }
 
     case 'tts_audio':
       return state

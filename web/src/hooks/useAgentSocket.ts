@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { wasReplaced } from '@/lib/replacedPage'
 import { PINNED_ATTEMPTS, pinnedToServer, socketUrl } from '@/lib/socketUrl'
 import type { AgentClientMessage, AgentMode, AgentSelection, AgentServerMessage } from '@/types/agent'
+import type { WalkthroughAction } from '@/types/exam'
 import { EMPTY_VOICE_CATALOG, type VoiceCatalog } from '@/types/voice'
 import { agentReducer, initialAgentState } from '@/state/agentReducer'
 import { getStoredVoice, setStoredVoice } from '@/lib/storage'
@@ -75,6 +76,12 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     stopAudio()
   }, [send, stopAudio])
 
+  /** Pause, repeat, go back, skip or stop a scene; the clip in the air is silenced at once. */
+  const controlWalkthrough = useCallback((action: WalkthroughAction) => {
+    send({ type: 'walkthrough_control', action })
+    stopAudio()
+  }, [send, stopAudio])
+
   const setVoice = useCallback(
     (id: string) => {
       setStoredVoice(id)
@@ -114,11 +121,18 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
         return
       }
       if (message.type === 'tts_audio') {
-        const done = () => send({ type: 'playback_done' })
-        if (message.format === 'wav') playAudio(message.data, done)
+        const step = message.step
+        const done = () => send(step ? { type: 'playback_done', seq: step.seq } : { type: 'playback_done' })
+        // A scene step replaces whatever clip is still playing; its picture changes when its sound begins.
+        if (step) stopAudio()
+        const onStart = step
+          ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
+          : undefined
+        if (message.format === 'wav') playAudio(message.data, done, onStart)
         else done()
         return
       }
+      if (message.type === 'walkthrough_status' && message.status !== 'playing') stopAudio()
       if (message.type === 'state' && message.state === 'listening') {
         setListeningEpoch((epoch) => epoch + 1)
       }
@@ -183,7 +197,7 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
       }
       socketRef.current = null
     }
-  }, [url, send, playAudio])
+  }, [url, send, playAudio, stopAudio])
 
   return {
     state,
@@ -198,6 +212,7 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     sendAudio,
     answerPermission,
     interrupt,
+    controlWalkthrough,
     voices,
     setVoice,
   }

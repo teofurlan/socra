@@ -10,7 +10,7 @@ import { SettingsMenu } from '@/components/SettingsMenu'
 import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
-import { visibleCodeViews } from '@/lib/scene'
+import { sceneKey, visibleCodeViews } from '@/lib/scene'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -71,11 +71,9 @@ export const App: React.FC = () => {
   const question = state.question
   const walkthrough = state.walkthrough
   const codeViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
-  const codeKey = walkthrough
-    ? codeViews.length ? `walkthrough:${walkthrough.title}:${walkthrough.objects.map((o) => o.id).join(',')}` : null
-    : question?.code !== undefined && !state.finished
-      ? `${question.index}:${question.code}`
-      : null
+  const questionCodeKey = question?.code !== undefined && !state.finished ? `${question.index}:${question.code}` : null
+  const sceneCodeKey = walkthrough && codeViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
+  const codeKey = walkthrough ? sceneCodeKey : questionCodeKey
   const showCode = codeKey !== null && codeKey !== closedCode
   const walkthroughRunning = !!walkthrough && walkthrough.status !== 'ended'
   const canAnswer = (walkthroughRunning || (!!question && !state.finished)) && state.connectionStatus !== 'disconnected'

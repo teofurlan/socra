@@ -8,6 +8,11 @@ export interface CodeView {
   focus: [number, number] | null
 }
 
+/** Identifies a scene's code for the close button: another scene, or other code, opens the pane again. */
+export function sceneKey(title: string, objects: SceneObject[]): string {
+  return `scene:${title}:${JSON.stringify(objects)}`
+}
+
 function isRange(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === 'number')
 }

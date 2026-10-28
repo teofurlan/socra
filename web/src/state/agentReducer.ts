@@ -1,4 +1,5 @@
 import { AGENT_MODES, type AgentAction, type AgentMode, type AgentState, type TimelineEntry } from '@/types/agent'
+import { reduceWalkthrough } from '@/state/walkthroughReducer'
 
 export const initialAgentState: AgentState = {
   connectionStatus: 'connecting',
@@ -13,10 +14,17 @@ export const initialAgentState: AgentState = {
   notice: null,
   switching: null,
   modeRequest: null,
+  walkthrough: null,
   nextEntryId: 1,
 }
 
 const modeLabel = (mode: AgentMode) => AGENT_MODES.find((m) => m.id === mode)?.label ?? mode
+
+/** A new user turn after a scene ended clears it; while it plays, what the user says steers it. */
+function userTurn(state: AgentState, text: string): AgentState {
+  const next = append(state, { kind: 'user', text })
+  return state.walkthrough?.status === 'ended' ? { ...next, walkthrough: null } : next
+}
 
 function append(state: AgentState, entry: Omit<TimelineEntry, 'id'>): AgentState {
   return {
@@ -95,9 +103,15 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'state':
       return { ...state, protocolState: action.state }
     case 'transcript':
-      return action.final ? append(state, { kind: 'user', text: action.text }) : state
+      return action.final ? userTurn(state, action.text) : state
     case 'user_text':
-      return append(state, { kind: 'user', text: action.text })
+      return userTurn(state, action.text)
+    case 'walkthrough':
+    case 'walkthrough_step':
+    case 'walkthrough_status': {
+      const walkthrough = reduceWalkthrough(state.walkthrough, action)
+      return walkthrough === state.walkthrough ? state : { ...state, walkthrough }
+    }
     case 'agent_text':
       return append(state, { kind: 'text', text: action.text })
     case 'agent_tool':
