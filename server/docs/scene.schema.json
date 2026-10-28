@@ -8,7 +8,7 @@
   "required": ["version", "title", "steps"],
   "properties": {
     "version": { "const": 1 },
-    "title": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "pattern": "\\S" },
     "objects": {
       "type": "array",
       "maxItems": 16,
@@ -40,7 +40,7 @@
         "required": ["id", "say"],
         "properties": {
           "id": { "$ref": "#/$defs/id" },
-          "say": { "type": "string", "minLength": 1, "description": "Spoken on its own; synthesized per step." }
+          "say": { "type": "string", "pattern": "\\S", "description": "Spoken on its own; synthesized per step." }
         }
       }
     },

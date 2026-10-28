@@ -32,7 +32,7 @@ def create_mcp() -> FastMCP:
         "socra-server",
         instructions=(
             "Local oral exam tools. Start with open_page(). Use say() for spoken feedback, "
-            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, and call get_answer() "
+            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, present() to narrate a scene whose visuals change step by step, and call get_answer() "
             "repeatedly while it returns listening. Answers are verbatim transcripts, "
             "not cleaned or rewritten. End with finish()."
         ),
@@ -95,6 +95,26 @@ def create_mcp() -> FastMCP:
         no_client with a URL.
         """
         return await get_app().explain(code, language, steps)
+
+    @mcp.tool()
+    async def present(scene: dict) -> dict:
+        """Use to explain something out loud while the page changes what it shows, step by step.
+
+        scene is {"version": 1, "title", "objects", "steps", "cues"}:
+        objects [{"id", "primitive", "params", "hidden"?}] are what can be shown
+        (primitive "code": params {"code", "language"?});
+        steps [{"id", "say"}] are spoken in order, each on its own;
+        cues [{"at": step id, "do": [{"object": id, "action", "params"?}]}] change
+        the picture when that step starts. Every primitive supports show and hide;
+        code also supports focus {"lines": [start, end]} (1-based, inclusive) and
+        clear. A step without a cue keeps the previous picture. Limits: 60 steps,
+        16 objects, one cue per step, 16 actions per cue. Blocks until the scene
+        ends; the user may pause, repeat, go back, skip or stop meanwhile.
+        Returns completed (steps), stopped (step, total), invalid (errors: each
+        with path and message; nothing was shown, fix them and call again), busy,
+        page_disconnected, error (message), or no_client with a URL.
+        """
+        return await get_app().present(scene)
 
     @mcp.tool()
     async def get_answer(wait_s: float = 20) -> dict:

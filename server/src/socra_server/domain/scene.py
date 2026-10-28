@@ -179,7 +179,16 @@ class Scene:
 
     def state_at(self, index: int) -> dict[str, State]:
         """Every object's state while step ``index`` (0-based) is speaking."""
+        if not 0 <= index < len(self.states):
+            raise IndexError(f"step index {index} is outside the scene's {len(self.states)} steps")
         return copy.deepcopy(self.states[index])
+
+    def objects_for_page(self) -> list[dict]:
+        """What the page needs to draw each object; its state comes with every step."""
+        return [
+            {"id": o.id, "primitive": o.primitive, "params": copy.deepcopy(o.params), "hidden": o.hidden}
+            for o in self.objects
+        ]
 
 
 def _resolve(objects: tuple[SceneObject, ...], steps: tuple[SceneStep, ...], cues: tuple[Cue, ...]) -> tuple[dict[str, State], ...]:

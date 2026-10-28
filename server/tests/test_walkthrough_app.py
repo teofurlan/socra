@@ -52,8 +52,8 @@ async def test_explain_plays_every_step_and_returns_completed(app, channel):
     page = connect_page(app, channel)
     result = await app.explain(CODE, "python", STEPS)
     assert result == {"status": "completed", "steps": 2}
-    assert [m["step"]["lines"] for m in page.of("tts_audio")] == [[1, 2], [3, 3]]
-    assert page.of("walkthrough")[0]["code"] == CODE
+    assert [m["step"]["state"]["code"]["lines"] for m in page.of("tts_audio")] == [[1, 2], [3, 3]]
+    assert page.of("walkthrough")[0]["objects"][0]["params"]["code"] == CODE
 
 
 @pytest.mark.asyncio
@@ -238,3 +238,73 @@ async def test_a_reconnecting_page_gets_the_current_step_and_leaving_ends_the_wa
             assert kinds[-3:] == ["walkthrough", "walkthrough_step", "walkthrough_status"]
     result = await asyncio.wait_for(task, 3)
     assert result["status"] == "page_disconnected"
+
+
+# ---------------------------------------------------------------------------
+# present(): any scene, same playback
+# ---------------------------------------------------------------------------
+
+SCENE = {
+    "version": 1,
+    "title": "Adding",
+    "objects": [{"id": "src", "primitive": "code", "params": {"code": CODE, "language": "python"}}],
+    "steps": [{"id": "names", "say": "Two names."}, {"id": "sum", "say": "Add them."}],
+    "cues": [
+        {"at": "names", "do": [{"object": "src", "action": "focus", "params": {"lines": [1, 2]}}]},
+        {"at": "sum", "do": [{"object": "src", "action": "focus", "params": {"lines": [3, 3]}}]},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_present_plays_a_scene_and_returns_completed(app, channel):
+    page = connect_page(app, channel)
+    result = await app.present(SCENE)
+    assert result == {"status": "completed", "steps": 2}
+    assert page.of("walkthrough")[0]["title"] == "Adding"
+    assert [m["step"]["id"] for m in page.of("tts_audio")] == ["names", "sum"]
+    assert [m["step"]["state"]["src"]["lines"] for m in page.of("tts_audio")] == [[1, 2], [3, 3]]
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_scene_is_reported_by_path_and_nothing_is_shown_or_spoken(app, channel):
+    page = connect_page(app, channel)
+    bad = json.loads(json.dumps(SCENE))
+    bad["cues"][1]["do"][0]["params"]["lines"] = [3, 40]
+    bad["steps"][0]["say"] = ""
+    result = await app.present(bad)
+    assert result["status"] == "invalid"
+    assert {e["path"] for e in result["errors"]} == {"steps[0].say", "cues[1].do[0].params.lines"}
+    assert page.messages == []
+    assert not app.walkthrough.active
+
+
+@pytest.mark.asyncio
+async def test_present_is_validated_before_the_page_is_checked(app):
+    assert (await app.present({"version": 2}))["status"] == "invalid"
+    result = await app.present(SCENE)
+    assert result["status"] == "no_client" and "url" in result
+
+
+@pytest.mark.asyncio
+async def test_present_while_a_scene_plays_is_busy(app, channel):
+    connect_page(app, channel, hold=True)
+    task = asyncio.create_task(app.present(SCENE))
+    await settle()
+    assert await app.present(SCENE) == {"status": "busy"}
+    await app.handle_walkthrough_control("stop")
+    assert (await asyncio.wait_for(task, 2))["status"] == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_present_is_an_mcp_tool_that_returns_the_result(app, channel):
+    connect_page(app, channel)
+    mcp_tools.wire_app(app)
+    mcp = mcp_tools.create_mcp()
+    tools = {t.name: t for t in await mcp.list_tools()}
+    assert "present" in tools
+    assert "scene" in tools["present"].inputSchema["properties"]
+
+    assert await call(mcp, "present", {"scene": SCENE}) == {"status": "completed", "steps": 2}
+    payload = await call(mcp, "present", {"scene": {"version": 1, "title": "x", "steps": []}})
+    assert payload["status"] == "invalid" and payload["errors"][0]["path"] == "steps"

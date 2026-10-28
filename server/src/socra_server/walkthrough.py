@@ -1,4 +1,4 @@
-"""Plays a narrated code walkthrough: one clip per step, focus sent with its audio.
+"""Plays a narrated scene: one clip per step, the step's visual state sent with its audio.
 
 The runner is independent of MCP and of the page transport: it is given a
 synthesizer, a way to send page messages and a way to set the turn state, so
@@ -12,12 +12,8 @@ import base64
 import logging
 from collections.abc import Awaitable, Callable
 
-from socra_server.domain.walkthrough import (
-    Command,
-    StepCursor,
-    Walkthrough,
-    WalkthroughStep,
-)
+from socra_server.domain.scene import Scene
+from socra_server.domain.walkthrough import Command, StepCursor
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +38,7 @@ class WalkthroughRunner:
         self._is_connected = is_connected
         self._active = False
         self._paused = False
-        self._walkthrough: Walkthrough | None = None
+        self._scene: Scene | None = None
         self._cursor: StepCursor | None = None
         self._commands: asyncio.Queue[str] = asyncio.Queue()
         self._seq = 0
@@ -77,13 +73,12 @@ class WalkthroughRunner:
 
     def snapshot(self) -> list[dict]:
         """Messages that bring a newly connected page up to the current step."""
-        if not self._active or self._walkthrough is None or self._cursor is None:
+        if not self._active or self._scene is None or self._cursor is None:
             return []
-        wt = self._walkthrough
-        step = wt.steps[self._cursor.index]
+        scene = self._scene
         return [
-            self._walkthrough_message(wt),
-            self._step_info(step, self._cursor.index, len(wt.steps)) | {"type": "walkthrough_step"},
+            self._walkthrough_message(scene),
+            self._step_info(scene, self._cursor.index) | {"type": "walkthrough_step"},
             {"type": "walkthrough_status", "status": "paused" if self._paused else "playing"},
         ]
 
@@ -92,30 +87,31 @@ class WalkthroughRunner:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _walkthrough_message(wt: Walkthrough) -> dict:
-        return {"type": "walkthrough", "code": wt.code, "language": wt.language, "total": len(wt.steps)}
+    def _walkthrough_message(scene: Scene) -> dict:
+        return {"type": "walkthrough", "title": scene.title, "objects": scene.objects_for_page(), "total": len(scene.steps)}
 
     @staticmethod
-    def _step_info(step: WalkthroughStep, index: int, total: int) -> dict:
+    def _step_info(scene: Scene, index: int) -> dict:
         return {
             "index": index + 1,
-            "total": total,
-            "say": step.say,
-            "lines": list(step.lines) if step.lines else None,
+            "total": len(scene.steps),
+            "id": scene.steps[index].id,
+            "say": scene.steps[index].say,
+            "state": scene.state_at(index),
         }
 
-    async def run(self, walkthrough: Walkthrough) -> dict:
+    async def run(self, scene: Scene) -> dict:
         """Play every step; return how it ended."""
         if self._active:
             return {"status": "busy"}
-        total = len(walkthrough.steps)
+        total = len(scene.steps)
         self._active = True
         self._paused = False
-        self._walkthrough = walkthrough
+        self._scene = scene
         self._cursor = StepCursor(total=total)
         self._commands = asyncio.Queue()
         try:
-            await self._send(self._walkthrough_message(walkthrough))
+            await self._send(self._walkthrough_message(scene))
             await self._send({"type": "walkthrough_status", "status": "playing"})
             next_event: str | None = None
             while True:
@@ -143,7 +139,7 @@ class WalkthroughRunner:
         finally:
             self._active = False
             self._paused = False
-            self._walkthrough = None
+            self._scene = None
             self._cursor = None
 
     async def _end(self, reason: str) -> None:
@@ -152,9 +148,9 @@ class WalkthroughRunner:
 
     async def _play_current(self) -> str:
         """Speak the current step. Returns "done" or the command that cut it short."""
-        assert self._walkthrough is not None and self._cursor is not None
+        assert self._scene is not None and self._cursor is not None
         index = self._cursor.index
-        step = self._walkthrough.steps[index]
+        step = self._scene.steps[index]
         await self._set_state("speaking")
         wav = await asyncio.to_thread(self._synthesize, step.say)
         if not self._commands.empty():  # the user acted while this step was being prepared
@@ -165,7 +161,7 @@ class WalkthroughRunner:
             "type": "tts_audio",
             "format": "wav",
             "data": base64.b64encode(wav).decode(),
-            "step": self._step_info(step, index, len(self._walkthrough.steps)) | {"seq": self._seq},
+            "step": self._step_info(self._scene, index) | {"seq": self._seq},
         }
         await self._send(message)
 

@@ -185,7 +185,7 @@ main()
         proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n')
         await proc.stdin.drain()
         tools = json.loads(await asyncio.wait_for(proc.stdout.readline(), 1))
-        assert {tool["name"] for tool in tools["result"]["tools"]} == {"say", "ask", "explain", "get_answer", "open_page", "finish"}
+        assert {tool["name"] for tool in tools["result"]["tools"]} == {"say", "ask", "explain", "present", "get_answer", "open_page", "finish"}
         # Release the fake loaders only after initialize and tools/list have
         # completed, proving neither request awaited model readiness.
         proc.stdin.write(b'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"say","arguments":{"text":"hello"}}}\n')

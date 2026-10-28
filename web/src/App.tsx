@@ -10,6 +10,7 @@ import { SettingsMenu } from '@/components/SettingsMenu'
 import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
+import { visibleCodeViews } from '@/lib/scene'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -69,8 +70,9 @@ export const App: React.FC = () => {
 
   const question = state.question
   const walkthrough = state.walkthrough
+  const codeViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
   const codeKey = walkthrough
-    ? `walkthrough:${walkthrough.code}`
+    ? codeViews.length ? `walkthrough:${walkthrough.title}:${walkthrough.objects.map((o) => o.id).join(',')}` : null
     : question?.code !== undefined && !state.finished
       ? `${question.index}:${question.code}`
       : null
@@ -210,14 +212,19 @@ export const App: React.FC = () => {
         <div className="shell-seam" aria-hidden="true" />
         <div className="code-slot" aria-hidden={!showCode} inert={!showCode}>
           {walkthrough ? (
-            <CodePane
-              code={walkthrough.code}
-              name={walkthrough.language || 'walkthrough'}
-              lang={walkthrough.language}
-              focus={walkthrough.step?.lines ?? null}
-              label="Walkthrough code"
-              onClose={() => setClosedCode(codeKey)}
-            />
+            <div className="scene-stack">
+              {codeViews.map((view) => (
+                <CodePane
+                  key={view.id}
+                  code={view.code}
+                  name={view.language || 'walkthrough'}
+                  lang={view.language}
+                  focus={view.focus}
+                  label={codeViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
+                  onClose={() => setClosedCode(codeKey)}
+                />
+              ))}
+            </div>
           ) : question?.code !== undefined && (
             <CodePane code={question.code} name={`question ${question.index}`} label="Question code" onClose={() => setClosedCode(codeKey)} />
           )}

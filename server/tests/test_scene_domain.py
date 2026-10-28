@@ -223,3 +223,17 @@ def test_a_walkthrough_becomes_a_one_code_object_scene():
     assert [s.say for s in scene.steps] == ["Two names.", "Overview."]
     assert scene.state_at(0) == {"code": {"visible": True, "lines": [1, 2]}}
     assert scene.state_at(1) == {"code": {"visible": True, "lines": None}}
+
+
+def test_state_at_rejects_indexes_outside_the_steps():
+    scene, _ = parse_scene(valid_scene())
+    assert scene is not None
+    for index in (-1, 3):
+        with pytest.raises(IndexError):
+            scene.state_at(index)
+
+
+def test_the_schema_rejects_blank_text_like_the_server():
+    schema = json.loads((DOCS / "scene.schema.json").read_text(encoding="utf-8"))
+    assert schema["properties"]["title"]["pattern"] == r"\S"
+    assert schema["properties"]["steps"]["items"]["properties"]["say"]["pattern"] == r"\S"

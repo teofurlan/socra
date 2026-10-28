@@ -84,8 +84,8 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
       return {
         ...state,
         walkthrough: {
-          code: action.code,
-          language: action.language,
+          title: action.title,
+          objects: action.objects,
           total: action.total,
           step: null,
           status: 'playing',
@@ -95,8 +95,8 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
 
     case 'walkthrough_step': {
       if (!state.walkthrough) return state
-      const { index, total, say, lines } = action
-      return { ...state, walkthrough: { ...state.walkthrough, step: { index, total, say, lines } } }
+      const { index, total, id, say, state: sceneState } = action
+      return { ...state, walkthrough: { ...state.walkthrough, step: { index, total, id, say, state: sceneState } } }
     }
 
     case 'walkthrough_status':
