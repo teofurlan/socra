@@ -131,6 +131,10 @@ class WalkthroughRunner:
                 if outcome == "finished":
                     return {"status": "completed", "steps": total}
                 return {"status": "stopped", "step": at, "total": total}
+        except asyncio.CancelledError:
+            # The caller gave up on the scene (an agent turn was interrupted): close the page's panel.
+            await self._end("stopped")
+            raise
         except Exception as exc:
             logger.exception("Walkthrough failed at step %d", self._cursor.index + 1)
             at = self._cursor.index + 1

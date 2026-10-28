@@ -11,6 +11,7 @@ ModeId = Literal["agent", "mentor", "exam"]
 SWITCH_MODE = "switch_mode"
 SEARCH_TRANSCRIPT = "search_transcript"
 RECORD_EXAM_RESULT = "record_exam_result"
+PRESENT = "present"
 
 
 class UnknownMode(ValueError):
@@ -53,7 +54,7 @@ MODES: dict[str, Mode] = {
             "understand it. Read files as needed, but do not edit files or run commands "
             f"that change anything. {_COMMON}"
         ),
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT}),
+        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, PRESENT}),
     ),
     "exam": Mode(
         id="exam",
@@ -65,7 +66,7 @@ MODES: dict[str, Mode] = {
             "verdict (correct, partial or incorrect) and a short note. Do not edit files. "
             f"{_COMMON}"
         ),
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT}),
+        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, PRESENT}),
     ),
 }
 

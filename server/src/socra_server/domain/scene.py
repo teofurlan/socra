@@ -23,6 +23,24 @@ MAX_STEPS = 60
 MAX_OBJECTS = 16
 MAX_ACTIONS_PER_CUE = 16
 
+PRESENT_PURPOSE = "Use to explain something out loud while the page changes what it shows, step by step."
+
+# How a caller writes a scene; both the MCP tool and the agent-session tool describe it so.
+SCENE_GUIDE = (
+    'scene is {"version": 1, "title", "objects", "steps", "cues"}: '
+    'objects [{"id", "primitive", "params", "hidden"?}] are what can be shown '
+    '(primitive "code": params {"code", "language"?}); '
+    'steps [{"id", "say"}] are spoken in order, each on its own; '
+    'cues [{"at": step id, "do": [{"object": id, "action", "params"?}]}] change the picture '
+    "when that step starts. Every primitive supports show and hide; code also supports "
+    'focus {"lines": [start, end]} (1-based, inclusive) and clear. A step without a cue '
+    "keeps the previous picture. Limits: 60 steps, 16 objects, one cue per step, 16 actions "
+    "per cue. Blocks until the scene ends; the user may pause, repeat, go back, skip or stop "
+    "meanwhile. Returns completed (steps), stopped (step, total), invalid (errors: each with "
+    "path and message; nothing was shown, fix them and call again), busy, page_disconnected "
+    "or error (message)."
+)
+
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _ID_RULE = "ids use letters, digits, '.', '_' or '-', start with a letter or digit, at most 64 characters"
 
