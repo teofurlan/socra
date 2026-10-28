@@ -11,7 +11,7 @@ interface ModeSelectorProps {
   switching?: AgentMode | null
 }
 
-/** Agent, mentor or exam: the mode of the project session, next to the folder and model. */
+/** Mentor or exam: the mode of the project session, next to the folder and model. */
 export function ModeSelector({ mode, onChange, disabled = false, reason, switching = null }: ModeSelectorProps) {
   const reasonId = useId()
   const locked = disabled || switching !== null

@@ -14,7 +14,7 @@ interface TopBarProps {
 
 const TABS = [
   { id: 'exam', label: 'Exam' },
-  { id: 'agent', label: 'Agent' },
+  { id: 'agent', label: 'Study' },
 ] as const
 
 /** The console's top bar: wordmark, the two modes, context chips, connection and settings. */

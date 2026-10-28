@@ -44,9 +44,9 @@ import type { ProtocolState, TurnMode } from '@/types/exam'
 import type { AgentMode, AgentSelection } from '@/types/agent'
 
 const STATE_LABEL: Record<string, string> = {
-  speaking: 'Agent speaking',
-  listening: 'Your turn: say what to do',
-  thinking: 'Agent working',
+  speaking: 'Socra speaking',
+  listening: 'Your turn: ask or answer',
+  thinking: 'Socra thinking',
   idle: 'Ready',
 }
 
@@ -60,7 +60,7 @@ export const AgentApp: React.FC = () => {
   const [storedSelection, setStoredSelection] = useState<AgentSelection | null>(getStoredAgentSelection)
   const [startNotice, setStartNotice] = useState<string | null>(null)
   // The mode the next session starts in; once a session runs, the selector switches instead.
-  const [startMode, setStartMode] = useState<AgentMode>('agent')
+  const [startMode, setStartMode] = useState<AgentMode>('mentor')
   const pendingStartRef = useRef<{ selection: AgentSelection; cwd: string } | null>(null)
   const folderPickerBaselineRef = useRef<{ cwd: string | null } | null>(null)
   const [mode, setMode] = useState<TurnMode>(() => getStoredTurnMode('auto'))
@@ -125,15 +125,14 @@ export const AgentApp: React.FC = () => {
     const pendingMatches = pending?.selection.backend === next.backend && pending.selection.model === next.model && folderKey(pending.cwd) === folderKey(cwd)
     if (!sessionMatches && !pendingMatches) {
       pendingStartRef.current = { selection: next, cwd }
-      const supportsModes = state.backends.find((backend) => backend.id === next.backend)?.supports_modes === true
-      socket.start(next, cwd, supportsModes && startMode !== 'agent' ? startMode : undefined)
+      socket.start(next, cwd, startMode)
     }
   }
 
   const handleSendAudio = (audio: string) => {
     const backend = state.backends.find((candidate) => candidate.id === selection?.backend)
     if (!selection || !backend || backend.status.state !== 'ready') {
-      setStartNotice('Choose a ready agent and model before speaking.')
+      setStartNotice('Choose a ready model before speaking.')
       return
     }
     if (!state.folder) {
@@ -174,7 +173,7 @@ export const AgentApp: React.FC = () => {
   const handleSendText = (text: string) => {
     const backend = state.backends.find((candidate) => candidate.id === selection?.backend)
     if (!selection || !backend || backend.status.state !== 'ready') {
-      setStartNotice('Choose a ready agent and model before sending. Your message is still here.')
+      setStartNotice('Choose a ready model before sending. Your message is still here.')
       return false
     }
     if (!state.folder) {
@@ -195,11 +194,11 @@ export const AgentApp: React.FC = () => {
   const sessionBackend = state.backends.find((backend) => backend.id === session?.backend)
   const sessionModel = sessionBackend?.models.find((model) => model.id === session?.model)
   // Before a session the selector picks the starting mode; during one it switches with a
-  // handoff. Either way only a backend that supports modes offers them.
+  // handoff. A backend without mode support (the server does not list one) keeps the selector disabled.
   const modeBackend = session ? sessionBackend : state.backends.find((backend) => backend.id === selection?.backend)
   const modesSupported = modeBackend?.supports_modes === true
   const modeControl = {
-    mode: session?.mode ?? (modesSupported ? startMode : 'agent'),
+    mode: session?.mode ?? startMode,
     onChange: session ? socket.switchMode : setStartMode,
     disabled: !modesSupported,
     reason: modeBackend && !modesSupported ? 'Mode switching needs Claude Code' : undefined,
@@ -356,8 +355,8 @@ export const AgentApp: React.FC = () => {
           )}
 
           <PromptLine
-              label="Message the agent"
-              placeholder={busy ? 'The agent is working…' : 'Type instead of speaking'}
+              label="Message Socra"
+              placeholder={busy ? 'Socra is thinking…' : 'Type instead of speaking'}
               disabled={!connected}
               busy={busy}
               onSend={handleSendText}

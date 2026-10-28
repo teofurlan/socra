@@ -177,7 +177,7 @@ async def test_hello_reports_the_running_session_so_a_reconnected_page_can_resyn
     await app.handle_hello()
 
     assert channel.of_type("agent_backends")[-1]["session"] == {
-        "backend": "fake", "model": "large", "cwd": str(tmp_path), "mode": "agent",
+        "backend": "fake", "model": "large", "cwd": str(tmp_path), "mode": "mentor",
     }
 
 
@@ -210,7 +210,7 @@ async def test_start_opens_the_selected_model_in_the_folder(tmp_path):
     assert backend.opened == [("large", tmp_path)]
     assert channel.of_type("agent_started") == [{
         "type": "agent_started", "backend": "fake", "model": "large", "cwd": str(tmp_path),
-        "mode": "agent",
+        "mode": "mentor",
     }]
     assert channel.sent[-1] == {"type": "state", "state": "listening"}
 

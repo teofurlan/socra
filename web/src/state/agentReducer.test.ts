@@ -37,7 +37,7 @@ describe('agentReducer', () => {
     const startedState = agentReducer(withTurn, started)
 
     expect(startedState.timeline).toEqual(withTurn.timeline)
-    expect(startedState.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'agent' })
+    expect(startedState.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'mentor' })
   })
 
   it('stores the backends and the server default', () => {
@@ -67,7 +67,7 @@ describe('agentReducer', () => {
       { ...started, model: 'opus' },
     )
 
-    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'C:\\work', mode: 'agent' })
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'C:\\work', mode: 'mentor' })
     expect(state.timeline).toEqual([])
     expect(state.permissions).toEqual([])
   })
@@ -162,14 +162,14 @@ describe('agentReducer', () => {
       { ...backends, session: { backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work' } },
     )
 
-    expect(state.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'agent' })
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'mentor' })
     expect(state.timeline).toHaveLength(1)
   })
 
   it('a page opened while the server runs a session joins it', () => {
     const state = run({ ...backends, session: { backend: 'claude-code', model: 'opus', cwd: 'D:\\app' } })
 
-    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'D:\\app', mode: 'agent' })
+    expect(state.session).toEqual({ backend: 'claude-code', model: 'opus', cwd: 'D:\\app', mode: 'mentor' })
     expect(state.folder).toBe('D:\\app')
   })
 
@@ -185,10 +185,10 @@ describe('agentReducer mode switching', () => {
     type: 'agent_mode_changed', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work', mode: 'exam',
   } as const satisfies AgentAction
 
-  it('starts in agent mode with no switch or request pending', () => {
+  it('starts in mentor mode with no switch or request pending', () => {
     expect(initialAgentState.switching).toBeNull()
     expect(initialAgentState.modeRequest).toBeNull()
-    expect(run(started).session?.mode).toBe('agent')
+    expect(run(started).session?.mode).toBe('mentor')
   })
 
   it('takes the mode a started session reports', () => {
@@ -236,10 +236,10 @@ describe('agentReducer mode switching', () => {
   })
 
   it('a failed switch ends the switching state and stays in the old mode', () => {
-    const state = run(started, { type: 'agent_switching', mode: 'exam' }, { type: 'mode_switch_failed', mode: 'agent' })
+    const state = run(started, { type: 'agent_switching', mode: 'exam' }, { type: 'mode_switch_failed', mode: 'mentor' })
 
     expect(state.switching).toBeNull()
-    expect(state.session?.mode).toBe('agent')
+    expect(state.session?.mode).toBe('mentor')
   })
 
   it('a reconnect to the same session adopts the server mode and drops pending switch state', () => {

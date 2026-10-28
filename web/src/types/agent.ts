@@ -14,11 +14,10 @@ export interface AgentModelOption {
 
 export type BackendState = 'ready' | 'not_configured' | 'unreachable'
 
-/** The three modes of a project session; the server owns what each one means. */
-export type AgentMode = 'agent' | 'mentor' | 'exam'
+/** The two modes of a project session; the server owns what each one means. */
+export type AgentMode = 'mentor' | 'exam'
 
 export const AGENT_MODES: readonly { id: AgentMode; label: string }[] = [
-  { id: 'agent', label: 'Agent' },
   { id: 'mentor', label: 'Mentor' },
   { id: 'exam', label: 'Exam' },
 ]
@@ -28,7 +27,7 @@ export interface AgentBackendInfo {
   label: string
   models: AgentModelOption[]
   status: { state: BackendState; message: string }
-  /** Whether the backend can switch modes (Claude Code yes, Pi not yet). */
+  /** Whether the backend can switch modes (Claude Code yes); the server only lists those that can. */
   supports_modes?: boolean
 }
 

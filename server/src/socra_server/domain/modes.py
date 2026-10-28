@@ -6,7 +6,7 @@ from typing import Literal
 
 from socra_server.domain.speech import SPEECH_LANGUAGE_NAME
 
-ModeId = Literal["agent", "mentor", "exam"]
+ModeId = Literal["mentor", "exam"]
 
 SWITCH_MODE = "switch_mode"
 SEARCH_TRANSCRIPT = "search_transcript"
@@ -32,18 +32,12 @@ _COMMON = (
     f"Always reply in {SPEECH_LANGUAGE_NAME}: Socra listens and speaks only "
     f"{SPEECH_LANGUAGE_NAME}, so a message that reads like another language was misheard; "
     "ask the user to repeat it instead of switching language. "
-    "When the user asks to switch to the agent, mentor or exam mode, call the switch_mode "
+    "When the user asks to switch between the mentor and exam modes, call the switch_mode "
     "tool; Socra asks the user to confirm on screen. If the notes you were given lack a "
     "detail, call search_transcript to look it up in the previous session."
 )
 
 MODES: dict[str, Mode] = {
-    "agent": Mode(
-        id="agent",
-        label="Agent",
-        instructions=f"You are working as a coding agent in the user's project. {_COMMON}",
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT}),
-    ),
     # Placeholder: the real mentor instructions belong to issue #18.
     "mentor": Mode(
         id="mentor",
@@ -69,7 +63,7 @@ MODES: dict[str, Mode] = {
     ),
 }
 
-DEFAULT_MODE: ModeId = "agent"
+DEFAULT_MODE: ModeId = "mentor"
 
 
 def get_mode(mode_id: str) -> Mode:

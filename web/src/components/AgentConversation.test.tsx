@@ -173,9 +173,9 @@ describe('PromptLine', () => {
   it('sends a typed turn and clears the field', async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()
-    render(<PromptLine label="Message the agent" placeholder="Type" disabled={false} busy={false} onSend={onSend} onStop={vi.fn()} />)
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} busy={false} onSend={onSend} onStop={vi.fn()} />)
 
-    const field = screen.getByLabelText('Message the agent')
+    const field = screen.getByLabelText('Message Socra')
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
     await user.type(field, '  list the files  {Enter}')
 
@@ -186,9 +186,9 @@ describe('PromptLine', () => {
   it('offers Stop while the agent works and blocks sending', async () => {
     const user = userEvent.setup()
     const onStop = vi.fn()
-    render(<PromptLine label="Message the agent" placeholder="Type" disabled={false} busy onSend={vi.fn()} onStop={onStop} />)
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} busy onSend={vi.fn()} onStop={onStop} />)
 
-    await user.type(screen.getByLabelText('Message the agent'), 'more')
+    await user.type(screen.getByLabelText('Message Socra'), 'more')
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'Stop' }))
@@ -196,7 +196,7 @@ describe('PromptLine', () => {
   })
 
   it('has no Stop button when idle', () => {
-    render(<PromptLine label="Message the agent" placeholder="Type" disabled={false} busy={false} onSend={vi.fn()} onStop={vi.fn()} />)
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} busy={false} onSend={vi.fn()} onStop={vi.fn()} />)
 
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
   })

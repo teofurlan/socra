@@ -6,9 +6,19 @@ import pytest
 from socra_server.domain.modes import DEFAULT_MODE, MODES, UnknownMode, get_mode
 
 
-def test_three_modes_with_agent_as_the_default():
-    assert list(MODES) == ["agent", "mentor", "exam"]
-    assert DEFAULT_MODE == "agent"
+def test_two_modes_with_mentor_as_the_default():
+    assert list(MODES) == ["mentor", "exam"]
+    assert DEFAULT_MODE == "mentor"
+    with pytest.raises(UnknownMode):
+        get_mode("agent")
+
+
+def test_the_switch_mode_tool_offers_only_mentor_and_exam():
+    from socra_server.socra_tools import TOOL_SPECS
+
+    spec = next(s for s in TOOL_SPECS if s.id == "switch_mode")
+    assert spec.schema["properties"]["mode"]["enum"] == ["mentor", "exam"]
+    assert "coding" not in spec.description
 
 
 def test_every_mode_can_switch_and_search_the_previous_session():
@@ -26,7 +36,6 @@ def test_every_mode_replies_in_the_language_socra_listens_and_speaks():
 
 def test_only_exam_records_exam_results():
     assert "record_exam_result" in get_mode("exam").tools
-    assert "record_exam_result" not in get_mode("agent").tools
     assert "record_exam_result" not in get_mode("mentor").tools
 
 

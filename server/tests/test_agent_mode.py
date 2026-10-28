@@ -124,43 +124,62 @@ def _texts(channel, kind):
     return [m for m in channel.sent if m["type"] == kind]
 
 
-async def test_start_opens_with_the_agent_mode_and_a_toolbox(tmp_path):
+async def test_start_opens_in_mentor_mode_with_a_toolbox(tmp_path):
     backend = ModeBackend([Convo([])])
     app, channel, _ = _make(backend, tmp_path)
 
     await _started(app, tmp_path)
 
-    assert backend.opens[0]["mode"].id == "agent"
+    assert backend.opens[0]["mode"].id == "mentor"
     assert backend.opens[0]["toolbox"] is not None
     await app.handle_hello()
-    assert channel.of_type("agent_backends")[-1]["session"]["mode"] == "agent"
+    assert channel.of_type("agent_backends")[-1]["session"]["mode"] == "mentor"
 
 
-async def test_a_backend_without_modes_is_opened_the_plain_way(tmp_path):
-    app, channel, _ = _make(PlainBackend([Convo([])]), tmp_path)
+async def test_starting_on_a_backend_without_modes_is_rejected(tmp_path):
+    backend = PlainBackend([Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
 
-    await _started(app, tmp_path)
-
-    assert app._conversation is not None
-
-
-async def test_starting_in_another_mode_on_a_backend_without_modes_is_rejected(tmp_path):
-    app, channel, _ = _make(PlainBackend([Convo([])]), tmp_path)
-
+    await app.handle_start("fake", "small", str(tmp_path))
     await app.handle_start("fake", "small", str(tmp_path), mode="exam")
 
-    assert "Claude Code" in channel.of_type("agent_error")[-1]["message"]
+    messages = [m["message"] for m in channel.of_type("agent_error")]
+    assert len(messages) == 2 and all("mentor and exam" in m for m in messages)
     assert not channel.of_type("agent_started")
+    assert app._conversation is None and backend.queue
 
 
-async def test_switching_on_a_backend_without_modes_is_rejected_with_an_error(tmp_path):
-    app, channel, _ = _make(PlainBackend([Convo([])]), tmp_path)
-    await _started(app, tmp_path)
+async def test_hello_hides_a_backend_without_modes_and_defaults_to_a_listed_one(tmp_path):
+    channel = FakeChannel()
+    plain = PlainBackend([])
+    plain.id = "plain"
+    app = AgentApp(
+        channel=channel,
+        registry=BackendRegistry([plain, ModeBackend([])]),
+        loader=FakeLoader(),
+        folder_picker=lambda: None,
+    )
 
-    await app.handle_switch_mode("exam")
+    await app.handle_hello()
 
-    assert app.switch_task is None
-    assert channel.of_type("agent_error")[-1]["message"] == "Mode switching needs Claude Code."
+    message = channel.of_type("agent_backends")[-1]
+    assert [b["id"] for b in message["backends"]] == ["fake"]
+    assert message["default"] == {"backend": "fake", "model": "small"}
+
+
+async def test_hello_has_no_default_when_no_backend_supports_modes(tmp_path):
+    channel = FakeChannel()
+    app = AgentApp(
+        channel=channel,
+        registry=BackendRegistry([PlainBackend([])]),
+        loader=FakeLoader(),
+        folder_picker=lambda: None,
+    )
+
+    await app.handle_hello()
+
+    message = channel.of_type("agent_backends")[-1]
+    assert message["backends"] == [] and message["default"] is None
 
 
 async def test_selector_switch_hands_off_to_a_new_session_and_restates(tmp_path):
@@ -218,7 +237,7 @@ async def test_the_handoff_carries_what_socra_recorded_itself(tmp_path):
     await app.handle_permission_response("p1", False)
     await _finish_turn(app, channel)
 
-    await _switch(app, channel, "mentor")
+    await _switch(app, channel, "exam")
 
     seed = new.turns[0]
     assert "src/a.py" in seed
@@ -234,7 +253,7 @@ async def test_exam_results_recorded_through_the_tool_reach_the_next_handoff(tmp
     toolbox = backend.opens[0]["toolbox"]
 
     await toolbox.record_exam_result("What is a port?", "partial", "missed adapters")
-    await _switch(app, channel, "mentor")
+    await _switch(app, channel, "exam")
 
     assert "What is a port?: partial (missed adapters)" in second.turns[0]
 
@@ -250,7 +269,7 @@ async def test_the_new_session_can_search_the_previous_transcript(tmp_path):
     await _finish_turn(app, channel)
     # The first session has no previous transcript to search.
     assert await toolbox.search_transcript("auth0", 5) == []
-    await _switch(app, channel, "mentor")
+    await _switch(app, channel, "exam")
 
     hits = await toolbox.search_transcript("auth0", 5)
 
@@ -283,9 +302,9 @@ async def test_three_invalid_summaries_abort_and_keep_the_old_mode(tmp_path):
     assert not old.closed
     assert len(backend.opens) == 1
     assert "summary" in channel.of_type("agent_error")[-1]["message"]
-    assert _texts(channel, "mode_switch_failed") == [{"type": "mode_switch_failed", "mode": "agent"}]
+    assert _texts(channel, "mode_switch_failed") == [{"type": "mode_switch_failed", "mode": "mentor"}]
     await app.handle_hello()
-    assert channel.of_type("agent_backends")[-1]["session"]["mode"] == "agent"
+    assert channel.of_type("agent_backends")[-1]["session"]["mode"] == "mentor"
 
 
 async def test_a_new_session_that_fails_to_start_leaves_the_old_one_working(tmp_path):
@@ -310,7 +329,7 @@ async def test_a_summary_turn_error_counts_as_a_failed_attempt(tmp_path):
     app, channel, _ = _make(ModeBackend([old, new]), tmp_path)
     await _started(app, tmp_path)
 
-    await _switch(app, channel, "mentor")
+    await _switch(app, channel, "exam")
 
     assert _texts(channel, "agent_mode_changed")
     assert not channel.of_type("agent_error")
@@ -336,11 +355,11 @@ async def test_same_or_unknown_modes_are_not_switched(tmp_path):
     app, channel, _ = _make(backend, tmp_path)
     await _started(app, tmp_path)
 
-    await app.handle_switch_mode("agent")
+    await app.handle_switch_mode("mentor")
     await app.handle_switch_mode("poet")
 
     assert app.switch_task is None
-    assert channel.of_type("notice")[-1]["text"] == "Already in Agent mode."
+    assert channel.of_type("notice")[-1]["text"] == "Already in Mentor mode."
     assert "Unknown mode" in channel.of_type("agent_error")[-1]["message"]
 
 
@@ -357,11 +376,11 @@ async def test_a_switch_while_the_agent_is_still_starting_asks_to_wait(tmp_path)
     app, channel, _ = _make(backend, tmp_path)
     await app.handle_start("fake", "small", str(tmp_path))
 
-    await app.handle_switch_mode("mentor")
+    await app.handle_switch_mode("exam")
 
     assert app.switch_task is None
     assert not channel.of_type("agent_error")
-    assert channel.of_type("notice")[-1]["text"] == "Wait for the agent to start, then switch modes."
+    assert channel.of_type("notice")[-1]["text"] == "Wait for the session to start, then switch modes."
     release.set()
     await app.shutdown()
 
@@ -417,9 +436,23 @@ async def test_the_tool_refuses_the_current_or_an_unknown_mode(tmp_path):
     await _started(app, tmp_path)
     toolbox = backend.opens[0]["toolbox"]
 
-    assert "Already" in await toolbox.switch_mode("agent")
-    assert "Unknown" in await toolbox.switch_mode("poet")
+    assert "Already" in await toolbox.switch_mode("mentor")
+    assert await toolbox.switch_mode("poet") == "Use mentor or exam."
     assert not channel.of_type("mode_switch_request")
+
+
+async def test_asking_for_agent_mode_gets_an_explanation_and_no_switch(tmp_path):
+    backend = ModeBackend([Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+
+    answer = await backend.opens[0]["toolbox"].switch_mode("agent")
+
+    assert answer == (
+        "Coding agent mode is not available in Socra; it offers mentor and exam modes."
+    )
+    assert not channel.of_type("mode_switch_request")
+    assert app.switch_task is None
 
 
 async def test_words_typed_during_a_switch_are_answered_by_the_new_session(tmp_path):
@@ -509,9 +542,9 @@ async def test_a_voice_switch_waits_for_the_running_reply_to_finish(tmp_path):
     await _started(app, tmp_path)
     await app.handle_turn_text("do it")
     await asyncio.sleep(0)
-    await backend.opens[0]["toolbox"].switch_mode("mentor")
+    await backend.opens[0]["toolbox"].switch_mode("exam")
 
-    await app.handle_mode_switch_response("mentor", True)
+    await app.handle_mode_switch_response("exam", True)
     await asyncio.sleep(0.01)
     assert old.turns == ["do it"]  # the summary is not requested mid-reply
     gate.set()
