@@ -1,0 +1,46 @@
+name: Task
+description: A chore, docs change, refactor or tracking issue that is neither a bug nor a new capability.
+title: "chore: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work that changes no user-facing behavior, or that tracks other issues. Please check that an open or closed issue does not already cover it.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs to be done
+      description: The work, in a few sentences or bullets.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The problem it solves or what it unblocks.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Observable outcomes that mean the task is finished.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Dependencies and related issues
+      description: Issues this depends on or relates to, for example `Depends on #12`.
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: What this task deliberately does not cover.
