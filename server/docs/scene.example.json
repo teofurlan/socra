@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "title": "How a walkthrough is validated",
+  "objects": [
+    {
+      "id": "parser",
+      "primitive": "code",
+      "params": {
+        "language": "python",
+        "code": "def parse(steps):\n    errors = []\n    for number, raw in enumerate(steps, start=1):\n        if not raw.get(\"say\"):\n            errors.append((number, \"say is required\"))\n    return errors"
+      }
+    }
+  ],
+  "steps": [
+    { "id": "intro", "say": "This function checks every step before anything is spoken." },
+    { "id": "collect", "say": "It does not stop at the first problem. It collects them all in a list." },
+    { "id": "loop", "say": "Each step is numbered from one, so the error points at the step the user wrote." },
+    { "id": "result", "say": "An empty list means the walkthrough can play." }
+  ],
+  "cues": [
+    { "at": "intro", "do": [{ "object": "parser", "action": "focus", "params": { "lines": [1, 1] } }] },
+    { "at": "collect", "do": [{ "object": "parser", "action": "focus", "params": { "lines": [2, 2] } }] },
+    { "at": "loop", "do": [{ "object": "parser", "action": "focus", "params": { "lines": [3, 5] } }] },
+    { "at": "result", "do": [{ "object": "parser", "action": "focus", "params": { "lines": [6, 6] } }] }
+  ]
+}
