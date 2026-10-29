@@ -124,6 +124,9 @@ as the exam MCP server), it only opens the page. The page talks to
   misheard phrase never switches. Mentor is a read-only explainer placeholder
   (the real mentor instructions belong to issue #18); in exam mode the agent
   asks spoken questions and records each verdict with `record_exam_result`.
+  Mentor and exam can also call `present` to play a
+  [narrated scene](#narrated-scenes) on the page; while it plays, what you say
+  or type steers the scene instead of starting a turn.
   The MCP-driven exam on `/` is unchanged. Modes need Claude Code: on Pi the
   selector is disabled and a switch request is refused.
 - **Handoff.** A switch does not resume the session (that would keep the old
@@ -272,12 +275,13 @@ socra_server/
 │   ├── folder_dialog.py      # Native folder picker for agent mode
 │   └── preferences_file.py   # Shared preferences.json store
 ├── entrypoints/
-│   ├── mcp_tools.py          # open_page, say, ask, explain, get_answer, finish
+│   ├── mcp_tools.py          # open_page, say, ask, explain, present, get_answer, finish
 │   ├── http_server.py        # Built page and /api/preferences on 127.0.0.1:8767
 │   └── ws_server.py          # WebSocket routes /ws (exam) and /ws/agent
 ├── app.py                    # ExamApp: ties session + ports + PageChannel
-├── walkthrough.py            # WalkthroughRunner: plays a narrated walkthrough, no MCP inside
-├── domain/walkthrough.py     # Validation, spoken commands and step cursor (pure)
+├── walkthrough.py            # WalkthroughRunner: plays a narrated scene, no MCP inside
+├── domain/scene.py           # Scene contract: validation, primitives, per-step state (pure)
+├── domain/walkthrough.py     # explain() input, spoken commands and step cursor (pure)
 ├── agent_app.py              # AgentApp: drives an agent by voice
 ├── agent_registry.py         # Which agent backends exist and what a selection means
 ├── socra_tools.py            # Socra's own agent tools (switch_mode, search_transcript, ...)
@@ -323,8 +327,18 @@ Pause stops the audio and opens the microphone; the next utterance (or typed
 text) is matched against a small phrase table (repeat, back, next, continue,
 stop, in English and Spanish) instead of being stored as an answer. Anything
 else gets a notice listing the commands. The logic lives in `walkthrough.py`
-and `domain/walkthrough.py`, independent of MCP, so an in-process tool server
-can reuse it.
+and `domain/walkthrough.py`, independent of MCP; mentor and exam sessions reuse
+it through their in-process `present` tool.
+
+### Narrated scenes
+
+`present(scene)` generalizes `explain()`: a scene has `steps` to say, `objects`
+to show (each drawn by a primitive) and `cues` that change the picture when a
+step starts. `explain()` is a scene with one `code` object. The contract,
+its JSON Schema and an example are in [`docs/scenes.md`](docs/scenes.md).
+The whole scene is validated before anything is shown or spoken; an invalid
+scene returns `errors` with a `path` and a `message` each. Playback, controls
+and statuses are the same as for `explain()`.
 
 Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) with timeout = WAV duration + 2 s before returning or transitioning to `listening`.
 
@@ -336,13 +350,13 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 |---|---|
 | `state` | `state`: `"idle"` \| `"speaking"` \| `"listening"` \| `"thinking"` |
 | `question` | `index`, `total`, `text`, optional display-only `code` |
-| `tts_audio` | `format: "wav"`, `data: <base64>`, optional walkthrough `step` (`index`, `total`, `say`, `lines`, `seq`) applied when the clip starts |
+| `tts_audio` | `format: "wav"`, `data: <base64>`, optional scene `step` (`index`, `total`, `id`, `say`, `state`, `seq`) applied when the clip starts |
 | `transcript` | `text`, `final: true` |
 | `notice` | `text`: temporary notice (e.g. non-answer rejection) |
 | `voices` | `voices`: `[{id, label}]`, `current`: selected voice id |
 | `finished` | No fields; sent after `state: idle` |
-| `walkthrough` | `code`, `language`, `total`: a walkthrough starts |
-| `walkthrough_step` | `index`, `total`, `say`, `lines` (`[start, end]` or null); sent on reconnect, otherwise carried by `tts_audio` |
+| `walkthrough` | `title`, `objects` (`[{id, primitive, params, hidden}]`), `total`: a scene starts |
+| `walkthrough_step` | `index`, `total`, `id`, `say`, `state` (every object's state while the step speaks, e.g. `{"code": {"visible": true, "lines": [1, 2]}}`); sent on reconnect, otherwise carried by `tts_audio` |
 | `walkthrough_status` | `status`: `playing` \| `paused` \| `ended`, optional `reason` |
 
 **Page → server**
@@ -359,7 +373,8 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 
 The agent route `/ws/agent` accepts `agent_hello`, `pick_folder`,
 `start_agent` (optional `mode`), `turn_text`, `turn_audio`, `permission_response`,
-`interrupt`, `playback_done`, `voice`, `switch_mode` (`mode`) and
-`mode_switch_response` (`mode`, `allow`); the server answers a switch with
-`agent_switching`, `agent_mode_changed`, `mode_switch_request`,
-`mode_switch_closed` and `mode_switch_failed`. See `entrypoints/ws_server.py` for its fields.
+`interrupt`, `playback_done` (optional `seq`), `walkthrough_control`, `voice`,
+`switch_mode` (`mode`) and `mode_switch_response` (`mode`, `allow`); the server
+answers a switch with `agent_switching`, `agent_mode_changed`,
+`mode_switch_request`, `mode_switch_closed` and `mode_switch_failed`, and plays
+scenes with the same `walkthrough*` and `tts_audio` messages as the exam page. See `entrypoints/ws_server.py` for its fields.

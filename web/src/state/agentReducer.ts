@@ -20,10 +20,16 @@ export const initialAgentState: AgentState = {
 
 const modeLabel = (mode: AgentMode) => AGENT_MODES.find((m) => m.id === mode)?.label ?? mode
 
-/** A new user turn after a scene ended clears it; while it plays, what the user says steers it. */
+/**
+ * An ended scene gives the code pane back at the next user turn or agent reply. While it plays,
+ * what the user says steers it, so it stays.
+ */
+function dropEndedScene(state: AgentState): AgentState {
+  return state.walkthrough?.status === 'ended' ? { ...state, walkthrough: null } : state
+}
+
 function userTurn(state: AgentState, text: string): AgentState {
-  const next = append(state, { kind: 'user', text })
-  return state.walkthrough?.status === 'ended' ? { ...next, walkthrough: null } : next
+  return dropEndedScene(append(state, { kind: 'user', text }))
 }
 
 function append(state: AgentState, entry: Omit<TimelineEntry, 'id'>): AgentState {
@@ -120,9 +126,9 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       // The final text block usually arrives twice: as agent_text, then as the reply.
       const last = state.timeline.at(-1)
       if (last?.kind === 'text' && last.text === action.text) {
-        return { ...state, timeline: [...state.timeline.slice(0, -1), { ...last, kind: 'reply' }] }
+        return dropEndedScene({ ...state, timeline: [...state.timeline.slice(0, -1), { ...last, kind: 'reply' }] })
       }
-      return append(state, { kind: 'reply', text: action.text })
+      return dropEndedScene(append(state, { kind: 'reply', text: action.text }))
     }
     case 'agent_error':
       return append(state, { kind: 'error', text: action.message })

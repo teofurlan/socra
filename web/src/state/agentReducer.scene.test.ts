@@ -37,4 +37,11 @@ describe('agentReducer scenes', () => {
     expect(agentReducer(ended, { type: 'user_text', text: 'thanks' }).walkthrough).toBeNull()
     expect(agentReducer(ended, { type: 'transcript', text: 'thanks', final: true }).walkthrough).toBeNull()
   })
+
+  it('drops an ended scene when the agent replies, so the reply code can take the pane', () => {
+    const ended = run(scene, step, { type: 'walkthrough_status', status: 'ended', reason: 'completed' })
+    expect(agentReducer(ended, { type: 'agent_reply', text: 'Done.' }).walkthrough).toBeNull()
+    const playing = run(scene, step)
+    expect(agentReducer(playing, { type: 'agent_reply', text: 'Still going.' }).walkthrough).not.toBeNull()
+  })
 })
