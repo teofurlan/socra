@@ -52,7 +52,10 @@ FolderPicker = Callable[[], str | None]
 PLAYBACK_GRACE_S = 2.0
 # One request plus two retries for a summary that lacks fields.
 SUMMARY_ATTEMPTS = 3
-NEEDS_CLAUDE_CODE = "Mode switching needs Claude Code."
+NEEDS_CLAUDE_CODE = "Socra sessions need a backend with mentor and exam modes, such as Claude Code."
+NO_AGENT_MODE = (
+    "Coding agent mode is not available in Socra; it offers mentor and exam modes."
+)
 
 
 class AgentApp:
@@ -113,8 +116,11 @@ class AgentApp:
             await self.channel.send(message)
 
     async def _send_hello(self) -> None:
-        infos = await self.registry.describe()
-        default = self.registry.default_selection()
+        # Only backends that can host the mentor and exam modes are offered.
+        infos = [info for info in await self.registry.describe() if info.supports_modes]
+        default = next(
+            (AgentSelection(info.id, info.models[0].id) for info in infos if info.models), None
+        )
         await self.channel.send({
             "type": "agent_backends",
             "backends": [
@@ -150,7 +156,7 @@ class AgentApp:
         except (UnknownSelection, UnknownMode) as exc:
             await self._error(str(exc))
             return
-        if mode != DEFAULT_MODE and not backend.supports_modes:
+        if not backend.supports_modes:
             await self._error(NEEDS_CLAUDE_CODE)
             return
         await self._cancel_switch()
@@ -188,7 +194,7 @@ class AgentApp:
                 self._queued_turn = text
                 await self._state("thinking")
             elif self._conversation is None:
-                await self._error("Choose a folder and start the agent first.")
+                await self._error("Choose a folder and start a session first.")
             else:
                 self._start_turn(text)
 
@@ -235,7 +241,7 @@ class AgentApp:
             self._queued_turn = text
             await self._state("thinking")
         elif self._conversation is None:
-            await self._error("The agent is not ready. Please start it again.")
+            await self._error("The session is not ready. Please start it again.")
         elif self._conversation is not None:
             self._start_turn(text)
 
@@ -319,7 +325,7 @@ class AgentApp:
             return False
         starting = self._startup_pending
         if self._conversation is None and not starting:
-            await self._error("Choose a folder and start the agent first.")
+            await self._error("Choose a folder and start a session first.")
             return False
         if self._turn_running or self._queued_turn is not None:
             await self.channel.send({
@@ -329,8 +335,6 @@ class AgentApp:
         return True
 
     async def _open_conversation(self, backend, model: str, folder: Path, mode_id: str):
-        if not backend.supports_modes:
-            return await backend.open(model, folder, self._decide_permission)
         return await backend.open(
             model, folder, self._decide_permission,
             mode=get_mode(mode_id), toolbox=self._toolbox,
@@ -478,15 +482,12 @@ class AgentApp:
             await self._error(str(exc))
             return str(exc)
         if self._conversation is None and self._startup_pending:
-            text = "Wait for the agent to start, then switch modes."
+            text = "Wait for the session to start, then switch modes."
             await self.channel.send({"type": "notice", "text": text})
             return text
         if self._backend is None or self._conversation is None or self._session is None:
-            await self._error("Choose a folder and start the agent first.")
+            await self._error("Choose a folder and start a session first.")
             return "no session"
-        if not self._backend.supports_modes:
-            await self._error(NEEDS_CLAUDE_CODE)
-            return NEEDS_CLAUDE_CODE
         if target == self._session["mode"]:
             text = f"Already in {mode.label} mode."
             await self.channel.send({"type": "notice", "text": text})
@@ -598,10 +599,12 @@ class AgentApp:
     # The Socra tools the agent can call (see socra_tools).
 
     async def _tool_switch(self, target: str) -> str:
+        if target == "agent":
+            return NO_AGENT_MODE
         try:
             mode = get_mode(target)
         except UnknownMode:
-            return f"Unknown mode {target!r}. Use agent, mentor or exam."
+            return "Use mentor or exam."
         if self._session is not None and target == self._session["mode"]:
             return f"Already in {mode.label} mode."
         if self._switching:

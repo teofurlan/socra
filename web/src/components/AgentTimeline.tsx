@@ -99,7 +99,7 @@ export function AgentTimeline({ entries, protocolState }: AgentTimelineProps) {
     return (
       <p data-testid="timeline-empty" className="t-ui m-0 py-4" style={{ color: 'var(--label-2)' }}>
         {protocolState === 'listening'
-          ? 'Speak or type what the agent should do.'
+          ? 'Speak or type what you want to study.'
           : 'The conversation will appear here.'}
       </p>
     )

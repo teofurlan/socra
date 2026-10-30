@@ -140,10 +140,10 @@ describe('AgentApp', () => {
     window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
     const { ws } = openPage()
 
-    await user.type(screen.getByLabelText('Message the agent'), 'list the files{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'list the files{Enter}')
 
     expect(ws.sent().slice(-2)).toEqual([
-      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra' },
+      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
       { type: 'turn_text', text: 'list the files' },
     ])
     expect(screen.getByRole('list', { name: 'Conversation' })).toHaveTextContent('list the files')
@@ -161,9 +161,9 @@ describe('AgentApp', () => {
     const user = userEvent.setup()
     const { ws } = openPage()
 
-    await user.type(screen.getByLabelText('Message the agent'), 'keep this prompt{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'keep this prompt{Enter}')
 
-    expect(screen.getByLabelText('Message the agent')).toHaveValue('keep this prompt')
+    expect(screen.getByLabelText('Message Socra')).toHaveValue('keep this prompt')
     expect(screen.getAllByRole('status').some((item) => /choose a folder/i.test(item.textContent ?? ''))).toBe(true)
     expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'turn_text' }))
   })
@@ -187,13 +187,13 @@ describe('AgentApp', () => {
     window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
     const { ws } = openPage()
 
-    await user.type(screen.getByLabelText('Message the agent'), 'inspect the project{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'inspect the project{Enter}')
 
     expect(ws.sent().slice(-2)).toEqual([
-      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra' },
+      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
       { type: 'turn_text', text: 'inspect the project' },
     ])
-    expect(screen.getByLabelText('Message the agent')).toHaveValue('')
+    expect(screen.getByLabelText('Message Socra')).toHaveValue('')
   })
 
   it('shows the session in the existing conversation without a setup barrier', () => {
@@ -260,7 +260,7 @@ describe('AgentApp', () => {
     act(() => micOptions.onFinalize?.('UklGRg=='))
 
     expect(ws.sent().slice(-2)).toEqual([
-      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra' },
+      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
       { type: 'turn_audio', format: 'wav', data: 'UklGRg==' },
     ])
   })
@@ -291,13 +291,13 @@ describe('AgentApp', () => {
     const user = userEvent.setup()
     window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
     const { ws } = openPage()
-    await user.type(screen.getByLabelText('Message the agent'), 'keep working{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'keep working{Enter}')
     act(() => ws.receive({ type: 'agent_started', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra' }))
 
     await user.click(screen.getByRole('button', { name: /choose another folder/i }))
     expect(ws.sent()).not.toContainEqual({ type: 'interrupt' })
     act(() => ws.receive({ type: 'agent_folder', path: null }))
-    await user.type(screen.getByLabelText('Message the agent'), 'continue{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'continue{Enter}')
 
     expect(ws.sent()).not.toContainEqual({ type: 'interrupt' })
     expect(ws.sent().filter((message) =>
@@ -310,14 +310,14 @@ describe('AgentApp', () => {
     const user = userEvent.setup()
     window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
     const { ws } = openPage()
-    await user.type(screen.getByLabelText('Message the agent'), 'first turn{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'first turn{Enter}')
     act(() => ws.receive({ type: 'agent_started', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra' }))
     await user.click(screen.getByRole('button', { name: /choose another folder/i }))
     expect(ws.sent()).not.toContainEqual({ type: 'interrupt' })
 
     act(() => ws.receive({ type: 'agent_folder', path: 'D:\\code\\app' }))
     act(() => ws.receive({ ...backends, session: null }))
-    await user.type(screen.getByLabelText('Message the agent'), 'new folder turn{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'new folder turn{Enter}')
 
     const folderRequest = ws.sent().findIndex((message) =>
       typeof message === 'object' && message !== null && 'type' in message && message.type === 'pick_folder',
@@ -325,7 +325,7 @@ describe('AgentApp', () => {
     expect(ws.sent().slice(folderRequest)).toEqual([
       { type: 'pick_folder' },
       { type: 'interrupt' },
-      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'D:\\code\\app' },
+      { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'D:\\code\\app', mode: 'mentor' },
       { type: 'turn_text', text: 'new folder turn' },
     ])
   })
@@ -364,7 +364,7 @@ describe('AgentApp', () => {
 
     expect(micOptions.protocolState).toBe('listening')
     act(() => micOptions.onFinalize?.('UklGRg=='))
-    await user.type(screen.getByLabelText('Message the agent'), 'list the files{Enter}')
+    await user.type(screen.getByLabelText('Message Socra'), 'list the files{Enter}')
 
     expect(ws.sent()).toContainEqual({ type: 'turn_audio', format: 'wav', data: 'UklGRg==' })
     expect(ws.sent()).toContainEqual({ type: 'turn_text', text: 'list the files' })
@@ -433,13 +433,38 @@ describe('AgentApp', () => {
   })
 
   describe('project modes', () => {
-    it('offers the three modes next to the folder and model once a session runs', () => {
+    it('offers the two modes next to the folder and model once a session runs', () => {
       const { ws } = openPage()
       startSession(ws)
 
       expect(screen.getByRole('radiogroup', { name: /mode/i })).toBeInTheDocument()
-      expect(screen.getByRole('radio', { name: 'Agent' })).toBeChecked()
+      expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mentor', 'Exam'])
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
       expect(screen.getByRole('radio', { name: 'Exam' })).toBeEnabled()
+    })
+
+    it('starts a new session in mentor by default', async () => {
+      const user = userEvent.setup()
+      window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
+      const { ws } = openPage()
+
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+      await user.type(screen.getByLabelText('Message Socra'), 'hello{Enter}')
+
+      expect(ws.sent()).toContainEqual(
+        { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
+      )
+    })
+
+    it('falls back to mentor when a resynced session reports no mode', () => {
+      const { ws } = openPage()
+      act(() => ws.receive({
+        ...backends,
+        session: { backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra' },
+      }))
+
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Exam' })).not.toBeChecked()
     })
 
     it('picks the starting mode before a session runs and starts in it', async () => {
@@ -451,7 +476,7 @@ describe('AgentApp', () => {
       expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
       expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'switch_mode' }))
 
-      await user.type(screen.getByLabelText('Message the agent'), 'explain the server{Enter}')
+      await user.type(screen.getByLabelText('Message Socra'), 'explain the server{Enter}')
       expect(ws.sent()).toContainEqual(
         { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
       )
@@ -488,7 +513,7 @@ describe('AgentApp', () => {
     it('blocks mode switching on Pi and says why', () => {
       const { ws } = openPage()
       act(() => {
-        ws.receive({ type: 'agent_started', backend: 'pi', model: 'anthropic/sonnet', cwd: 'C:\\work\\socra', mode: 'agent' })
+        ws.receive({ type: 'agent_started', backend: 'pi', model: 'anthropic/sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' })
         ws.receive({ type: 'state', state: 'listening' })
       })
 

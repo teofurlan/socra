@@ -49,7 +49,7 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
         // The server no longer runs the conversation this page shows (it restarted).
         return state.session ? { ...next, session: null, permissions: [] } : next
       }
-      const mode = action.session.mode ?? 'agent'
+      const mode = action.session.mode ?? 'mentor'
       const same =
         state.session?.backend === action.session.backend &&
         state.session.model === action.session.model &&
@@ -76,7 +76,7 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'agent_started':
       return {
         ...state,
-        session: { backend: action.backend, model: action.model, cwd: action.cwd, mode: action.mode ?? 'agent' },
+        session: { backend: action.backend, model: action.model, cwd: action.cwd, mode: action.mode ?? 'mentor' },
         folder: action.cwd,
         switching: null,
         modeRequest: null,

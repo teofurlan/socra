@@ -330,7 +330,7 @@ async def test_socra_tool_calls_reach_the_toolbox_and_return_text(tmp_path):
     from socra_server.domain.modes import get_mode
 
     toolbox = _Toolbox()
-    tools = {t.name: t for t in sdk_tools(get_mode("agent"), toolbox)}
+    tools = {t.name: t for t in sdk_tools(get_mode("exam"), toolbox)}
 
     result = await tools["switch_mode"].handler({"mode": "mentor"})
 
@@ -346,7 +346,7 @@ async def test_a_failing_socra_tool_reports_an_error_result(tmp_path):
         async def switch_mode(self, target):
             raise RuntimeError("boom")
 
-    tools = {t.name: t for t in sdk_tools(get_mode("agent"), Broken())}
+    tools = {t.name: t for t in sdk_tools(get_mode("mentor"), Broken())}
 
     result = await tools["switch_mode"].handler({"mode": "exam"})
 

@@ -52,9 +52,8 @@ async def _settle():
         await asyncio.sleep(0.002)
 
 
-def test_mentor_and_exam_offer_present_and_the_agent_mode_does_not():
+def test_mentor_and_exam_offer_present():
     assert PRESENT in get_mode("mentor").tools and PRESENT in get_mode("exam").tools
-    assert PRESENT not in get_mode("agent").tools
     assert "present" in {spec.id for spec in specs_for(get_mode("mentor"))}
 
 
