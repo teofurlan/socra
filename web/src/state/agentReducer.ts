@@ -1,4 +1,5 @@
 import { AGENT_MODES, type AgentAction, type AgentMode, type AgentState, type TimelineEntry } from '@/types/agent'
+import { reduceWalkthrough } from '@/state/walkthroughReducer'
 
 export const initialAgentState: AgentState = {
   connectionStatus: 'connecting',
@@ -13,10 +14,23 @@ export const initialAgentState: AgentState = {
   notice: null,
   switching: null,
   modeRequest: null,
+  walkthrough: null,
   nextEntryId: 1,
 }
 
 const modeLabel = (mode: AgentMode) => AGENT_MODES.find((m) => m.id === mode)?.label ?? mode
+
+/**
+ * An ended scene gives the code pane back at the next user turn or agent reply. While it plays,
+ * what the user says steers it, so it stays.
+ */
+function dropEndedScene(state: AgentState): AgentState {
+  return state.walkthrough?.status === 'ended' ? { ...state, walkthrough: null } : state
+}
+
+function userTurn(state: AgentState, text: string): AgentState {
+  return dropEndedScene(append(state, { kind: 'user', text }))
+}
 
 function append(state: AgentState, entry: Omit<TimelineEntry, 'id'>): AgentState {
   return {
@@ -95,9 +109,15 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'state':
       return { ...state, protocolState: action.state }
     case 'transcript':
-      return action.final ? append(state, { kind: 'user', text: action.text }) : state
+      return action.final ? userTurn(state, action.text) : state
     case 'user_text':
-      return append(state, { kind: 'user', text: action.text })
+      return userTurn(state, action.text)
+    case 'walkthrough':
+    case 'walkthrough_step':
+    case 'walkthrough_status': {
+      const walkthrough = reduceWalkthrough(state.walkthrough, action)
+      return walkthrough === state.walkthrough ? state : { ...state, walkthrough }
+    }
     case 'agent_text':
       return append(state, { kind: 'text', text: action.text })
     case 'agent_tool':
@@ -106,9 +126,9 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       // The final text block usually arrives twice: as agent_text, then as the reply.
       const last = state.timeline.at(-1)
       if (last?.kind === 'text' && last.text === action.text) {
-        return { ...state, timeline: [...state.timeline.slice(0, -1), { ...last, kind: 'reply' }] }
+        return dropEndedScene({ ...state, timeline: [...state.timeline.slice(0, -1), { ...last, kind: 'reply' }] })
       }
-      return append(state, { kind: 'reply', text: action.text })
+      return dropEndedScene(append(state, { kind: 'reply', text: action.text }))
     }
     case 'agent_error':
       return append(state, { kind: 'error', text: action.message })

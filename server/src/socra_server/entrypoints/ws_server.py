@@ -199,7 +199,10 @@ async def _handle_agent(ws: ServerConnection) -> None:
                 elif msg_type == "interrupt":
                     await agent.handle_interrupt()
                 elif msg_type == "playback_done":
-                    agent.handle_playback_done()
+                    seq = msg.get("seq")
+                    agent.handle_playback_done(seq if isinstance(seq, int) and not isinstance(seq, bool) else None)
+                elif msg_type == "walkthrough_control":
+                    await agent.handle_walkthrough_control(msg.get("action"))
                 elif msg_type == "voice":
                     if "voice" in msg:
                         voice_id = msg["voice"]

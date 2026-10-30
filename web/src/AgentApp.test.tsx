@@ -73,6 +73,38 @@ describe('AgentApp', () => {
     })
   }
 
+  describe('scenes', () => {
+    const playScene = (ws: FakeWebSocket) => {
+      startSession(ws)
+      act(() => {
+        ws.receive({
+          type: 'walkthrough',
+          title: 'Adding',
+          objects: [{ id: 'src', primitive: 'code', params: { code: 'one\ntwo\nthree', language: 'python' }, hidden: false }],
+          total: 2,
+        })
+        ws.receive({ type: 'walkthrough_step', index: 1, total: 2, id: 'mid', say: 'The middle one.', state: { src: { visible: true, lines: [2, 2] } } })
+      })
+    }
+
+    it('shows what is being said and the scene code with its focus', () => {
+      const { ws } = openPage()
+      playScene(ws)
+      expect(screen.getByTestId('walkthrough-panel')).toHaveTextContent('The middle one.')
+      const pane = screen.getByRole('region', { name: 'Walkthrough code' })
+      const lines = Array.from(pane.querySelectorAll('code > span'))
+      expect(lines.map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, false])
+    })
+
+    it('sends the controls to the server', async () => {
+      const user = userEvent.setup()
+      const { ws } = openPage()
+      playScene(ws)
+      await user.click(screen.getByRole('button', { name: 'Stop' }))
+      expect(ws.sent()).toContainEqual({ type: 'walkthrough_control', action: 'stop' })
+    })
+  })
+
   it('keeps the voice stage outside the scrolling conversation', () => {
     openPage()
     const stage = document.querySelector('.voice-stage')!

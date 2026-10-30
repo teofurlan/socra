@@ -1,4 +1,11 @@
-import type { ConnectionStatus, ProtocolState } from '@/types/exam'
+import type {
+  ConnectionStatus,
+  ProtocolState,
+  WalkthroughAction,
+  WalkthroughData,
+  WalkthroughMessage,
+  WalkthroughStepInfo,
+} from '@/types/exam'
 import type { VoiceMessage, VoicesMessage } from '@/types/voice'
 
 /** What the user picks and the page persists: a backend and one of its models. */
@@ -83,8 +90,9 @@ export type AgentServerMessage =
   | { type: 'agent_error'; message: string }
   | { type: 'permission_request'; id: string; tool: string; title: string; detail: string }
   | { type: 'permission_closed'; id: string }
-  | { type: 'tts_audio'; format: string; data: string }
+  | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number } }
   | { type: 'notice'; text: string }
+  | WalkthroughMessage
   | VoicesMessage
 
 // Page -> server messages on /ws/agent
@@ -98,7 +106,8 @@ export type AgentClientMessage =
   | { type: 'turn_text'; text: string }
   | { type: 'permission_response'; id: string; allow: boolean }
   | { type: 'interrupt' }
-  | { type: 'playback_done' }
+  | { type: 'playback_done'; seq?: number }
+  | { type: 'walkthrough_control'; action: WalkthroughAction }
   | VoiceMessage
 
 export interface AgentState {
@@ -115,6 +124,8 @@ export interface AgentState {
   /** The mode being switched to while the handoff runs; null otherwise. */
   switching: AgentMode | null
   modeRequest: ModeSwitchRequest | null
+  /** A narrated scene the mentor or exam agent is playing; kept until the next turn once it ends. */
+  walkthrough: WalkthroughData | null
   nextEntryId: number
 }
 

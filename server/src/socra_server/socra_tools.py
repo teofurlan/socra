@@ -12,11 +12,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from socra_server.domain.modes import (
+    PRESENT,
     RECORD_EXAM_RESULT,
     SEARCH_TRANSCRIPT,
     SWITCH_MODE,
     Mode,
 )
+from socra_server.domain.scene import PRESENT_PURPOSE, SCENE_GUIDE
 from socra_server.ports import SocraToolbox
 
 VERDICTS = ("correct", "partial", "incorrect")
@@ -53,6 +55,10 @@ async def _search_transcript(toolbox: SocraToolbox, args: dict[str, Any]) -> str
     if not hits:
         return "No matches in the previous session's transcript."
     return "\n".join(f"turn {h.turn} ({h.role}): {h.snippet}" for h in hits)
+
+
+async def _present(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
+    return await toolbox.present(args.get("scene"))
 
 
 TOOL_SPECS: tuple[ToolSpec, ...] = (
@@ -93,6 +99,16 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         },
         _record_exam_result,
     ),
+    ToolSpec(
+        PRESENT,
+        f"{PRESENT_PURPOSE} {SCENE_GUIDE}",
+        {
+            "type": "object",
+            "properties": {"scene": {"type": "object", "description": "The narrated scene to play."}},
+            "required": ["scene"],
+        },
+        _present,
+    ),
 )
 
 
@@ -102,11 +118,12 @@ def specs_for(mode: Mode) -> list[ToolSpec]:
 
 @dataclasses.dataclass
 class CallbackToolbox:
-    """A toolbox built from three async callbacks, so the app wires it without a subclass."""
+    """A toolbox built from async callbacks, so the app wires it without a subclass."""
 
     switch: Callable[[str], Awaitable[str]]
     record: Callable[[str, str, str], Awaitable[str]]
     search: Callable[[str, int], Awaitable[list[Any]]]
+    play: Callable[[Any], Awaitable[str]]
 
     async def switch_mode(self, target: str) -> str:
         return await self.switch(target)
@@ -116,3 +133,6 @@ class CallbackToolbox:
 
     async def search_transcript(self, query: str, limit: int) -> list[Any]:
         return await self.search(query, limit)
+
+    async def present(self, scene: Any) -> str:
+        return await self.play(scene)

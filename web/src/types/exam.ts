@@ -1,3 +1,4 @@
+import type { SceneObject, SceneState } from '@/types/scene'
 import type { VoiceMessage, VoicesMessage } from '@/types/voice'
 
 export type ProtocolState = 'idle' | 'speaking' | 'listening' | 'thinking'
@@ -19,20 +20,22 @@ export interface TranscriptData {
   final: boolean
 }
 
-/** The step a walkthrough is on; ``lines`` is 1-based and inclusive, null when nothing is highlighted. */
+/** The step a narrated scene is on, with every object's state while it speaks. */
 export interface WalkthroughStepInfo {
   index: number
   total: number
+  id: string
   say: string
-  lines: [number, number] | null
+  state: SceneState
 }
 
 export type WalkthroughStatus = 'playing' | 'paused' | 'ended'
 export type WalkthroughAction = 'pause' | 'resume' | 'repeat' | 'back' | 'next' | 'stop'
 
+/** A narrated scene playing on the page (explain() is a scene with one code object). */
 export interface WalkthroughData {
-  code: string
-  language: string
+  title: string
+  objects: SceneObject[]
   total: number
   step: WalkthroughStepInfo | null
   status: WalkthroughStatus
@@ -40,15 +43,19 @@ export interface WalkthroughData {
   reason: string | null
 }
 
+/** The messages that drive a narrated scene, on the exam and the agent page alike. */
+export type WalkthroughMessage =
+  | { type: 'walkthrough'; title: string; objects: SceneObject[]; total: number }
+  | ({ type: 'walkthrough_step' } & WalkthroughStepInfo)
+  | { type: 'walkthrough_status'; status: WalkthroughStatus; reason?: string }
+
 // Server -> Client messages
 export type ServerMessage =
   | { type: 'state'; state: ProtocolState }
   | { type: 'question'; index: number; total: number; text: string; code?: string }
   | { type: 'finished' }
   | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number } }
-  | { type: 'walkthrough'; code: string; language: string; total: number }
-  | ({ type: 'walkthrough_step' } & WalkthroughStepInfo)
-  | { type: 'walkthrough_status'; status: WalkthroughStatus; reason?: string }
+  | WalkthroughMessage
   | { type: 'transcript'; text: string; final: boolean }
   | { type: 'notice'; text: string }
   | VoicesMessage

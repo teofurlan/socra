@@ -552,14 +552,14 @@ describe('useExamSocket', () => {
       type: 'tts_audio',
       format: 'wav',
       data: 'UklGRg==',
-      step: { index, total: 2, say: `Step ${index}.`, lines, seq },
+      step: { index, total: 2, id: `s${index}`, say: `Step ${index}.`, state: { code: { visible: true, lines } }, seq },
     })
 
     const open = () => {
       const hook = renderHook(() => useExamSocket({ forceMock: false }))
       const ws = MockWebSocket.instances[0]
       act(() => ws.simulateOpen())
-      act(() => ws.simulateMessage({ type: 'walkthrough', code: 'a\nb', language: '', total: 2 }))
+      act(() => ws.simulateMessage({ type: 'walkthrough', title: 'Two', objects: [{ id: 'code', primitive: 'code', params: { code: 'a\nb', language: '' }, hidden: false }], total: 2 }))
       return { ...hook, ws }
     }
 
@@ -580,7 +580,7 @@ describe('useExamSocket', () => {
         release({ duration: 0.25 } as AudioBuffer)
         for (let i = 0; i < 5; i++) await Promise.resolve()
       })
-      expect(result.current.state.walkthrough?.step).toEqual({ index: 1, total: 2, say: 'Step 1.', lines: [1, 1] })
+      expect(result.current.state.walkthrough?.step).toEqual({ index: 1, total: 2, id: 's1', say: 'Step 1.', state: { code: { visible: true, lines: [1, 1] } } })
     })
 
     it('reports the clip it finished with its sequence number', async () => {

@@ -3,16 +3,16 @@ import { examReducer, initialExamState } from './examReducer'
 
 const started = examReducer(initialExamState, {
   type: 'walkthrough',
-  code: 'a = 1\nb = 2',
-  language: 'python',
+  title: 'Adding',
+  objects: [{ id: 'code', primitive: 'code', params: { code: 'a = 1\nb = 2', language: 'python' }, hidden: false }],
   total: 2,
 })
 
 describe('examReducer walkthrough', () => {
   it('starts a walkthrough with no step focused yet', () => {
     expect(started.walkthrough).toEqual({
-      code: 'a = 1\nb = 2',
-      language: 'python',
+      title: 'Adding',
+      objects: [{ id: 'code', primitive: 'code', params: { code: 'a = 1\nb = 2', language: 'python' }, hidden: false }],
       total: 2,
       step: null,
       status: 'playing',
@@ -21,8 +21,9 @@ describe('examReducer walkthrough', () => {
   })
 
   it('focuses a step when the server reports it', () => {
-    const next = examReducer(started, { type: 'walkthrough_step', index: 2, total: 2, say: 'Now b.', lines: [2, 2] })
-    expect(next.walkthrough?.step).toEqual({ index: 2, total: 2, say: 'Now b.', lines: [2, 2] })
+    const state = { code: { visible: true, lines: [2, 2] } }
+    const next = examReducer(started, { type: 'walkthrough_step', index: 2, total: 2, id: 's2', say: 'Now b.', state })
+    expect(next.walkthrough?.step).toEqual({ index: 2, total: 2, id: 's2', say: 'Now b.', state })
   })
 
   it('follows pause, resume and end', () => {
@@ -35,7 +36,7 @@ describe('examReducer walkthrough', () => {
   })
 
   it('ignores step and status messages when no walkthrough is running', () => {
-    expect(examReducer(initialExamState, { type: 'walkthrough_step', index: 1, total: 1, say: 'x', lines: null })).toBe(initialExamState)
+    expect(examReducer(initialExamState, { type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'x', state: {} })).toBe(initialExamState)
     expect(examReducer(initialExamState, { type: 'walkthrough_status', status: 'paused' })).toBe(initialExamState)
   })
 
@@ -47,6 +48,6 @@ describe('examReducer walkthrough', () => {
 
   it('keeps the question that was on screen while the walkthrough runs', () => {
     const asked = examReducer(initialExamState, { type: 'question', index: 1, total: 3, text: 'Why?' })
-    expect(examReducer(asked, { type: 'walkthrough', code: 'x', language: '', total: 1 }).question?.text).toBe('Why?')
+    expect(examReducer(asked, { type: 'walkthrough', title: 'x', objects: [], total: 1 }).question?.text).toBe('Why?')
   })
 })

@@ -58,8 +58,11 @@ class FakeAgentApp:
     async def handle_interrupt(self):
         self._record("interrupt")
 
-    def handle_playback_done(self):
-        self._record("playback_done")
+    def handle_playback_done(self, seq=None):
+        self._record("playback_done", seq)
+
+    async def handle_walkthrough_control(self, action):
+        self._record("walkthrough_control", action)
 
     async def handle_disconnect(self):
         self._record("disconnect")
@@ -109,6 +112,8 @@ async def test_agent_route_dispatches_every_page_message(server):
         {"type": "permission_response", "id": "req-1", "allow": True},
         {"type": "interrupt"},
         {"type": "playback_done"},
+        {"type": "playback_done", "seq": 4},
+        {"type": "walkthrough_control", "action": "pause"},
         {"type": "switch_mode", "mode": "exam"},
         {"type": "mode_switch_response", "mode": "mentor", "allow": True},
         {"type": "start_agent", "backend": "claude-code", "model": "opus", "cwd": "C:/w", "mode": "exam"},
@@ -117,7 +122,7 @@ async def test_agent_route_dispatches_every_page_message(server):
     async with connect(f"{base}/ws/agent") as ws:
         for message in messages:
             await ws.send(json.dumps(message))
-        await _wait_for(agent, lambda: len(agent.calls) >= 11)
+        await _wait_for(agent, lambda: len(agent.calls) >= 13)
 
     names = [call[0] for call in agent.calls]
     for expected in ("hello", "pick_folder", "turn_audio_done", "interrupt", "playback_done"):
@@ -130,6 +135,8 @@ async def test_agent_route_dispatches_every_page_message(server):
     # A switch_mode without a mode is malformed and dropped.
     assert sum(1 for call in agent.calls if call[0] == "switch_mode") == 1
     assert ("permission", "req-1", True) in agent.calls
+    assert ("playback_done", None) in agent.calls and ("playback_done", 4) in agent.calls
+    assert ("walkthrough_control", "pause") in agent.calls
 
 
 async def test_permission_answer_is_not_blocked_by_a_running_transcription(server):

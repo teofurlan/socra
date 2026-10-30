@@ -5,6 +5,7 @@ import asyncio
 
 import pytest
 
+from socra_server.domain.scene import scene_from_walkthrough
 from socra_server.domain.walkthrough import parse_walkthrough
 from socra_server.walkthrough import WalkthroughRunner
 from tests.conftest import make_wav_bytes
@@ -16,7 +17,7 @@ def make_walkthrough(count: int = 3):
     steps = [{"say": f"Step {i}.", "focus": {"lines": [i, i]}} for i in range(1, count + 1)]
     walkthrough, errors = parse_walkthrough(CODE, "python", steps)
     assert not errors
-    return walkthrough
+    return scene_from_walkthrough(walkthrough)
 
 
 class Page:
@@ -77,9 +78,15 @@ async def test_each_step_is_spoken_separately_with_its_focus_on_the_audio():
 
     assert result == {"status": "completed", "steps": 3}
     assert page.spoken == ["Step 1.", "Step 2.", "Step 3."]
-    assert page.messages[0] == {"type": "walkthrough", "code": CODE, "language": "python", "total": 3}
+    assert page.messages[0] == {
+        "type": "walkthrough",
+        "title": "",
+        "objects": [{"id": "code", "primitive": "code", "params": {"code": CODE, "language": "python"}, "hidden": False}],
+        "total": 3,
+    }
     clips = [m for m in page.messages if m["type"] == "tts_audio"]
-    assert [c["step"]["lines"] for c in clips] == [[1, 1], [2, 2], [3, 3]]
+    assert [c["step"]["state"]["code"]["lines"] for c in clips] == [[1, 1], [2, 2], [3, 3]]
+    assert [c["step"]["id"] for c in clips] == ["s1", "s2", "s3"]
     assert [c["step"]["index"] for c in clips] == [1, 2, 3]
     assert clips[0]["step"]["say"] == "Step 1." and clips[0]["step"]["total"] == 3
     assert clips[0]["format"] == "wav" and clips[0]["data"]
@@ -90,13 +97,13 @@ async def test_each_step_is_spoken_separately_with_its_focus_on_the_audio():
 
 
 @pytest.mark.asyncio
-async def test_a_step_without_focus_sends_no_lines():
+async def test_a_step_without_focus_highlights_nothing():
     page = Page()
     runner = make_runner(page)
     walkthrough, _ = parse_walkthrough(CODE, "", [{"say": "Overview."}])
-    await runner.run(walkthrough)
+    await runner.run(scene_from_walkthrough(walkthrough))
     clip = next(m for m in page.messages if m["type"] == "tts_audio")
-    assert clip["step"]["lines"] is None
+    assert clip["step"]["state"] == {"code": {"visible": True, "lines": None}}
 
 
 @pytest.mark.asyncio
@@ -245,7 +252,7 @@ async def test_snapshot_lets_a_reconnected_page_catch_up():
     await settle()
     snapshot = runner.snapshot()
     assert [m["type"] for m in snapshot] == ["walkthrough", "walkthrough_step", "walkthrough_status"]
-    assert snapshot[1]["index"] == 1 and snapshot[1]["lines"] == [1, 1]
+    assert snapshot[1]["index"] == 1 and snapshot[1]["state"]["code"]["lines"] == [1, 1]
     assert snapshot[2]["status"] == "paused"
     runner.command("stop")
     await asyncio.wait_for(task, 2)

@@ -69,6 +69,10 @@ class SocraToolbox(Protocol):
         """Hits (``turn``, ``role``, ``snippet``) from the previous session's transcript."""
         ...
 
+    async def present(self, scene: Any) -> str:
+        """Play a narrated scene on the page; returns how it ended, as text for the agent."""
+        ...
+
 
 @runtime_checkable
 class AgentBackend(Protocol):
