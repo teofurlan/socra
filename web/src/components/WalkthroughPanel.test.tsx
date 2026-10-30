@@ -5,12 +5,12 @@ import { WalkthroughPanel } from './WalkthroughPanel'
 import type { WalkthroughData } from '@/types/exam'
 
 const base: WalkthroughData = {
-  code: 'a\nb',
-  language: '',
+  title: 'Adding',
+  objects: [],
   total: 3,
   status: 'playing',
   reason: null,
-  step: { index: 2, total: 3, say: 'Now we add them.', lines: [2, 2] },
+  step: { index: 2, total: 3, id: 'add', say: 'Now we add them.', state: {} },
 }
 
 describe('WalkthroughPanel', () => {

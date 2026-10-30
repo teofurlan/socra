@@ -10,12 +10,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from socra_server.adapters.whisper_stt import is_valid_answer
+from socra_server.domain.scene import parse_scene
+from socra_server.domain.walkthrough import parse_command
+from socra_server.walkthrough import WalkthroughRunner
 from socra_server.agent_registry import BackendRegistry, UnknownSelection
 from socra_server.app import get_wav_duration
 from socra_server.domain.agent import (
@@ -76,7 +80,8 @@ class AgentApp:
         self._transcript: Any = None
         self._previous_transcript: Any = None
         self._toolbox = CallbackToolbox(
-            switch=self._tool_switch, record=self._tool_record, search=self._tool_search
+            switch=self._tool_switch, record=self._tool_record, search=self._tool_search,
+            play=self._tool_present,
         )
         self._switch_request: str | None = None
         # What the user said while a switch ran; the session that comes out of it answers it.
@@ -89,12 +94,25 @@ class AgentApp:
         self._playback_done = asyncio.Event()
         self.turn_task: asyncio.Task | None = None
         self.acknowledged_clips = 0
+        # Narrated scenes the mentor or exam agent plays with the present tool.
+        self.walkthrough = WalkthroughRunner(
+            synthesize=lambda text: self.loader.tts.synthesize(text),
+            wav_duration=get_wav_duration,
+            send=self.channel.send,
+            set_state=self._state,
+            is_connected=lambda: self.channel.is_connected,
+        )
 
     # ------------------------------------------------------------------ #
     # Page -> server                                                       #
     # ------------------------------------------------------------------ #
 
     async def handle_hello(self) -> None:
+        await self._send_hello()
+        for message in self.walkthrough.snapshot():
+            await self.channel.send(message)
+
+    async def _send_hello(self) -> None:
         infos = await self.registry.describe()
         default = self.registry.default_selection()
         await self.channel.send({
@@ -159,6 +177,9 @@ class AgentApp:
     async def handle_turn_text(self, text: str) -> None:
         if not text.strip():
             return
+        if self.walkthrough.active:
+            await self._route_scene_speech(text)
+            return
         if self._switching:
             self._switch_turns.append(text)
             return
@@ -172,7 +193,8 @@ class AgentApp:
                 self._start_turn(text)
 
     async def handle_turn_audio(self, b64_data: str) -> None:
-        if not self._switching and not await self._can_take_turn():
+        scene_playing = self.walkthrough.active
+        if not scene_playing and not self._switching and not await self._can_take_turn():
             return
         starting = self._conversation is None
         try:
@@ -194,6 +216,10 @@ class AgentApp:
         if not text or not is_valid_answer(text):
             await self.channel.send({"type": "notice", "text": "Didn't catch that. Please say it again."})
             await self._state("listening")
+            return
+        if scene_playing:
+            await self.channel.send({"type": "transcript", "text": text, "final": True})
+            await self._route_scene_speech(text)
             return
         if self._switching:
             await self.channel.send({"type": "transcript", "text": text, "final": True})
@@ -236,14 +262,26 @@ class AgentApp:
             await self.handle_hello()
             await self._state("idle")
             return
+        if self.walkthrough.active:
+            self.walkthrough.command("stop")
         if self._conversation is not None and self._turn_running:
             await self._conversation.interrupt()
 
-    def handle_playback_done(self) -> None:
+    def handle_playback_done(self, seq: int | None = None) -> None:
+        """A clip finished on the page; scene steps carry a sequence number, replies do not."""
+        if seq is not None:
+            self.walkthrough.handle_playback_done(seq)
+            return
         self.acknowledged_clips += 1
         self._playback_done.set()
 
+    async def handle_walkthrough_control(self, action: object) -> None:
+        """A scene control pressed on the page."""
+        if action in ("pause", "resume", "repeat", "back", "next", "stop"):
+            self.walkthrough.command(action)  # type: ignore[arg-type]
+
     async def handle_disconnect(self) -> None:
+        self.walkthrough.abort()
         # Nobody is left to answer: every open request becomes a denial.
         for future in self._pending.values():
             if not future.done():
@@ -557,7 +595,7 @@ class AgentApp:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    # The three Socra tools the agent can call (see socra_tools).
+    # The Socra tools the agent can call (see socra_tools).
 
     async def _tool_switch(self, target: str) -> str:
         try:
@@ -582,6 +620,33 @@ class AgentApp:
     async def _tool_record(self, question: str, verdict: str, note: str) -> str:
         self._facts.record_exam_result(question, verdict, note)
         return "Recorded."
+
+    async def _tool_present(self, scene: Any) -> str:
+        parsed, errors = parse_scene(scene)
+        if parsed is None:
+            return json.dumps({"status": "invalid", "errors": errors})
+        if not self.channel.is_connected:
+            return json.dumps({"status": "page_disconnected"})
+        if self.walkthrough.active:
+            return json.dumps({"status": "busy"})
+        await self.loader.ready()
+        result = await self.walkthrough.run(parsed)
+        # The agent's turn goes on after the scene.
+        await self._state("thinking" if self._turn_running else "listening")
+        return json.dumps(result)
+
+    async def _route_scene_speech(self, text: str) -> None:
+        """While a scene plays, what the user says or types steers it instead of starting a turn."""
+        command = parse_command(text)
+        if command is not None:
+            self.walkthrough.command(command)
+            return
+        await self.channel.send({
+            "type": "notice",
+            "text": "Say or type repeat, back, next, continue or stop.",
+        })
+        if self.walkthrough.paused:
+            await self._state("listening")
 
     async def _tool_search(self, query: str, limit: int) -> list[Any]:
         if self._previous_transcript is None:

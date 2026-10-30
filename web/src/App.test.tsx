@@ -254,8 +254,8 @@ describe('App Integration', () => {
       render(<App />)
       const ws = MockWebSocket.instances[0]
       act(() => {
-        ws.simulateMessage({ type: 'walkthrough', code: 'one\ntwo\nthree', language: 'python', total: 2 })
-        ws.simulateMessage({ type: 'walkthrough_step', index: 1, total: 2, say: 'The middle one.', lines: [2, 2] })
+        ws.simulateMessage({ type: 'walkthrough', title: 'Three lines', objects: [{ id: 'code', primitive: 'code', params: { code: 'one\ntwo\nthree', language: 'python' }, hidden: false }], total: 2 })
+        ws.simulateMessage({ type: 'walkthrough_step', index: 1, total: 2, id: 's1', say: 'The middle one.', state: { code: { visible: true, lines: [2, 2] } } })
       })
       return ws
     }
@@ -267,6 +267,12 @@ describe('App Integration', () => {
       expect(lines.map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, false])
       expect(screen.getByTestId('walkthrough-panel')).toHaveTextContent('The middle one.')
       expect(screen.queryByTestId('question-panel')).not.toBeInTheDocument()
+    })
+
+    it('hides the code panel while the step hides its object', () => {
+      const ws = start()
+      act(() => ws.simulateMessage({ type: 'walkthrough_step', index: 2, total: 2, id: 's2', say: 'Gone.', state: { code: { visible: false, lines: null } } }))
+      expect(document.querySelector('.code-slot')).toHaveAttribute('aria-hidden', 'true')
     })
 
     it('sends the control buttons to the server', async () => {

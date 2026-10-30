@@ -28,6 +28,17 @@
   min-height: 0;
   overflow: hidden;
 }
+/* A scene can show several code objects; they share the slot's height. */
+.scene-stack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.scene-stack > * {
+  flex: 1 1 0;
+  min-height: 0;
+}
 /* The conversation panel lets the particles show through. */
 .shell-panels > .panel:first-child {
   background: transparent;

@@ -349,11 +349,11 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
             if (data.type === 'tts_audio') {
               const step = data.step
               const done = () => send(step ? { type: 'playback_done', seq: step.seq } : { type: 'playback_done' })
-              // A walkthrough step replaces whatever clip is still playing; its focus lands when its sound begins.
+              // A scene step replaces whatever clip is still playing; its picture changes when its sound begins.
               if (step) stopAudio()
               if (data.format === 'wav') {
                 const focus = step
-                  ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, say: step.say, lines: step.lines })
+                  ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
                   : undefined
                 playAudio(data.data, done, focus)
               } else {

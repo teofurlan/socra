@@ -31,7 +31,7 @@ def _spec(name):
 def test_specs_for_a_mode_are_exactly_the_tools_it_lists():
     assert [s.id for s in specs_for(get_mode("agent"))] == ["switch_mode", "search_transcript"]
     assert {s.id for s in specs_for(get_mode("exam"))} == {
-        "switch_mode", "search_transcript", "record_exam_result",
+        "switch_mode", "search_transcript", "record_exam_result", "present",
     }
 
 
@@ -95,7 +95,10 @@ async def test_callback_toolbox_delegates_to_its_callbacks():
         seen.append((query, limit))
         return []
 
-    toolbox = CallbackToolbox(switch=switch, record=record, search=search)
+    async def play(scene):
+        return ""
+
+    toolbox = CallbackToolbox(switch=switch, record=record, search=search, play=play)
 
     await toolbox.switch_mode("mentor")
     await toolbox.record_exam_result("Q", "correct", "")

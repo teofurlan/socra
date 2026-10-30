@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/teofurlan/socra/server/docs/scene.schema.json",
+  "title": "Socra narrated scene",
+  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive and line ranges inside the code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "title", "steps"],
+  "properties": {
+    "version": { "const": 1 },
+    "title": { "type": "string", "pattern": "\\S" },
+    "objects": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "primitive", "params"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "primitive": { "enum": ["code"] },
+          "params": { "type": "object" },
+          "hidden": { "type": "boolean", "default": false, "description": "Start hidden; a show action reveals it." }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "primitive": { "const": "code" } } },
+            "then": { "properties": { "params": { "$ref": "#/$defs/codeParams" } } }
+          }
+        ]
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "say"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "say": { "type": "string", "pattern": "\\S", "description": "Spoken on its own; synthesized per step." }
+        }
+      }
+    },
+    "cues": {
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "do"],
+        "properties": {
+          "at": { "$ref": "#/$defs/id", "description": "The step whose start triggers these actions." },
+          "do": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": { "$ref": "#/$defs/action" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "codeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "description": "Shown verbatim." },
+        "language": { "type": "string", "default": "", "description": "Only affects syntax colours." }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "action"],
+      "properties": {
+        "object": { "$ref": "#/$defs/id" },
+        "action": { "enum": ["show", "hide", "focus", "clear"] },
+        "params": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "action": { "const": "focus" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["lines"],
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }],
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "[start, end], 1-based and inclusive."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["show", "hide", "clear"] } } },
+          "then": { "properties": { "params": { "type": "object", "maxProperties": 0 } } }
+        }
+      ]
+    }
+  }
+}

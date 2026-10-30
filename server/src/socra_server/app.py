@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from socra_server.domain.session import ExamSession
+from socra_server.domain.scene import Scene, parse_scene, scene_from_walkthrough
 from socra_server.domain.walkthrough import parse_command, parse_walkthrough
 from socra_server.walkthrough import WalkthroughRunner
 from socra_server.adapters.piper_tts import PiperTTS
@@ -296,13 +297,26 @@ class ExamApp:
         walkthrough, errors = parse_walkthrough(code, language, steps)
         if walkthrough is None:
             return {"status": "invalid", "errors": errors}
+        return await self._play(scene_from_walkthrough(walkthrough))
+
+    async def present(self, scene: object) -> dict:
+        """Play a narrated scene: each step is spoken while the page shows its visual state.
+
+        Invalid input is reported back untouched: nothing is shown or spoken.
+        """
+        parsed, errors = parse_scene(scene)
+        if parsed is None:
+            return {"status": "invalid", "errors": errors}
+        return await self._play(parsed)
+
+    async def _play(self, scene: Scene) -> dict:
         if not self.channel.is_connected:
             return self._no_client()
         if self.walkthrough.active:
             return {"status": "busy"}
         await self.loader.ready()
         self._finished = False
-        return await self.walkthrough.run(walkthrough)
+        return await self.walkthrough.run(scene)
 
     async def finish(self, summary: str | None = None) -> dict:
         """Optionally speak a summary, then show the question-less end screen."""

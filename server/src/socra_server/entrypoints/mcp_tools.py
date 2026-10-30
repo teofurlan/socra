@@ -6,6 +6,8 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
+from socra_server.domain.scene import PRESENT_PURPOSE, SCENE_GUIDE
+
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, format="%(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ def create_mcp() -> FastMCP:
         "socra-server",
         instructions=(
             "Local oral exam tools. Start with open_page(). Use say() for spoken feedback, "
-            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, and call get_answer() "
+            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, present() to narrate a scene whose visuals change step by step, and call get_answer() "
             "repeatedly while it returns listening. Answers are verbatim transcripts, "
             "not cleaned or rewritten. End with finish()."
         ),
@@ -95,6 +97,10 @@ def create_mcp() -> FastMCP:
         no_client with a URL.
         """
         return await get_app().explain(code, language, steps)
+
+    @mcp.tool(description=f"{PRESENT_PURPOSE} {SCENE_GUIDE} Also no_client with a URL when no page is open.")
+    async def present(scene: dict) -> dict:
+        return await get_app().present(scene)
 
     @mcp.tool()
     async def get_answer(wait_s: float = 20) -> dict:

@@ -13,6 +13,8 @@ import { AgentTimeline } from '@/components/AgentTimeline'
 import { PermissionPromptCard } from '@/components/PermissionPromptCard'
 import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
+import { WalkthroughPanel } from '@/components/WalkthroughPanel'
+import { sceneKey, visibleCodeViews } from '@/lib/scene'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
 import { PromptLine } from '@/components/shell/PromptLine'
@@ -72,12 +74,17 @@ export const AgentApp: React.FC = () => {
   const [micDeviceId, setMicDeviceId] = useState<string>(getStoredMicDeviceId)
   // The timeline entry whose code the user closed; newer code opens the pane again.
   const [closedCodeId, setClosedCodeId] = useState<number | null>(null)
+  // The scene whose code the user closed; another scene opens the pane again.
+  const [closedSceneKey, setClosedSceneKey] = useState<string | null>(null)
   const { microphones, refresh: refreshMicrophones } = useAudioInputs()
   const { pref: themePref, theme, setPref: setThemePref } = useTheme()
 
   const selection = chooseSelection(state.backends, storedSelection, state.defaultSelection)
   const connected = state.connectionStatus === 'connected'
-  const busy = state.protocolState === 'thinking' || state.protocolState === 'speaking'
+  // While a scene plays, typed and spoken words steer it, so the prompt stays open.
+  const walkthrough = state.walkthrough
+  const sceneRunning = !!walkthrough && walkthrough.status !== 'ended'
+  const busy = !sceneRunning && (state.protocolState === 'thinking' || state.protocolState === 'speaking')
   const selectedBackend = state.backends.find((backend) => backend.id === selection?.backend)
   const inputReady = connected && !!selection && selectedBackend?.status.state === 'ready' && !!state.folder
   const inputProtocolState: ProtocolState = state.protocolState === 'idle' || state.protocolState === 'listening'
@@ -222,7 +229,12 @@ export const AgentApp: React.FC = () => {
     }
     return null
   }, [state.timeline])
-  const showCode = code !== null && code.id !== closedCodeId
+  // A scene owns the code pane while it is on screen; otherwise the newest reply code does.
+  const sceneViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
+  const sceneCodeKey = walkthrough && sceneViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
+  const showCode = walkthrough
+    ? sceneCodeKey !== null && sceneCodeKey !== closedSceneKey
+    : code !== null && code.id !== closedCodeId
 
   const settings = (
     <SettingsMenu
@@ -348,8 +360,9 @@ export const AgentApp: React.FC = () => {
           </div>
 
           {/* Pending decisions stay in view while the conversation scrolls to its end. */}
-          {(state.permissions.length > 0 || state.modeRequest) && (
+          {(state.permissions.length > 0 || state.modeRequest || sceneRunning) && (
             <div className="decision-dock flex shrink-0 flex-col items-center gap-3">
+              {sceneRunning && <WalkthroughPanel walkthrough={walkthrough} onControl={socket.controlWalkthrough} />}
               <PermissionPromptCard prompts={state.permissions} onAnswer={socket.answerPermission} />
               <ModeSwitchCard request={state.modeRequest} onAnswer={socket.answerModeSwitch} />
             </div>
@@ -357,7 +370,7 @@ export const AgentApp: React.FC = () => {
 
           <PromptLine
               label="Message the agent"
-              placeholder={busy ? 'The agent is working…' : 'Type instead of speaking'}
+              placeholder={sceneRunning ? 'Type repeat, back, next or stop' : busy ? 'The agent is working…' : 'Type instead of speaking'}
               disabled={!connected}
               busy={busy}
               onSend={handleSendText}
@@ -380,7 +393,21 @@ export const AgentApp: React.FC = () => {
 
         <div className="shell-seam" aria-hidden="true" />
         <div className="code-slot" aria-hidden={!showCode} inert={!showCode}>
-          {code && <CodePane code={code.text} name={code.name} lang={code.lang} label="Code" onClose={() => setClosedCodeId(code.id)} />}
+          {walkthrough ? (
+            <div className="scene-stack">
+              {sceneViews.map((view) => (
+                <CodePane
+                  key={view.id}
+                  code={view.code}
+                  name={view.language || 'scene'}
+                  lang={view.language}
+                  focus={view.focus}
+                  label={sceneViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
+                  onClose={() => setClosedSceneKey(sceneCodeKey)}
+                />
+              ))}
+            </div>
+          ) : code && <CodePane code={code.text} name={code.name} lang={code.lang} label="Code" onClose={() => setClosedCodeId(code.id)} />}
         </div>
       </div>
 
