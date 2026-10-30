@@ -15,3 +15,12 @@ voice/runtime/
 voice/samples/
 voice/comparison/
 *.wav
+
+# local tool output (agent settings, design-review captures, design studies)
+.claude/
+.impeccable/mocks/
+.impeccable/questions/
+.impeccable/review/
+web/.impeccable/
+web/public/studies/
+.pi/

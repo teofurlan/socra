@@ -71,3 +71,27 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Development Voice Viewport Demo Fixture
+
+For manual and automated testing of conversation scrolling, code pane split, speaking particle visualizer state, and viewport overflow without needing a running backend, speech model, or microphone, a Vite-served dev-only fixture is available:
+
+- Agent mode (idle): `http://localhost:5174/tests/voice-viewport-demo.html?mode=agent`
+- Agent mode (speaking): `http://localhost:5174/tests/voice-viewport-demo.html?mode=agent&state=speaking`
+- Agent mode with split code pane: `http://localhost:5174/tests/voice-viewport-demo.html?mode=agent&split=1`
+- Agent mode (speaking with split code pane): `http://localhost:5174/tests/voice-viewport-demo.html?mode=agent&state=speaking&split=1`
+- Exam mode (idle): `http://localhost:5174/tests/voice-viewport-demo.html?mode=exam`
+- Exam mode (speaking): `http://localhost:5174/tests/voice-viewport-demo.html?mode=exam&state=speaking`
+- Exam mode with split code pane: `http://localhost:5174/tests/voice-viewport-demo.html?mode=exam&split=1`
+- Exam mode (speaking with split code pane): `http://localhost:5174/tests/voice-viewport-demo.html?mode=exam&state=speaking&split=1`
+
+### Fixture Isolation & Behavior
+- Directly mounts the real `AgentApp` or `App` components alongside `index.css`.
+- Shadows `window.localStorage` in memory before component mount (static ES module imports execute prior to this script running).
+- Stubs `navigator.mediaDevices.getUserMedia` to prevent real audio hardware acquisition.
+- Intercepts `/ws` and `/ws/agent` WebSocket connections with a mock public protocol handler (preserves Vite HMR socket).
+- Supports optional `state=speaking` query param (default `idle`) and handles simulated `interrupt`/`stop` resetting state to `idle`.
+- Pre-populates ~40 long replies so `.shell-scroll` genuinely overflows desktop viewports.
+- Intercepts typed composer sends to append simulated follow-up replies.
+- Visual badge and document title clearly indicate simulated fixture state without altering production layout.
+- Smoke test script: `uv run --no-project --with playwright python web/tests/test_voice_viewport_demo.py`
