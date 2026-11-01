@@ -100,6 +100,10 @@ class AgentApp:
         self.acknowledged_clips = 0
         # The reply being spoken sentence by sentence; None between turns.
         self._speech: _ReplySpeech | None = None
+        self._state_name = "idle"
+        # Clips of an interrupted turn the page has not reported yet; their late
+        # playback_done must not count toward the next turn.
+        self._ack_debt = 0
         # Narrated scenes the mentor or exam agent plays with the present tool.
         self.walkthrough = WalkthroughRunner(
             synthesize=lambda text: self.loader.tts.synthesize(text),
@@ -276,6 +280,7 @@ class AgentApp:
         if self._conversation is not None and self._turn_running:
             # Whatever is still being synthesized or queued must never sound.
             if self._speech is not None:
+                self._ack_debt += self._speech.unacknowledged()
                 self._speech.cancel()
             await self._conversation.interrupt()
 
@@ -284,8 +289,13 @@ class AgentApp:
         if seq is not None:
             self.walkthrough.handle_playback_done(seq)
             return
+        if self._ack_debt > 0:
+            self._ack_debt -= 1
+            return
         self.acknowledged_clips += 1
         self._playback_done.set()
+        if self._speech is not None:
+            self._speech.acknowledged()
 
     async def handle_walkthrough_control(self, action: object) -> None:
         """A scene control pressed on the page."""
@@ -646,6 +656,10 @@ class AgentApp:
         if self.walkthrough.active:
             return json.dumps({"status": "busy"})
         await self.loader.ready()
+        if self._speech is not None:
+            # The scene must not cut or interleave with the words said just before it.
+            self._speech.flush()
+            await self._speech.settle()
         result = await self.walkthrough.run(parsed)
         # The agent's turn goes on after the scene.
         await self._state("thinking" if self._turn_running else "listening")
@@ -683,6 +697,7 @@ class AgentApp:
                 logger.warning("Closing the agent conversation failed: %s", exc)
 
     async def _state(self, state: str) -> None:
+        self._state_name = state
         await self.channel.send({"type": "state", "state": state})
 
     async def _error(self, message: str) -> None:
@@ -704,10 +719,13 @@ class _ReplySpeech:
         self._worker: asyncio.Task | None = None
         self._base_acks = app.acknowledged_clips
         self._sent = 0
+        self._outstanding = 0  # pieces queued or being synthesized, not yet sent or skipped
+        self._progress = asyncio.Event()
         self._play_end = 0.0
         self._cancelled = False
         self._closed = False
-        self._error: Exception | None = None
+        self._failures = 0
+        self._notices: set[asyncio.Task] = set()
         self.fed = False
 
     def feed(self, text: str) -> None:
@@ -722,14 +740,25 @@ class _ReplySpeech:
             return
         self._enqueue(self._splitter.flush())
 
+    def unacknowledged(self) -> int:
+        """Clips already sent that the page has not reported as played."""
+        return max(0, self._sent - (self._app.acknowledged_clips - self._base_acks))
+
     def cancel(self) -> None:
-        """Drop pending synthesis and every later clip; wake a waiting ``finish``."""
+        """Drop pending synthesis and every later clip; wake any waiter."""
         self._cancelled = True
         if self._worker is not None and not self._worker.done():
             self._worker.cancel()
         while not self._queue.empty():
             self._queue.get_nowait()
+        self._outstanding = 0
+        self._progress.set()
         self._app._playback_done.set()
+
+    async def settle(self) -> None:
+        """Wait until everything queued so far has been sent and played."""
+        await self._wait_for_sent()
+        await self._wait_for_playback()
 
     async def finish(self) -> None:
         """Wait until the worker has sent every clip and the page has played them."""
@@ -737,28 +766,63 @@ class _ReplySpeech:
         if self._worker is not None:
             self._queue.put_nowait(None)
             await asyncio.gather(self._worker, return_exceptions=True)
-        if self._error is not None and not self._cancelled:
-            raise self._error
         await self._wait_for_playback()
+        if self._failures and not self._cancelled:
+            await self._app._error("Part of the reply could not be spoken.")
+
+    def acknowledged(self) -> None:
+        """The page played a clip: with nothing left to say, the agent is working again."""
+        if self._cancelled or self._closed or self._outstanding or self.unacknowledged():
+            return
+        task = asyncio.get_running_loop().create_task(self._back_to_thinking())
+        self._notices.add(task)
+        task.add_done_callback(self._notices.discard)
+
+    async def _back_to_thinking(self) -> None:
+        if (
+            self._app._speech is self and not self._cancelled and not self._closed
+            and not self._outstanding and not self.unacknowledged()
+            and self._app._state_name == "speaking"
+        ):
+            await self._app._state("thinking")
 
     def _enqueue(self, pieces: list[str]) -> None:
         for piece in pieces:
             spoken = speakable_text(piece)
             if not spoken:
                 continue
+            self._outstanding += 1
             self._queue.put_nowait(spoken)
             if self._worker is None:
                 self._worker = asyncio.create_task(self._run(), name="agent-speech")
 
+    def _settled_one(self) -> None:
+        if self._outstanding > 0:
+            self._outstanding -= 1
+        self._progress.set()
+
+    def _fail(self, exc: Exception) -> None:
+        logger.error("Speaking part of the agent reply failed: %s", exc)
+        self._failures += 1
+
     async def _run(self) -> None:
         app = self._app
+        ready = True
         try:
             await app.loader.ready()
-            while (spoken := await self._queue.get()) is not None:
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._fail(exc)
+            ready = False
+        while (spoken := await self._queue.get()) is not None:
+            try:
+                if not ready:
+                    continue
                 wav = await asyncio.to_thread(app.loader.tts.synthesize, spoken)
                 if self._cancelled:
                     return
-                if self._sent == 0:
+                if app._state_name != "speaking":
                     await app._state("speaking")
                 self._sent += 1
                 loop = asyncio.get_running_loop()
@@ -767,11 +831,19 @@ class _ReplySpeech:
                     "type": "tts_audio", "format": "wav",
                     "data": base64.b64encode(wav).decode(),
                 })
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.error("Speaking the agent reply failed: %s", exc)
-            self._error = exc
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._fail(exc)  # skip this sentence, keep speaking the next ones
+            finally:
+                self._settled_one()
+
+    async def _wait_for_sent(self) -> None:
+        while not self._cancelled and self._outstanding:
+            self._progress.clear()
+            if not self._outstanding:
+                break
+            await self._progress.wait()
 
     async def _wait_for_playback(self) -> None:
         app = self._app

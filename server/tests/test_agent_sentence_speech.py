@@ -28,9 +28,10 @@ async def _live(tmp_path):
     backend = FakeBackend()
     app, channel, _, loader = _app(backend)
 
-    async def open_live(model, cwd, decide, **kw):
+    async def open_live(model, cwd, decide, *, mode=None, toolbox=None):
         conversation = LiveConversation(decide)
         backend.conversations.append(conversation)
+        conversation.toolbox = toolbox
         return conversation
 
     backend.open = open_live
@@ -41,9 +42,17 @@ async def _live(tmp_path):
     return app, channel, loader, backend.conversations[0]
 
 
+async def _until(condition, timeout: float = 2.0) -> None:
+    """Wait for a condition instead of sleeping a fixed time (synthesis runs in a thread)."""
+    async with asyncio.timeout(timeout):
+        while not condition():
+            await asyncio.sleep(0.005)
+
+
 async def _settle() -> None:
-    # Synthesis runs in a worker thread: give it real time to finish.
-    await asyncio.sleep(0.05)
+    # Let the event loop and the synthesis thread go quiet before asserting a negative.
+    for _ in range(6):
+        await asyncio.sleep(0.01)
 
 
 def _states(channel) -> list[str]:
@@ -54,7 +63,7 @@ async def test_first_sentence_is_spoken_before_the_reply_finishes(tmp_path):  # 
     app, channel, loader, convo = await _live(tmp_path)
 
     await convo.events.put(TextDelta("First sentence. Second par"))
-    await _settle()
+    await _until(lambda: len(channel.of_type("tts_audio")) == 1)
 
     assert loader.tts.spoken == ["First sentence."]
     assert len(channel.of_type("tts_audio")) == 1
@@ -187,3 +196,117 @@ async def test_a_reply_without_streamed_text_is_still_spoken_by_sentence(tmp_pat
     await asyncio.wait_for(app.turn_task, timeout=2)
 
     assert loader.tts.spoken == ["Alpha.", "Beta."]
+
+
+SCENE = {
+    "version": 1,
+    "title": "Adding",
+    "objects": [{"id": "src", "primitive": "code", "params": {"code": "a = 1", "language": "python"}}],
+    "steps": [{"id": "one", "say": "Look here."}, {"id": "two", "say": "And here."}],
+    "cues": [],
+}
+
+
+def _reply_clips(channel) -> list[dict]:
+    return [m for m in channel.of_type("tts_audio") if "step" not in m]
+
+
+def _scene_clips(channel) -> list[dict]:
+    return [m for m in channel.of_type("tts_audio") if "step" in m]
+
+
+async def _ack_scene(app, channel) -> None:
+    acked: set[int] = set()
+    while app.walkthrough.active:
+        for message in _scene_clips(channel):
+            seq = message["step"]["seq"]
+            if seq not in acked:
+                acked.add(seq)
+                app.handle_playback_done(seq)
+        await asyncio.sleep(0.005)
+
+
+async def test_a_scene_waits_for_the_sentence_before_it_and_later_clips_go_out_speaking(tmp_path):  # S6
+    app, channel, loader, convo = await _live(tmp_path)
+    await convo.events.put(TextDelta("Let me show you. "))
+    await _until(lambda: len(_reply_clips(channel)) == 1)
+
+    scene = asyncio.create_task(convo.toolbox.present(SCENE))
+    await _settle()
+    assert _scene_clips(channel) == []  # the sentence is still playing: the scene must not cut it
+
+    app.handle_playback_done()
+    await _until(lambda: len(_scene_clips(channel)) >= 1)
+    await asyncio.wait_for(_ack_scene(app, channel), timeout=2)
+    await asyncio.wait_for(scene, timeout=2)
+
+    await convo.events.put(TextDelta("Now you know. "))
+    await _until(lambda: len(_reply_clips(channel)) == 2)
+    after = channel.sent[: channel.sent.index(_reply_clips(channel)[1])]
+    assert [m["state"] for m in after if m["type"] == "state"][-1] == "speaking"
+    await app.shutdown()
+
+
+async def test_state_goes_back_to_thinking_when_the_clips_end_but_tools_still_run(tmp_path):  # regression vs main
+    app, channel, loader, convo = await _live(tmp_path)
+
+    await convo.events.put(TextDelta("Checking now. "))
+    await convo.events.put(ToolActivity("mem_search", "x"))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 1)
+    assert _states(channel)[-1] == "speaking"
+
+    app.handle_playback_done()
+    await _until(lambda: _states(channel)[-1] == "thinking")
+    assert not app.turn_task.done()
+    await app.shutdown()
+
+
+async def test_a_late_ack_from_an_interrupted_turn_does_not_count_for_the_next_turn(tmp_path):  # S5
+    app, channel, loader, convo = await _live(tmp_path)
+    await convo.events.put(TextDelta("One. Two. "))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 2)
+    await app.handle_interrupt()
+    await convo.events.put(ReplyDone("One. Two."))
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+    await app.handle_turn_text("again")
+    await convo.events.put(TextDelta("Next. "))
+    await convo.events.put(ReplyDone("Next."))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 3)
+
+    app.handle_playback_done()  # the page reports the two interrupted clips late
+    app.handle_playback_done()
+    await _settle()
+    assert not app.turn_task.done()
+    assert _states(channel)[-1] != "listening"
+
+    app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+    assert _states(channel)[-1] == "listening"
+
+
+async def test_a_sentence_that_fails_to_synthesize_is_skipped_and_reported_once(tmp_path):  # S3
+    app, channel, loader, convo = await _live(tmp_path)
+    real = loader.tts.synthesize
+
+    def flaky(text: str) -> bytes:
+        if text == "Two.":
+            raise RuntimeError("boom")
+        return real(text)
+
+    loader.tts.synthesize = flaky
+    await convo.events.put(TextDelta("One. Two. Three."))
+    await convo.events.put(ReplyDone("One. Two. Three."))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 2)
+
+    assert loader.tts.spoken == ["One.", "Three."]
+    assert "listening" not in _states(channel)  # two clips are still playing
+    app.handle_playback_done()
+    await _settle()
+    assert not app.turn_task.done()
+    app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+    errors = channel.of_type("agent_error")
+    assert len(errors) == 1 and "turn failed" not in errors[0]["message"]
+    assert _states(channel)[-1] == "listening"
