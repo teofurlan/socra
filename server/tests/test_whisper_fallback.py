@@ -30,8 +30,8 @@ def test_cuda_runtime_failure_retries_on_cpu_with_same_prompt():
     stt._transcriber = Transcriber()
     assert stt.transcribe_with_glossary(make_wav_bytes(), ["thread"]) == "Un proceso tiene su propia memoria."
     assert calls == [
-        ("cuda", {"language": "es", "vad_filter": True, "initial_prompt": "API, thread"}),
-        ("cpu", {"language": "es", "vad_filter": True, "initial_prompt": "API, thread"}),
+        ("cuda", {"language": "es", "vad_filter": True, "initial_prompt": "API, thread, Socra"}),
+        ("cpu", {"language": "es", "vad_filter": True, "initial_prompt": "API, thread, Socra"}),
     ]
 
 

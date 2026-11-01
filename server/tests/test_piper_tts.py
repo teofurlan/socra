@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import wave
+from pathlib import Path
 
 import pytest
 
@@ -78,6 +79,27 @@ def test_english_terms_are_inlined_as_phonemes(piper):
     piper.synthesize("Revisá el hook de la API")
     text, _ = piper.fake_voice.calls[0]
     assert text == "Revisá el [[ HOOK ]] de la [[ A P I ]]"
+
+
+def test_claude_code_is_phonemized_with_its_english_spelling():
+    """The shipped terms.json must hand espeak the real word, not a respelling."""
+    from socra_server.adapters.piper_tts import PiperTTS as RealPiperTTS
+
+    seen: list[str] = []
+
+    class RecordingPhonemizer:
+        def phonemize(self, language: str, text: str) -> list[list[str]]:
+            assert language == "en-us"
+            seen.append(text)
+            return [list(text)]
+
+    shipped = Path(__file__).resolve().parents[2] / "voice" / "pi_voice" / "terms.json"
+    tts = RealPiperTTS(
+        voice_loader=lambda spec: FakePiperVoice(), phonemizer=RecordingPhonemizer(), glossary_path=shipped
+    )
+    tts.load()
+    tts.synthesize("Abrí Claude Code ahora")
+    assert seen == ["claude code"]
 
 
 def test_markdown_is_stripped_and_empty_text_is_silent(piper):

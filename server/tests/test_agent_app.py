@@ -58,8 +58,10 @@ class FakeTTS:
 class FakeSTT:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.glossaries: list = []
 
     def transcribe_with_glossary(self, wav_bytes: bytes, glossary) -> str:
+        self.glossaries.append(glossary)
         return self.text
 
 
@@ -501,6 +503,18 @@ async def test_audio_turn_is_transcribed_shown_and_sent(tmp_path):
     assert backend.conversations[0].turns == ["list the files"]
 
 
+async def test_audio_turn_gives_the_stt_the_project_folder_name(tmp_path):
+    project = tmp_path / "socra"
+    project.mkdir()
+    app, channel, _, loader = _app(heard="list the files")
+    await app.handle_start("fake", "small", str(project))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert loader.stt.glossaries == [["socra"]]
+
+
 async def test_unclear_audio_asks_to_repeat_without_a_turn(tmp_path):
     app, channel, backend, _ = _app(heard="")
     await app.handle_start("fake", "small", str(tmp_path))
@@ -694,3 +708,58 @@ async def test_blank_text_turn_is_ignored(tmp_path):
 
     assert app.turn_task is None
     assert channel.sent == []
+
+
+async def test_turn_audio_is_saved_with_its_transcript_when_opted_in(tmp_path, monkeypatch):
+    save_dir = tmp_path / "stt"
+    monkeypatch.setenv("SOCRA_STT_SAVE_DIR", str(save_dir))
+    app, channel, backend, _ = _app(heard="Socra, explícame el proyecto")
+    await app.handle_start("fake", "small", str(tmp_path))
+    audio = _wav(0.5)
+
+    await app.handle_turn_audio(base64.b64encode(audio).decode())
+    await _finish_turn(app, channel)
+
+    wavs = sorted(save_dir.glob("*.wav"))
+    assert len(wavs) == 1
+    assert wavs[0].read_bytes() == audio
+    assert wavs[0].with_suffix(".txt").read_text(encoding="utf-8") == "Socra, explícame el proyecto"
+    assert backend.conversations[0].turns == ["Socra, explícame el proyecto"]
+
+
+async def test_unheard_turn_audio_is_saved_with_an_empty_transcript(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOCRA_STT_SAVE_DIR", str(tmp_path / "stt"))
+    app, channel, _, _ = _app(heard="")
+    await app.handle_start("fake", "small", str(tmp_path))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+
+    [wav] = (tmp_path / "stt").glob("*.wav")
+    assert wav.with_suffix(".txt").read_text(encoding="utf-8") == ""
+
+
+async def test_turn_audio_is_not_saved_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("SOCRA_STT_SAVE_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    app, channel, _, _ = _app(heard="list the files")
+    await app.handle_start("fake", "small", str(tmp_path))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert list(tmp_path.rglob("*.wav")) == []
+
+
+async def test_a_failure_to_save_turn_audio_does_not_break_the_turn(tmp_path, monkeypatch):
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x")
+    monkeypatch.setenv("SOCRA_STT_SAVE_DIR", str(blocker / "stt"))
+    app, channel, backend, _ = _app(heard="list the files")
+    await app.handle_start("fake", "small", str(tmp_path))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert channel.of_type("transcript") == [{"type": "transcript", "text": "list the files", "final": True}]
+    assert backend.conversations[0].turns == ["list the files"]
+    assert channel.of_type("agent_error") == []
