@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 
 MODEL_REPO = "rhasspy/piper-voices"
 # Silence put before every clip. The page's audio output can lose the first few tens of
-# milliseconds when sound starts after a pause; ryan speaks from its first sample, so without
-# this lead-in its first phoneme is cut (daniela's own 30-75 ms of silence used to hide it).
+# milliseconds when sound starts after a pause; English Piper voices speak from their first
+# samples, so without this lead-in the first phoneme is cut (daniela's own 30-75 ms of
+# silence used to hide it).
 LEAD_IN_MS = 80
 LENGTH_SCALE_ENV = "SOCRA_TTS_LENGTH_SCALE"
 
@@ -121,7 +122,7 @@ class PiperTTS:
             piper_voice.synthesize_wav(
                 spoken,
                 wav_file,
-                syn_config=SynthesisConfig(length_scale=_length_scale(voice)),
+                syn_config=SynthesisConfig(length_scale=_length_scale(voice), speaker_id=voice.speaker),
             )
         return _with_lead_in(buffer.getvalue())
 

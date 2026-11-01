@@ -12,10 +12,13 @@ from __future__ import annotations
 SPEECH_LANGUAGE = "en"
 SPEECH_LANGUAGE_NAME = "English"
 
-# The Piper voice for the language: id, picker label, model path in the Hugging Face repo.
-SPEECH_VOICE_ID = "ryan"
-SPEECH_VOICE_LABEL = "Ryan (US English)"
-SPEECH_VOICE_MODEL = "en/en_US/ryan/high/en_US-ryan-high"
+# The Piper voice for the language: id, picker label, model path in the Hugging Face repo, and
+# the speaker inside that model. libritts_r is multi-speaker (CC BY 4.0); speaker 0 won a blind
+# test on 2026-11-01 against ryan (CC BY-NC-SA 4.0, which forbids commercial use).
+SPEECH_VOICE_ID = "libritts_r"
+SPEECH_VOICE_LABEL = "LibriTTS-R speaker 0 (US English)"
+SPEECH_VOICE_MODEL = "en/en_US/libritts_r/medium/en_US-libritts_r-medium"
+SPEECH_VOICE_SPEAKER = 0
 SPEECH_VOICE_LENGTH_SCALE = 1.0
 
 # Phrases Whisper invents from silence or noise (lowercase; matched as substrings).

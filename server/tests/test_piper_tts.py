@@ -14,9 +14,11 @@ from socra_server.domain.voices import DEFAULT_VOICE_ID, get_voice
 class FakePiperVoice:
     def __init__(self) -> None:
         self.calls: list[tuple[str, float]] = []
+        self.speakers: list[int | None] = []
 
     def synthesize_wav(self, text, wav_file, syn_config=None) -> None:
         self.calls.append((text, syn_config.length_scale))
+        self.speakers.append(syn_config.speaker_id)
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(22050)
@@ -49,33 +51,41 @@ def test_synthesize_before_load_raises(piper):
         piper.synthesize("hello")
 
 
-def test_default_voice_is_ryan_and_unknown_voices_are_refused(piper):  # S2
-    assert piper.voice_id == DEFAULT_VOICE_ID == "ryan"
+def test_default_voice_is_libritts_r_and_unknown_voices_are_refused(piper):  # S2
+    assert piper.voice_id == DEFAULT_VOICE_ID == "libritts_r"
     assert piper.set_voice("nope") is False
     assert piper.set_voice(None) is False
-    assert piper.voice_id == "ryan"
-    assert piper.set_voice("ryan") is True
+    assert piper.voice_id == "libritts_r"
+    assert piper.set_voice("libritts_r") is True
 
 
-def test_a_stored_voice_that_no_longer_exists_falls_back_to_ryan(piper):  # S2
+def test_a_stored_voice_that_no_longer_exists_falls_back_to_the_default(piper):  # S2
     assert piper.set_voice("daniela") is False  # the page sends its stored choice; no error
+    assert piper.set_voice("ryan") is False
     piper.load()
     piper.synthesize("Hello there")
-    assert piper.loaded == ["ryan"]
-    assert piper.voice_id == "ryan"
+    assert piper.loaded == ["libritts_r"]
+    assert piper.voice_id == "libritts_r"
 
 
-def test_ryan_is_the_only_voice_in_the_catalogue():  # S2
+def test_libritts_r_speaker_0_is_the_only_voice_in_the_catalogue():  # S2
     from socra_server.domain.voices import VOICES
 
-    assert [v.id for v in VOICES] == ["ryan"]
-    assert VOICES[0].model == "en/en_US/ryan/high/en_US-ryan-high"
+    assert [v.id for v in VOICES] == ["libritts_r"]
+    assert VOICES[0].model == "en/en_US/libritts_r/medium/en_US-libritts_r-medium"
+    assert VOICES[0].speaker == 0
     assert VOICES[0].length_scale == 1.0
 
 
 def test_glossary_terms_are_the_keys(piper):
     piper.load()
     assert piper.glossary_terms == ["hook", "API"]
+
+
+def test_the_multi_speaker_model_speaks_with_speaker_0(piper):  # S2
+    piper.load()
+    piper.synthesize("Hello there")
+    assert piper.fake_voice.speakers == [0]
 
 
 def test_returns_wav_bytes(piper):
@@ -119,7 +129,7 @@ def test_length_scale_defaults_to_catalogue(piper, monkeypatch):
     monkeypatch.delenv("SOCRA_TTS_LENGTH_SCALE", raising=False)
     piper.load()
     piper.synthesize("hello")
-    assert piper.fake_voice.calls[0][1] == get_voice("ryan").length_scale == 1.0
+    assert piper.fake_voice.calls[0][1] == get_voice("libritts_r").length_scale == 1.0
 
 
 def test_length_scale_env_override(piper, monkeypatch):
@@ -142,7 +152,7 @@ def test_load_fetches_the_current_voice_once(piper):
     piper.load()
     piper.synthesize("one")
     piper.synthesize("two")
-    assert piper.loaded == ["ryan"]
+    assert piper.loaded == ["libritts_r"]
 
 
 class LoudPiperVoice(FakePiperVoice):
