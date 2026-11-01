@@ -22,16 +22,16 @@ def test_cuda_runtime_failure_retries_on_cpu_with_same_prompt():
             def segments():
                 if self.device == "cuda":
                     raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
-                yield SimpleNamespace(text="Un proceso tiene su propia memoria.")
+                yield SimpleNamespace(text="A process has its own memory.")
 
             return segments(), None
 
     stt = WhisperSTT(["API"])
     stt._transcriber = Transcriber()
-    assert stt.transcribe_with_glossary(make_wav_bytes(), ["thread"]) == "Un proceso tiene su propia memoria."
+    assert stt.transcribe_with_glossary(make_wav_bytes(), ["thread"]) == "A process has its own memory."
     assert calls == [
-        ("cuda", {"language": "es", "vad_filter": True, "initial_prompt": "API, thread, Socra"}),
-        ("cpu", {"language": "es", "vad_filter": True, "initial_prompt": "API, thread, Socra"}),
+        ("cuda", {"language": "en", "vad_filter": True, "initial_prompt": "API, thread, Socra"}),
+        ("cpu", {"language": "en", "vad_filter": True, "initial_prompt": "API, thread, Socra"}),
     ]
 
 

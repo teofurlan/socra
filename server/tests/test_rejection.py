@@ -46,36 +46,46 @@ def test_is_valid_answer_empty():
 def test_is_valid_answer_punctuation_only():
     assert not is_valid_answer(". . . .")
     assert not is_valid_answer("...")
-    assert not is_valid_answer("¿? ¡! - - ,,,")
+    assert not is_valid_answer("?! - - ,,,")
 
 
 def test_is_valid_answer_repetitive():
     # 4 tokens, 1 token repeated 4 times (100% >= 60%)
-    assert not is_valid_answer("yo yo yo yo")
+    assert not is_valid_answer("I I I I")
     # 4 tokens, 1 token repeated 3 times (75% >= 60%)
-    assert not is_valid_answer("bla bla bla si")
+    assert not is_valid_answer("blah blah blah yes")
     # 5 tokens, 1 token repeated 3 times (60% >= 60%)
-    assert not is_valid_answer("bla bla bla otra cosa")
+    assert not is_valid_answer("blah blah blah other thing")
     # 4 tokens, max repetition 2 (50% < 60%) -> valid
-    assert is_valid_answer("uno dos uno tres")
+    assert is_valid_answer("one two one three")
     # < 4 tokens -> not rejected by repetition rule
-    assert is_valid_answer("si si si")
+    assert is_valid_answer("yes yes yes")
 
 
 def test_is_valid_answer_silence_hallucinations():
-    assert "subtítulos realizados por" in SILENCE_HALLUCINATIONS
+    assert "thanks for watching" in SILENCE_HALLUCINATIONS
     assert "amara.org" in SILENCE_HALLUCINATIONS
-    assert "gracias por ver" in SILENCE_HALLUCINATIONS
-    assert "suscríbete" in SILENCE_HALLUCINATIONS
 
-    assert not is_valid_answer("Subtítulos realizados por la comunidad de Amara.org")
-    assert not is_valid_answer("Muchas gracias por ver el video")
-    assert not is_valid_answer("suscríbete a mi canal para más contenido")
+    assert not is_valid_answer("Thanks for watching!")
+    assert not is_valid_answer("Subtitles by the Amara.org community")
+    assert not is_valid_answer("Please subscribe to my channel")
+
+
+def test_spanish_silence_hallucinations_are_gone():  # S7
+    assert is_valid_answer("Gracias por ver el video")
+    assert is_valid_answer("Suscríbete a mi canal")
+    assert is_valid_answer("Subtítulos realizados por la comunidad")
+
+
+def test_short_real_answers_are_not_dropped():  # S7
+    assert is_valid_answer("Thank you.")
+    assert is_valid_answer("Thanks!")
+    assert is_valid_answer("Yes.")
 
 
 def test_is_valid_answer_valid():
-    assert is_valid_answer("El río más largo de Sudamérica es el Amazonas.")
-    assert is_valid_answer("No recuerdo bien, pero creo que fue en 1492.")
+    assert is_valid_answer("The longest river in South America is the Amazon.")
+    assert is_valid_answer("I do not remember well, but I think it was in 1492.")
 
 
 # ---------------------------------------------------------------------------
@@ -106,18 +116,18 @@ def test_whisper_drops_low_confidence_segments():
     stt = WhisperSTT()
     # Segment with no_speech_prob > 0.6 and avg_logprob < -1.0 should be dropped
     stt._transcriber = _FakeTranscriberWithSegments([
-        _Segment("ruido de fondo", no_speech_prob=0.8, avg_logprob=-1.2),
-        _Segment("respuesta válida", no_speech_prob=0.1, avg_logprob=-0.3),
+        _Segment("background noise", no_speech_prob=0.8, avg_logprob=-1.2),
+        _Segment("valid answer", no_speech_prob=0.1, avg_logprob=-0.3),
     ])
     stt.set_base_terms([])
     res = stt.transcribe(make_wav_bytes())
-    assert res == "respuesta válida"
+    assert res == "valid answer"
 
 
 def test_whisper_all_low_confidence_returns_empty():
     stt = WhisperSTT()
     stt._transcriber = _FakeTranscriberWithSegments([
-        _Segment("silencio", no_speech_prob=0.9, avg_logprob=-1.5),
+        _Segment("silence", no_speech_prob=0.9, avg_logprob=-1.5),
     ])
     stt.set_base_terms([])
     res = stt.transcribe(make_wav_bytes())
@@ -133,8 +143,9 @@ def test_whisper_all_low_confidence_returns_empty():
     [
         "",
         ". . . .",
-        "yo yo yo yo",
-        "Subtítulos realizados por la comunidad de Amara.org",
+        "I I I I",
+        "Subtitles by the Amara.org community",
+        "Thanks for watching!",
     ],
 )
 @pytest.mark.asyncio
@@ -145,7 +156,7 @@ async def test_rejection_rules_keep_listening_and_send_notice(bad_transcript: st
     page = _FakePage()
     _connect(channel, page)
 
-    await app.ask("¿Cuál es la capital?", 1, 1)
+    await app.ask("What is the capital?", 1, 1)
     page.messages.clear()
 
     wav = make_wav_bytes()
@@ -177,25 +188,25 @@ async def test_rejection_rules_keep_listening_and_send_notice(bad_transcript: st
 @pytest.mark.asyncio
 async def test_valid_answer_passes_and_is_stored():
     channel = PageChannel()
-    loader = FakeLoader(stt_reply="El río Amazonas es el más largo.")
+    loader = FakeLoader(stt_reply="The Amazon is the longest river.")
     app = ExamApp(channel=channel, loader=loader)
     page = _FakePage()
     _connect(channel, page)
 
-    await app.ask("¿Cuál es el río más largo?", 1, 1)
+    await app.ask("What is the longest river?", 1, 1)
     page.messages.clear()
 
     wav = make_wav_bytes()
     b64 = base64.b64encode(wav).decode()
     await app.handle_answer_audio(b64)
 
-    assert app.session.pending_answer == "El río Amazonas es el más largo."
+    assert app.session.pending_answer == "The Amazon is the longest river."
     assert app.session.has_answer_for(1)
 
     transcripts = [m for m in page.messages if m.get("type") == "transcript"]
     assert len(transcripts) == 1
-    assert transcripts[0]["text"] == "El río Amazonas es el más largo."
+    assert transcripts[0]["text"] == "The Amazon is the longest river."
 
     ans = await app.get_answer(wait_s=1.0)
     assert ans["status"] == "answered"
-    assert ans["text"] == "El río Amazonas es el más largo."
+    assert ans["text"] == "The Amazon is the longest river."

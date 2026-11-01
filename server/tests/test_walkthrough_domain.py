@@ -80,25 +80,41 @@ def test_empty_code_and_empty_steps_are_rejected():
     [
         ("Repeat.", "repeat"),
         ("say that again", "repeat"),
-        ("otra vez", "repeat"),
+        ("repeat please", "repeat"),
         ("Go back!", "back"),
         ("previous step", "back"),
-        ("atrás", "back"),
+        ("step back", "back"),
         ("next", "next"),
         ("skip", "next"),
-        ("siguiente", "next"),
+        ("next step, please", "next"),
         ("continue", "resume"),
         ("keep going", "resume"),
-        ("continúa", "resume"),
+        ("go ahead", "resume"),
         ("stop", "stop"),
         ("that's enough", "stop"),
-        ("para", "stop"),
+        ("quit", "stop"),
         ("hold on", "pause"),
-        ("espera", "pause"),
+        ("pause", "pause"),
+        ("wait", "pause"),
     ],
 )
 def test_spoken_commands_are_recognised(text, command):
     assert parse_command(text) == command
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["pausa", "espera", "un momento", "otra vez", "repite", "atrás", "siguiente", "continúa", "para",
+     "detente", "por favor", "siguiente por favor"],
+)
+def test_spanish_forms_no_longer_trigger_commands(text):  # S3
+    assert parse_command(text) is None
+
+
+def test_por_and_favor_are_not_polite_words_any_more():  # S3
+    assert parse_command("por next") is None
+    assert parse_command("next favor") is None
+    assert parse_command("please next") == "next"
 
 
 @pytest.mark.parametrize("text", ["", "what does the loop do", "I think it adds two numbers", "backend"])

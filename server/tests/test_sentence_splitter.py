@@ -46,6 +46,19 @@ def test_common_abbreviations_do_not_split():
     ]
 
 
+def test_more_english_abbreviations_do_not_split():  # S8
+    assert split_sentences("Ask Rev. Hale or Sen. Cruz, vs. the rest. Then go.") == [
+        "Ask Rev. Hale or Sen. Cruz, vs. the rest.", "Then go.",
+    ]
+    assert split_sentences("Acme Inc. makes it, i.e. for us. Done.") == [
+        "Acme Inc. makes it, i.e. for us.", "Done.",
+    ]
+
+
+def test_spanish_only_abbreviations_are_not_special_any_more():  # S8
+    assert split_sentences("Ask Sra. Lopez today.") == ["Ask Sra.", "Lopez today."]
+
+
 def test_etc_splits_only_when_a_new_sentence_follows():
     assert split_sentences("Files, dirs, etc. are listed. Next, etc. Then more.") == [
         "Files, dirs, etc. are listed.", "Next, etc.", "Then more.",

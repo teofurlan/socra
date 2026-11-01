@@ -29,12 +29,12 @@ def test_voice_catalogue_structure():
     ids = [v.id for v in VOICES]
     assert len(ids) == len(set(ids)), "Voice ids must be unique"
 
-    assert DEFAULT_VOICE_ID == "daniela"
+    assert DEFAULT_VOICE_ID == "ryan"
     default_voice = get_voice(DEFAULT_VOICE_ID)
     assert default_voice is not None
-    assert default_voice.label == "Daniela (Argentina)"
-    assert default_voice.model.endswith("es_AR-daniela-high")
-    assert default_voice.length_scale == 1.2
+    assert default_voice.model == "en/en_US/ryan/high/en_US-ryan-high"
+    assert default_voice.length_scale == 1.0
+    assert get_voice("daniela") is None  # S2: no Spanish voice is offered
 
     assert get_voice("nope") is None
     assert get_voice(None) is None
@@ -90,31 +90,43 @@ async def test_ws_voice_messages(ws_server_bundle):
         # Discard initial state sent on connect
         await ws.recv()
 
-        # 1. Switch to daniela
-        await ws.send(json.dumps({"type": "voice", "voice": "daniela"}))
+        # 1. Switch to ryan
+        await ws.send(json.dumps({"type": "voice", "voice": "ryan"}))
         raw = await ws.recv()
         reply = json.loads(raw)
         assert reply["type"] == "voices"
-        assert reply["current"] == "daniela"
+        assert reply["current"] == "ryan"
         assert len(reply["voices"]) >= 1
         assert reply["voices"] == [{"id": v.id, "label": v.label} for v in VOICES]
-        assert loader.tts.voice_id == "daniela"
+        assert loader.tts.voice_id == "ryan"
 
         # 2. Unknown voice keeps current voice
         await ws.send(json.dumps({"type": "voice", "voice": "nope"}))
         raw = await ws.recv()
         reply = json.loads(raw)
         assert reply["type"] == "voices"
-        assert reply["current"] == "daniela"
-        assert loader.tts.voice_id == "daniela"
+        assert reply["current"] == "ryan"
+        assert loader.tts.voice_id == "ryan"
 
         # 3. Query without voice parameter
         await ws.send(json.dumps({"type": "voice"}))
         raw = await ws.recv()
         reply = json.loads(raw)
         assert reply["type"] == "voices"
-        assert reply["current"] == "daniela"
-        assert loader.tts.voice_id == "daniela"
+        assert reply["current"] == "ryan"
+        assert loader.tts.voice_id == "ryan"
+
+
+@pytest.mark.asyncio
+async def test_ws_stored_voice_that_no_longer_exists_falls_back_to_ryan(ws_server_bundle):  # S2
+    url, loader = ws_server_bundle
+    async with connect(url) as ws:
+        await ws.recv()
+        await ws.send(json.dumps({"type": "voice", "voice": "daniela"}))
+        reply = json.loads(await ws.recv())
+        assert reply["type"] == "voices"
+        assert reply["current"] == "ryan"
+        assert loader.tts.voice_id == "ryan"
 
 
 # ---------------------------------------------------------------------------
@@ -169,28 +181,28 @@ async def agent_ws_bundle():
 async def test_agent_ws_voice_messages(agent_ws_bundle):
     url, loader = agent_ws_bundle
     async with connect(url) as ws:
-        # 1. Switch to daniela
-        await ws.send(json.dumps({"type": "voice", "voice": "daniela"}))
+        # 1. Switch to ryan
+        await ws.send(json.dumps({"type": "voice", "voice": "ryan"}))
         raw = await ws.recv()
         reply = json.loads(raw)
         assert reply["type"] == "voices"
-        assert reply["current"] == "daniela"
+        assert reply["current"] == "ryan"
         assert len(reply["voices"]) >= 1
         assert reply["voices"] == [{"id": v.id, "label": v.label} for v in VOICES]
-        assert loader.tts.voice_id == "daniela"
+        assert loader.tts.voice_id == "ryan"
 
         # 2. Unknown voice keeps current voice
         await ws.send(json.dumps({"type": "voice", "voice": "nope"}))
         raw = await ws.recv()
         reply = json.loads(raw)
         assert reply["type"] == "voices"
-        assert reply["current"] == "daniela"
-        assert loader.tts.voice_id == "daniela"
+        assert reply["current"] == "ryan"
+        assert loader.tts.voice_id == "ryan"
 
         # 3. Query without voice parameter
         await ws.send(json.dumps({"type": "voice"}))
         raw = await ws.recv()
         reply = json.loads(raw)
         assert reply["type"] == "voices"
-        assert reply["current"] == "daniela"
-        assert loader.tts.voice_id == "daniela"
+        assert reply["current"] == "ryan"
+        assert loader.tts.voice_id == "ryan"

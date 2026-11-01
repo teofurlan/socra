@@ -29,9 +29,15 @@ def test_every_mode_can_switch_and_search_the_previous_session():
 def test_every_mode_replies_in_the_language_socra_listens_and_speaks():
     from socra_server.domain.speech import SPEECH_LANGUAGE, SPEECH_LANGUAGE_NAME
 
-    assert SPEECH_LANGUAGE == "es"
+    assert SPEECH_LANGUAGE == "en"
     for mode in MODES.values():
         assert f"Always reply in {SPEECH_LANGUAGE_NAME}" in mode.instructions
+
+
+def test_mode_instructions_tell_the_agent_to_reply_in_english():  # S5
+    for mode in MODES.values():
+        assert "Always reply in English" in mode.instructions
+        assert "Spanish" not in mode.instructions
 
 
 def test_only_exam_records_exam_results():

@@ -84,14 +84,14 @@ async def test_first_sentence_is_spoken_before_the_reply_finishes(tmp_path):  # 
 async def test_text_before_a_tool_call_is_spoken_when_the_tool_starts(tmp_path):  # S2
     app, channel, loader, convo = await _live(tmp_path)
 
-    await convo.events.put(TextDelta("Voy a verificarlo en la memoria de esa sesión"))
+    await convo.events.put(TextDelta("I will check that in the memory of that session"))
     await _settle()
     assert loader.tts.spoken == []  # no sentence end yet, nothing forces it out
 
-    await convo.events.put(ToolActivity("mem_search", "sesión"))
+    await convo.events.put(ToolActivity("mem_search", "session"))
     await _settle()
 
-    assert loader.tts.spoken == ["Voy a verificarlo en la memoria de esa sesión"]
+    assert loader.tts.spoken == ["I will check that in the memory of that session"]
     assert len(channel.of_type("tts_audio")) == 1
     assert not app.turn_task.done()  # the agent is still working
     await app.shutdown()
