@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef } from 'react'
 
+/**
+ * About -80 dBFS: inaudible, but not digital silence. Browsers and audio drivers put an idle
+ * output to sleep after a stretch of exact zeros and lose the first samples when it wakes up,
+ * which cut off the first words of each reply (#53).
+ */
+const KEEP_ALIVE_LEVEL = 0.0001
+
 interface Playback {
   context: AudioContext
   analyser: AnalyserNode
+  /** Feeds the destination a constant near-zero signal so the output never goes idle. */
+  keepAlive: ConstantSourceNode | null
   samples: Uint8Array<ArrayBuffer>
   sources: Set<AudioBufferSourceNode>
   queue: Promise<void>
@@ -31,7 +40,7 @@ export function useExamAudio() {
         analyser.fftSize = 256
         analyser.connect(context.destination)
         playbackRef.current = {
-          context, analyser, samples: new Uint8Array(analyser.fftSize),
+          context, analyser, keepAlive: startKeepAlive(context), samples: new Uint8Array(analyser.fftSize),
           sources: new Set(), queue: Promise.resolve(), nextStart: 0, generation: 0, disposed: false,
         }
       } catch (err) {
@@ -136,10 +145,28 @@ export function useExamAudio() {
         source.disconnect()
       }
       playback.sources.clear()
+      if (playback.keepAlive) {
+        playback.keepAlive.stop()
+        playback.keepAlive.disconnect()
+      }
       playback.analyser.disconnect()
       void playback.context.close().catch((error) => console.warn('Could not close exam audio:', error))
     }
   }, [])
 
   return { playAudio, stopAudio, getOutputVolume }
+}
+
+/** Bypasses the analyser so the visualizer still reads true silence between clips. */
+function startKeepAlive(context: AudioContext): ConstantSourceNode | null {
+  try {
+    const source = context.createConstantSource()
+    source.offset.value = KEEP_ALIVE_LEVEL
+    source.connect(context.destination)
+    source.start()
+    return source
+  } catch (error) {
+    console.warn('Could not keep the audio output awake:', error)
+    return null
+  }
 }

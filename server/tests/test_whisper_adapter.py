@@ -118,3 +118,20 @@ def test_whisper_no_ollama_cleaner(monkeypatch):
     stt.transcribe_with_glossary(wav)
     # No cleaner import should have happened during this path
     assert "dictation.cleaner" not in sys.modules
+
+
+def test_prompt_ends_with_socra_so_it_survives_truncation():
+    stt = WhisperSTT(["python", "API"])
+    assert stt._build_prompt(None).endswith(", Socra")
+    assert stt._build_prompt(["myproject"]).endswith("myproject, Socra")
+
+
+def test_prompt_is_just_socra_without_any_terms():
+    assert WhisperSTT()._build_prompt(None) == "Socra"
+
+
+def test_prompt_does_not_duplicate_socra():
+    stt = WhisperSTT(["Socra", "API"])
+    prompt = stt._build_prompt(["Socra", "thread"])
+    assert prompt.count("Socra") == 1
+    assert prompt.endswith("Socra")

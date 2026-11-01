@@ -22,6 +22,7 @@ SILENCE_HALLUCINATIONS: tuple[str, ...] = (
 )
 
 DEFAULT_WHISPER_MODEL = "large-v3-turbo"
+PRODUCT_NAME = "Socra"
 
 
 def get_whisper_config() -> tuple[str, str | None, str | None]:
@@ -171,6 +172,10 @@ class WhisperSTT:
             for term in extra_glossary:
                 if term not in combined:
                     combined.append(term)
+        # faster-whisper keeps only the last ~223 prompt tokens, so the product
+        # name goes last: it is the term that must never be truncated away.
+        combined = [term for term in combined if term != PRODUCT_NAME]
+        combined.append(PRODUCT_NAME)
         return ", ".join(combined)
 
     def transcribe(self, wav_bytes: bytes, prompt: str = "") -> str:

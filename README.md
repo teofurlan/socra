@@ -105,6 +105,7 @@ powershell -ExecutionPolicy Bypass -File server\install-shortcut.ps1
 | `SOCRA_TTS_LENGTH_SCALE` | voice default | Piper speech pace: above 1 is slower |
 | `SOCRA_WHISPER_MODEL` | `large-v3-turbo` | faster-whisper model (`base`, `small`, ...) |
 | `SOCRA_WHISPER_DEVICE` | `auto` | `auto`, `cuda`, or `cpu` |
+| `SOCRA_STT_SAVE_DIR` | unset | Diagnostic: save each spoken turn in a project session as a WAV plus its transcript in this folder |
 | `SOCRA_PREFERENCES_FILE` | `%LOCALAPPDATA%/Socra/preferences.json` | Shared page preferences |
 | `SOCRA_AGENT_IDLE_S` | `120` | Agent mode exits after this many seconds with no page open |
 

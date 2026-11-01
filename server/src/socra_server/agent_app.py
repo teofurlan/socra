@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from socra_server.adapters.turn_audio_log import save_turn_audio
 from socra_server.adapters.whisper_stt import is_valid_answer
 from socra_server.domain.scene import parse_scene
 from socra_server.domain.walkthrough import parse_command
@@ -206,6 +207,13 @@ class AgentApp:
             else:
                 self._start_turn(text)
 
+    def _stt_terms(self) -> list[str] | None:
+        """Project-specific words to bias recognition: the open folder's name."""
+        if not self._session:
+            return None
+        name = Path(self._session["cwd"]).name
+        return [name] if name else None
+
     async def handle_turn_audio(self, b64_data: str) -> None:
         scene_playing = self.walkthrough.active
         if not scene_playing and not self._switching and not await self._can_take_turn():
@@ -220,13 +228,14 @@ class AgentApp:
         try:
             await self.loader.ready()
             text = await asyncio.to_thread(
-                self.loader.stt.transcribe_with_glossary, wav_bytes, None
+                self.loader.stt.transcribe_with_glossary, wav_bytes, self._stt_terms()
             )
         except Exception as exc:
             logger.error("Agent turn transcription failed: %s", exc)
             await self._error("Could not transcribe the audio. Please try again.")
             await self._state("listening")
             return
+        await asyncio.to_thread(save_turn_audio, wav_bytes, text or "")
         if not text or not is_valid_answer(text):
             await self.channel.send({"type": "notice", "text": "Didn't catch that. Please say it again."})
             await self._state("listening")
