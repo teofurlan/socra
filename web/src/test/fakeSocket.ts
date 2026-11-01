@@ -56,6 +56,14 @@ class FakeAudioSource {
   onended: (() => void) | null = null
 }
 
+class FakeConstantSource {
+  offset = { value: 1 }
+  connect = vi.fn()
+  disconnect = vi.fn()
+  start = vi.fn()
+  stop = vi.fn()
+}
+
 /** Minimal AudioContext; finish clips with `FakeAudioContext.latest().sources[i].onended?.()`. */
 export class FakeAudioContext {
   static instances: FakeAudioContext[] = []
@@ -72,7 +80,13 @@ export class FakeAudioContext {
     getByteTimeDomainData: vi.fn((data: Uint8Array) => data.fill(128)),
   }
   sources: FakeAudioSource[] = []
+  constantSources: FakeConstantSource[] = []
   createAnalyser = vi.fn(() => this.analyser)
+  createConstantSource() {
+    const source = new FakeConstantSource()
+    this.constantSources.push(source)
+    return source
+  }
   createBufferSource() {
     const source = new FakeAudioSource()
     this.sources.push(source)
