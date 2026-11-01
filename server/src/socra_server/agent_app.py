@@ -52,6 +52,12 @@ logger = logging.getLogger(__name__)
 
 FolderPicker = Callable[[], str | None]
 PLAYBACK_GRACE_S = 2.0
+# Sentences already complete are spoken together, up to these lengths (#85 S13, S14). The
+# first clip of a reply stays short so speech starts quickly; later clips can be longer
+# because they are synthesized while the previous one plays. A single longer sentence still
+# goes out whole.
+FIRST_CLIP_MAX_CHARS = 120
+CLIP_MAX_CHARS = 300
 # One request plus two retries for a summary that lacks fields.
 SUMMARY_ATTEMPTS = 3
 NEEDS_CLAUDE_CODE = "Socra sessions need a backend with mentor and exam modes, such as Claude Code."
@@ -845,16 +851,20 @@ class _ReplySpeech:
             self._fail(exc)
             ready = False
         done = False
-        while not done and (first := await self._queue.get()) is not None:
-            # Everything complete by now goes out as one clip (#85 S13); the first
-            # sentence of a stream is alone in the queue, so it still starts at once.
-            pieces = [first]
-            while not self._queue.empty():
+        held: list[str] = []  # complete pieces taken from the queue, not yet spoken
+        while held or not done:
+            if not held:
+                first = await self._queue.get()
+                if first is None:
+                    break
+                held.append(first)
+            while not done and not self._queue.empty():
                 nxt = self._queue.get_nowait()
                 if nxt is None:
                     done = True
-                    break
-                pieces.append(nxt)
+                else:
+                    held.append(nxt)
+            pieces = self._next_clip(held)
             spoken = " ".join(pieces)
             try:
                 if not ready:
@@ -880,6 +890,20 @@ class _ReplySpeech:
             finally:
                 for _ in pieces:
                     self._settled_one()
+
+    def _next_clip(self, held: list[str]) -> list[str]:
+        """Take the pieces for the next clip: complete sentences together, up to a length.
+
+        Short replies come out as one clip (#85 S13), but a long reply that arrived at once
+        still starts with a short clip instead of waiting for all of it (S14).
+        """
+        limit = FIRST_CLIP_MAX_CHARS if self._sent == 0 else CLIP_MAX_CHARS
+        pieces = [held.pop(0)]
+        size = len(pieces[0])
+        while held and size + 1 + len(held[0]) <= limit:
+            size += 1 + len(held[0])
+            pieces.append(held.pop(0))
+        return pieces
 
     async def _wait_for_sent(self) -> None:
         while not self._cancelled and self._outstanding:
