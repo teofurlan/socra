@@ -39,7 +39,7 @@ stays per origin, since browsers give each origin its own device ids.
 - The voice stack checked out at `voice/` in this
   repo (or set `VOICE_STACK_DIR` to the absolute path), for the English-terms
   glossary (`pi_voice/terms.json`, which primes Whisper with project terms) and the Whisper model cache under `models/whisper/`.
-- The Piper voice (`en_US-ryan-high`, about 115 MB) downloads from Hugging Face
+- The Piper voice (`en_US-libritts_r-medium`, speaker 0, about 79 MB) downloads from Hugging Face
   (`rhasspy/piper-voices`) on first use and is cached.
 - Run `uv sync --project server` to install server and speech dependencies.
 
@@ -179,7 +179,7 @@ instead, so exam and agent mode can run at the same time.
 | Variable | Default | Description |
 |---|---|---|
 | `VOICE_STACK_DIR` | `voice/` (relative to repo root) | Absolute path to the voice stack directory |
-| `SOCRA_TTS_LENGTH_SCALE` | voice default (`1.0` for Ryan) | Piper speech pace: above 1 is slower, below 1 faster |
+| `SOCRA_TTS_LENGTH_SCALE` | voice default (`1.0` for LibriTTS-R) | Piper speech pace: above 1 is slower, below 1 faster |
 | `SOCRA_WHISPER_MODEL` | `large-v3-turbo` | Faster-whisper model (`base`, `small`, `large-v3-turbo`, etc.) |
 | `SOCRA_WHISPER_DEVICE` | `auto` | Execution device: `auto` (CUDA float16 if available, else CPU int8), `cuda`, or `cpu` |
 | `SOCRA_PREFERENCES_FILE` | `%LOCALAPPDATA%/Socra/preferences.json` | Page preferences shared by every server process |

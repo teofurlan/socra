@@ -436,6 +436,26 @@ async def test_a_short_reply_that_arrives_at_once_is_one_clip(tmp_path):  # S13
     assert _states(channel) == ["thinking", "speaking", "listening"]
 
 
+async def test_a_long_reply_that_arrives_at_once_still_starts_with_a_short_clip(tmp_path):  # S14
+    """User: "cuando quiso leer un texto largo tardó un montón en empezar y después leyó todo de una"."""
+    from socra_server.agent_app import CLIP_MAX_CHARS, FIRST_CLIP_MAX_CHARS
+
+    app, channel, loader, convo = await _live(tmp_path)
+    sentences = [f"This is sentence number {n} of a long explanation about the server." for n in range(1, 9)]
+    text = " ".join(sentences)
+
+    await convo.events.put(TextDelta(text))
+    await convo.events.put(ReplyDone(text))
+    await _until(lambda: " ".join(loader.tts.spoken) == text)
+
+    clips = loader.tts.spoken
+    assert clips[0] == sentences[0]  # the first clip is short, so speech starts quickly
+    assert len(clips[0]) <= FIRST_CLIP_MAX_CHARS
+    assert all(len(clip) <= CLIP_MAX_CHARS for clip in clips[1:])
+    assert len(clips) > 2  # never the whole reply in one or two long clips
+    assert len(channel.of_type("tts_audio")) == len(clips)
+
+
 async def test_sentences_pending_while_the_worker_is_busy_go_out_together(tmp_path):  # S13
     app, channel, loader, convo = await _live(tmp_path)
     gate = threading.Event()

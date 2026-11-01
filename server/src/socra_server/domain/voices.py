@@ -8,6 +8,7 @@ from socra_server.domain.speech import (
     SPEECH_VOICE_LABEL,
     SPEECH_VOICE_LENGTH_SCALE,
     SPEECH_VOICE_MODEL,
+    SPEECH_VOICE_SPEAKER,
 )
 
 
@@ -17,6 +18,7 @@ class Voice:
     label: str
     model: str  # Piper model path in the Hugging Face repo, without extension
     length_scale: float  # Piper pace: above 1 is slower
+    speaker: int | None = None  # speaker id inside a multi-speaker model
 
 
 VOICES: tuple[Voice, ...] = (
@@ -25,6 +27,7 @@ VOICES: tuple[Voice, ...] = (
         label=SPEECH_VOICE_LABEL,
         model=SPEECH_VOICE_MODEL,
         length_scale=SPEECH_VOICE_LENGTH_SCALE,
+        speaker=SPEECH_VOICE_SPEAKER,
     ),
 )
 
