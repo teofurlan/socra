@@ -101,8 +101,9 @@ class AgentApp:
         # The reply being spoken sentence by sentence; None between turns.
         self._speech: _ReplySpeech | None = None
         self._state_name = "idle"
-        # Clips of an interrupted turn the page has not reported yet; their late
-        # playback_done must not count toward the next turn.
+        # Clips of an abandoned turn (interrupt, restart, shutdown) the page has not
+        # reported yet; their late playback_done must not count toward the next turn.
+        # Only the connected page can pay this debt, so a disconnect clears it.
         self._ack_debt = 0
         # Narrated scenes the mentor or exam agent plays with the present tool.
         self.walkthrough = WalkthroughRunner(
@@ -279,9 +280,7 @@ class AgentApp:
             self.walkthrough.command("stop")
         if self._conversation is not None and self._turn_running:
             # Whatever is still being synthesized or queued must never sound.
-            if self._speech is not None:
-                self._ack_debt += self._speech.unacknowledged()
-                self._speech.cancel()
+            self._abandon_speech()
             await self._conversation.interrupt()
 
     def handle_playback_done(self, seq: int | None = None) -> None:
@@ -304,6 +303,9 @@ class AgentApp:
 
     async def handle_disconnect(self) -> None:
         self.walkthrough.abort()
+        # The page that owed those acknowledgements is gone; a new page starts clean.
+        self._ack_debt = 0
+        self._playback_done.set()  # wake a wait for clips nobody can play any more
         # Nobody is left to answer: every open request becomes a denial.
         for future in self._pending.values():
             if not future.done():
@@ -404,6 +406,7 @@ class AgentApp:
         task = self.turn_task
         if task is None or task.done():
             return
+        self._abandon_speech()
         if self._conversation is not None:
             try:
                 await self._conversation.interrupt()
@@ -411,6 +414,14 @@ class AgentApp:
                 logger.warning("Interrupting the agent turn failed: %s", exc)
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+    def _abandon_speech(self) -> None:
+        """Stop the reply being spoken; the page still owes an ack for each clip it received."""
+        speech = self._speech
+        if speech is None or speech.cancelled:
+            return  # already abandoned: its debt was taken then
+        self._ack_debt += speech.unacknowledged()
+        speech.cancel()
 
     async def _run_turn(self, text: str, *, hidden: bool = False) -> None:
         """Run one turn; a hidden turn (the handoff seed) is not recorded as a user turn."""
@@ -660,6 +671,11 @@ class AgentApp:
             # The scene must not cut or interleave with the words said just before it.
             self._speech.flush()
             await self._speech.settle()
+            if self._speech is None or self._speech.cancelled:
+                # Interrupted while waiting: end it as main does when stopped at step 1.
+                return json.dumps({"status": "stopped", "step": 1, "total": len(parsed.steps)})
+            if not self.channel.is_connected:
+                return json.dumps({"status": "page_disconnected"})
         result = await self.walkthrough.run(parsed)
         # The agent's turn goes on after the scene.
         await self._state("thinking" if self._turn_running else "listening")
@@ -739,6 +755,10 @@ class _ReplySpeech:
         if self._cancelled or self._closed:
             return
         self._enqueue(self._splitter.flush())
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
 
     def unacknowledged(self) -> int:
         """Clips already sent that the page has not reported as played."""
@@ -822,6 +842,8 @@ class _ReplySpeech:
                 wav = await asyncio.to_thread(app.loader.tts.synthesize, spoken)
                 if self._cancelled:
                     return
+                if not app.channel.is_connected:
+                    continue  # nobody receives it, so nobody will report it as played
                 if app._state_name != "speaking":
                     await app._state("speaking")
                 self._sent += 1
@@ -848,7 +870,10 @@ class _ReplySpeech:
     async def _wait_for_playback(self) -> None:
         app = self._app
         loop = asyncio.get_running_loop()
-        while not self._cancelled and app.acknowledged_clips - self._base_acks < self._sent:
+        while (
+            not self._cancelled and app.channel.is_connected
+            and app.acknowledged_clips - self._base_acks < self._sent
+        ):
             app._playback_done.clear()
             if self._cancelled or app.acknowledged_clips - self._base_acks >= self._sent:
                 break

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 
 from socra_server.domain.agent import AgentError, ReplyDone, TextDelta, ToolActivity
@@ -310,3 +311,101 @@ async def test_a_sentence_that_fails_to_synthesize_is_skipped_and_reported_once(
     errors = channel.of_type("agent_error")
     assert len(errors) == 1 and "turn failed" not in errors[0]["message"]
     assert _states(channel)[-1] == "listening"
+
+
+async def test_interrupting_the_reply_before_a_scene_stops_the_scene(tmp_path):  # S5, S6 (R1)
+    app, channel, loader, convo = await _live(tmp_path)
+    await convo.events.put(TextDelta("Let me show you. "))
+    await _until(lambda: len(_reply_clips(channel)) == 1)
+
+    scene = asyncio.create_task(convo.toolbox.present(SCENE))
+    await _settle()
+    assert not scene.done()  # still waiting for the sentence before it
+
+    await app.handle_interrupt()
+    app.handle_playback_done()  # the page reports the stopped sentence
+    result = json.loads(await asyncio.wait_for(scene, timeout=1))
+
+    assert result == {"status": "stopped", "step": 1, "total": 2}
+    assert _scene_clips(channel) == []
+    assert channel.of_type("walkthrough") == []
+    assert not app.walkthrough.active
+    await convo.events.put(ReplyDone("Let me show you."))
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+
+async def test_a_page_that_leaves_during_the_pre_scene_wait_ends_the_scene(tmp_path):  # S6
+    app, channel, loader, convo = await _live(tmp_path)
+    await convo.events.put(TextDelta("Let me show you. "))
+    await _until(lambda: len(_reply_clips(channel)) == 1)
+
+    scene = asyncio.create_task(convo.toolbox.present(SCENE))
+    await _settle()
+    channel.is_connected = False
+    await app.handle_disconnect()
+    result = json.loads(await asyncio.wait_for(scene, timeout=1))
+
+    assert result["status"] == "page_disconnected"
+    assert _scene_clips(channel) == []
+    assert channel.of_type("walkthrough") == []
+    await app.shutdown()
+
+
+async def test_clips_nobody_received_do_not_extend_the_playback_wait(tmp_path):  # S3
+    app, channel, loader, convo = await _live(tmp_path)
+    channel.is_connected = False  # no page: nothing is delivered, nothing will be acknowledged
+    text = "One. Two. Three."
+    await convo.events.put(TextDelta(text))
+    await convo.events.put(ReplyDone(text))
+
+    await asyncio.wait_for(app.turn_task, timeout=1)  # not PLAYBACK_GRACE_S plus the clips' length
+    assert channel.of_type("tts_audio") == []
+
+
+async def _restart(app, backend, old):
+    await app.handle_start("fake", "small", str(old))
+    await _until(lambda: len(backend.conversations) == 2 and app._conversation is not None)
+    return backend.conversations[1]
+
+
+async def test_restarting_the_session_keeps_the_debt_of_clips_still_on_the_page(tmp_path):  # S5 (F3)
+    app, channel, loader, convo = await _live(tmp_path)
+    await convo.events.put(TextDelta("One. Two. "))
+    await _until(lambda: len(_reply_clips(channel)) == 2)
+
+    second = await _restart(app, app._backend, tmp_path)
+    await app.handle_turn_text("again")
+    await asyncio.sleep(0)
+    await second.events.put(TextDelta("Next. "))
+    await second.events.put(ReplyDone("Next."))
+    await _until(lambda: len(_reply_clips(channel)) == 3)
+
+    app.handle_playback_done()  # the page reports the two cancelled clips late
+    app.handle_playback_done()
+    await _settle()
+    assert not app.turn_task.done()
+
+    app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+    await app.shutdown()
+
+
+async def test_a_page_that_left_owes_no_ack_debt_to_the_next_session(tmp_path):  # S5 (F3)
+    app, channel, loader, convo = await _live(tmp_path)
+    await convo.events.put(TextDelta("One. Two. "))
+    await _until(lambda: len(_reply_clips(channel)) == 2)
+    await app.handle_interrupt()
+    await convo.events.put(ReplyDone("One. Two."))
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+    await app.handle_disconnect()  # that page is gone; it will never report those clips
+    channel.is_connected = True
+
+    await app.handle_turn_text("again")
+    await asyncio.sleep(0)
+    await convo.events.put(TextDelta("Next. "))
+    await convo.events.put(ReplyDone("Next."))
+    await _until(lambda: len(_reply_clips(channel)) == 3)
+    app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+    await app.shutdown()
