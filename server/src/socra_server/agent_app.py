@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from socra_server.adapters.turn_audio_log import save_turn_audio
 from socra_server.adapters.whisper_stt import is_valid_answer
 from socra_server.domain.scene import parse_scene
 from socra_server.domain.walkthrough import parse_command
@@ -219,6 +220,7 @@ class AgentApp:
             await self._error("Could not transcribe the audio. Please try again.")
             await self._state("listening")
             return
+        await asyncio.to_thread(save_turn_audio, wav_bytes, text or "")
         if not text or not is_valid_answer(text):
             await self.channel.send({"type": "notice", "text": "Didn't catch that. Please say it again."})
             await self._state("listening")
