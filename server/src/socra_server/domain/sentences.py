@@ -99,12 +99,15 @@ _WAIT = _Wait()
 
 
 def _fence_end(buffer: str) -> int | None:
-    marker = buffer[:3]
-    closing = buffer.find("\n" + marker, 3)
-    if closing == -1:
+    """End of a fenced block: a line made only of the opening marker (at least as long)."""
+    char = buffer[0]
+    opening = len(buffer) - len(buffer.lstrip(char))
+    close = re.compile(rf"\n[ \t]*{re.escape(char)}{{{opening},}}[ \t]*\n")
+    first_line_end = buffer.find("\n")
+    if first_line_end == -1:
         return None
-    newline = buffer.find("\n", closing + 4)
-    return None if newline == -1 else newline + 1
+    match = close.search(buffer, first_line_end)
+    return None if match is None else match.end()
 
 
 def _sentence_stop(buffer: str, start: int) -> int | _Skip | _Wait:

@@ -104,6 +104,34 @@ def test_tilde_fences_are_respected_and_an_unclosed_fence_is_flushed_whole():
     assert splitter.flush() == ["~~~\na. b. c."]
 
 
+def test_a_fence_closes_only_on_its_own_marker():
+    backticks = "Intro.\n```\na. b.\n~~~\nc. d.\n```py\ne. f.\n```\nOutro."
+    tildes = "Intro.\n~~~\na. b.\n```\nc. d.\n~~~\nOutro."
+
+    assert split_sentences(backticks) == [
+        "Intro.", "```\na. b.\n~~~\nc. d.\n```py\ne. f.\n```", "Outro.",
+    ]
+    assert split_sentences(tildes) == ["Intro.", "~~~\na. b.\n```\nc. d.\n~~~", "Outro."]
+
+
+def test_a_longer_opening_fence_needs_a_marker_at_least_as_long():
+    text = "````\n```\na. b.\n```\n````\nOutro."
+
+    assert split_sentences(text) == ["````\n```\na. b.\n```\n````", "Outro."]
+
+
+def test_multi_line_deltas_split_like_the_whole_text():
+    text = "## Plan\n\n- First. Then\n- Second item\n```py\nx = 1. 2.\n```\nDone. Bye."
+    splitter = SentenceSplitter()
+    pieces: list[str] = []
+    for delta in ["## Pl", "an\n\n- First. Th", "en\n- Second it", "em\n```py\nx = 1", ". 2.\n``", "`\nDone. B", "ye."]:
+        pieces += splitter.feed(delta)
+    pieces += splitter.flush()
+
+    assert pieces == split_sentences(text)
+    assert pieces == ["## Plan", "- First.", "Then", "- Second item", "```py\nx = 1. 2.\n```", "Done.", "Bye."]
+
+
 def test_flush_empties_the_splitter_and_ignores_whitespace():
     splitter = SentenceSplitter()
     splitter.feed("Done. ")
