@@ -466,10 +466,12 @@ async def test_text_turn_streams_events_and_speaks_the_clean_reply(tmp_path):
     assert [k for k in kinds if k != "tts_audio"] == [
         "agent_text", "agent_tool", "agent_text", "agent_reply",
     ]
-    assert kinds.count("tts_audio") == 2
+    # The scripted backend yields everything at once, so both sentences are pending when the
+    # speech worker is free and go out as one clip (#85 S13).
+    assert kinds.count("tts_audio") == 1
     assert channel.of_type("agent_tool")[0] == {"type": "agent_tool", "tool": "Read", "summary": "app.py"}
     assert channel.of_type("agent_reply")[0]["text"].startswith("It has `ExamApp`")
-    assert loader.tts.spoken == ["Looking.", "It has ExamApp:"]
+    assert loader.tts.spoken == ["Looking. It has ExamApp:"]
     states = [m["state"] for m in channel.of_type("state")]
     assert states == ["thinking", "speaking", "listening"]
 
