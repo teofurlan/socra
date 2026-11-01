@@ -144,13 +144,14 @@ def _app(backend=None, *, heard="list the files", picked: str | None = "C:/work"
 
 async def _finish_turn(app: AgentApp, channel: FakeChannel) -> None:
     """Let the background turn run, acknowledging every clip the page would play."""
-    for _ in range(200):
+    for _ in range(1000):
         played = len(channel.of_type("tts_audio"))
         while app.acknowledged_clips < played:
             app.handle_playback_done()
         if app.turn_task is None or app.turn_task.done():
             break
-        await asyncio.sleep(0)
+        # Synthesis runs in a worker thread, so give it real time, not only loop turns.
+        await asyncio.sleep(0.002)
     assert app.turn_task is not None
     await asyncio.wait_for(app.turn_task, timeout=2)
 
@@ -446,10 +447,12 @@ async def test_turn_before_start_is_rejected():
 
 
 async def test_text_turn_streams_events_and_speaks_the_clean_reply(tmp_path):
+    final = "It has `ExamApp`:\n```py\nclass ExamApp: ...\n```"
     script = [
         TextDelta("Looking."),
         ToolActivity("Read", "app.py"),
-        ReplyDone("It has `ExamApp`:\n```py\nclass ExamApp: ...\n```"),
+        TextDelta(final),
+        ReplyDone(final),
     ]
     app, channel, backend, loader = _app(FakeBackend(script))
     await app.handle_start("fake", "small", str(tmp_path))
@@ -460,10 +463,13 @@ async def test_text_turn_streams_events_and_speaks_the_clean_reply(tmp_path):
 
     assert backend.conversations[0].turns == ["what is in app.py?"]
     kinds = [m["type"] for m in channel.sent if m["type"] != "state"]
-    assert kinds == ["agent_text", "agent_tool", "agent_reply", "tts_audio"]
+    assert [k for k in kinds if k != "tts_audio"] == [
+        "agent_text", "agent_tool", "agent_text", "agent_reply",
+    ]
+    assert kinds.count("tts_audio") == 2
     assert channel.of_type("agent_tool")[0] == {"type": "agent_tool", "tool": "Read", "summary": "app.py"}
     assert channel.of_type("agent_reply")[0]["text"].startswith("It has `ExamApp`")
-    assert loader.tts.spoken == ["It has ExamApp:"]
+    assert loader.tts.spoken == ["Looking.", "It has ExamApp:"]
     states = [m["state"] for m in channel.of_type("state")]
     assert states == ["thinking", "speaking", "listening"]
 
