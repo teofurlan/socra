@@ -13,8 +13,7 @@ The server speaks through [Piper](https://github.com/OHF-Voice/piper1-gpl)
 (`piper-tts` package), licensed under GPL-3.0-or-later. It is installed as a
 dependency, not bundled.
 
-The voice `es_AR-daniela-high` comes from
-[rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices), trained by
-[larcanio](https://huggingface.co/larcanio/piper-voices) on
-[OpenSLR 61](https://www.openslr.org/61/) (Crowdsourced high-quality Argentinian
-Spanish speech, Google), licensed under CC BY-SA 4.0. It downloads on first use.
+The voice `en_US-ryan-high` comes from
+[rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices), trained on the
+[RyanSpeech](https://www.kaggle.com/datasets/roholazandie/ryanspeech) dataset, licensed
+under CC BY-NC-SA 4.0, which does not allow commercial use. It downloads on first use.

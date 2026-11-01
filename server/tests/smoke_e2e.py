@@ -32,9 +32,9 @@ from websockets.asyncio.client import connect
 from socra_server.adapters.piper_tts import PiperTTS
 
 ROOT = Path(__file__).resolve().parents[2]
-QUESTION = "Explica la diferencia entre un proceso y un hilo."
+QUESTION = "Explain the difference between a process and a thread."
 CODE = 'print("DISPLAY_ONLY_7291")'
-ANSWER = "Un proceso tiene su propia memoria y un hilo comparte la memoria del proceso."
+ANSWER = "A process has its own memory, and a thread shares the memory of its process."
 
 
 class ProtocolErrors(logging.Handler):
