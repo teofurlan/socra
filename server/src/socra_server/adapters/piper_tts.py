@@ -17,6 +17,10 @@ from socra_server.domain.voices import DEFAULT_VOICE_ID, Voice, get_voice
 logger = logging.getLogger(__name__)
 
 MODEL_REPO = "rhasspy/piper-voices"
+# Silence put before every clip. The page's audio output can lose the first few tens of
+# milliseconds when sound starts after a pause; ryan speaks from its first sample, so without
+# this lead-in its first phoneme is cut (daniela's own 30-75 ms of silence used to hide it).
+LEAD_IN_MS = 80
 LENGTH_SCALE_ENV = "SOCRA_TTS_LENGTH_SCALE"
 
 
@@ -119,7 +123,7 @@ class PiperTTS:
                 wav_file,
                 syn_config=SynthesisConfig(length_scale=_length_scale(voice)),
             )
-        return buffer.getvalue()
+        return _with_lead_in(buffer.getvalue())
 
     def _current_voice(self) -> Voice:
         voice = get_voice(self._voice_id)
@@ -131,3 +135,18 @@ class PiperTTS:
             if voice.id not in self._voices:
                 self._voices[voice.id] = self._voice_loader(voice)
             return self._voices[voice.id]
+
+
+def _with_lead_in(wav_bytes: bytes) -> bytes:
+    """Return the same WAV with LEAD_IN_MS of silence before its first sample."""
+    with wave.open(io.BytesIO(wav_bytes), "rb") as source:
+        params = source.getparams()
+        frames = source.readframes(source.getnframes())
+    lead = round(params.framerate * LEAD_IN_MS / 1000)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as padded:
+        padded.setnchannels(params.nchannels)
+        padded.setsampwidth(params.sampwidth)
+        padded.setframerate(params.framerate)
+        padded.writeframes(bytes(lead * params.nchannels * params.sampwidth) + frames)
+    return buffer.getvalue()

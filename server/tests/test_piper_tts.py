@@ -143,3 +143,29 @@ def test_load_fetches_the_current_voice_once(piper):
     piper.synthesize("one")
     piper.synthesize("two")
     assert piper.loaded == ["ryan"]
+
+
+class LoudPiperVoice(FakePiperVoice):
+    def synthesize_wav(self, text, wav_file, syn_config=None) -> None:
+        self.calls.append((text, syn_config.length_scale))
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+        wav_file.writeframes(b"\x10\x27" * 10)  # sound from the very first sample, like ryan
+
+
+def test_every_clip_starts_with_a_lead_in_of_silence(glossary_file):  # S11
+    """ryan starts speaking in the first 10 ms; the page's output loses that much on wake-up."""
+    from socra_server.adapters.piper_tts import LEAD_IN_MS
+
+    tts = PiperTTS(voice_loader=lambda spec: LoudPiperVoice(), glossary_path=glossary_file)
+    tts.load()
+    import io
+
+    with wave.open(io.BytesIO(tts.synthesize("Hello there")), "rb") as wav:
+        assert (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) == (1, 2, 22050)
+        lead = round(22050 * LEAD_IN_MS / 1000)
+        frames = wav.readframes(wav.getnframes())
+    assert LEAD_IN_MS >= 60  # at least daniela's typical 30-75 ms, which masked the cut
+    assert frames[: lead * 2] == b"\x00\x00" * lead
+    assert frames[lead * 2 :] == b"\x10\x27" * 10
