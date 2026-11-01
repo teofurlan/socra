@@ -38,8 +38,8 @@ stays per origin, since browsers give each origin its own device ids.
 - [uv](https://docs.astral.sh/uv/) installed
 - The voice stack checked out at `voice/` in this
   repo (or set `VOICE_STACK_DIR` to the absolute path), for the English-terms
-  glossary (`pi_voice/terms.json`) and the Whisper model cache under `models/whisper/`.
-- The Piper voice (`es_AR-daniela-high`, about 115 MB) downloads from Hugging Face
+  glossary (`pi_voice/terms.json`, which primes Whisper with project terms) and the Whisper model cache under `models/whisper/`.
+- The Piper voice (`en_US-ryan-high`, about 115 MB) downloads from Hugging Face
   (`rhasspy/piper-voices`) on first use and is cached.
 - Run `uv sync --project server` to install server and speech dependencies.
 
@@ -179,7 +179,7 @@ instead, so exam and agent mode can run at the same time.
 | Variable | Default | Description |
 |---|---|---|
 | `VOICE_STACK_DIR` | `voice/` (relative to repo root) | Absolute path to the voice stack directory |
-| `SOCRA_TTS_LENGTH_SCALE` | voice default (`1.2` for Daniela) | Piper speech pace: above 1 is slower, below 1 faster |
+| `SOCRA_TTS_LENGTH_SCALE` | voice default (`1.0` for Ryan) | Piper speech pace: above 1 is slower, below 1 faster |
 | `SOCRA_WHISPER_MODEL` | `large-v3-turbo` | Faster-whisper model (`base`, `small`, `large-v3-turbo`, etc.) |
 | `SOCRA_WHISPER_DEVICE` | `auto` | Execution device: `auto` (CUDA float16 if available, else CPU int8), `cuda`, or `cpu` |
 | `SOCRA_PREFERENCES_FILE` | `%LOCALAPPDATA%/Socra/preferences.json` | Page preferences shared by every server process |
@@ -187,7 +187,7 @@ instead, so exam and agent mode can run at the same time.
 
 ### Whisper Model Benchmark (RTX 4060 8 GB)
 
-Benchmark of Spanish answer transcription using Kokoro-synthesized audio:
+Benchmark of Spanish answer transcription using Kokoro-synthesized audio (measured before Socra switched to English; `bench_whisper.py` still uses these Spanish samples):
 - **A1** (3.09s): *"El río más largo de Sudamérica es el Amazonas."*
 - **A2** (4.24s): *"No recuerdo bien, pero creo que fue en mil cuatrocientos noventa y dos."*
 
@@ -227,7 +227,7 @@ and polls a real Piper-generated answer through Whisper and MCP. It prints
 its transcript and timings and fails on protocol contamination or missing tools.
 
 This standalone script is excluded from default pytest collection. It loads the
-real adapters, synthesizes the Spanish process/thread sentence, transcribes the
+real adapters, synthesizes the English process/thread sentence, transcribes the
 WAV without a cleaner, and prints the transcript, WAV duration and timings.
 An empty transcript fails the smoke. Initial model loading may access the
 Whisper cache or download missing model files.
@@ -265,7 +265,7 @@ socra_server/
 │   ├── speakable.py          # Markdown reply -> text worth speaking
 │   └── voices.py             # Voice catalogue
 ├── adapters/
-│   ├── piper_tts.py          # Piper voice, English glossary terms as phonemes (lazy load)
+│   ├── piper_tts.py          # Piper voice (lazy load)
 │   ├── whisper_stt.py        # Wraps dictation.transcriber.WhisperTranscriber (lazy load)
 │   ├── claude_code_agent.py  # AgentBackend over the Claude Agent SDK
 │   ├── pi_agent.py           # AgentBackend over `pi --mode rpc`
@@ -325,7 +325,7 @@ The user can pause, repeat the step, go back, skip ahead or stop with the
 buttons. **By voice:** the page only listens in the `listening` state, so
 Pause stops the audio and opens the microphone; the next utterance (or typed
 text) is matched against a small phrase table (repeat, back, next, continue,
-stop, in English and Spanish) instead of being stored as an answer. Anything
+stop, in English) instead of being stored as an answer. Anything
 else gets a notice listing the commands. The logic lives in `walkthrough.py`
 and `domain/walkthrough.py`, independent of MCP; mentor and exam sessions reuse
 it through their in-process `present` tool.

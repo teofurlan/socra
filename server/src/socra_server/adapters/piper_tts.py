@@ -1,4 +1,4 @@
-"""Piper TTS adapter: speaks Spanish with English phonemes for glossary terms."""
+"""Piper TTS adapter: speaks the reply as plain text with the catalogue voice."""
 from __future__ import annotations
 
 import io
@@ -10,13 +10,17 @@ import wave
 from pathlib import Path
 from typing import Any, Callable
 
-from socra_server.domain.glossary import load_glossary, speech_segments
+from socra_server.domain.glossary import load_glossary
 from socra_server.domain.speakable import speakable_text
 from socra_server.domain.voices import DEFAULT_VOICE_ID, Voice, get_voice
 
 logger = logging.getLogger(__name__)
 
 MODEL_REPO = "rhasspy/piper-voices"
+# Silence put before every clip. The page's audio output can lose the first few tens of
+# milliseconds when sound starts after a pause; ryan speaks from its first sample, so without
+# this lead-in its first phoneme is cut (daniela's own 30-75 ms of silence used to hide it).
+LEAD_IN_MS = 80
 LENGTH_SCALE_ENV = "SOCRA_TTS_LENGTH_SCALE"
 
 
@@ -65,11 +69,9 @@ class PiperTTS:
     def __init__(
         self,
         voice_loader: Callable[[Voice], Any] | None = None,
-        phonemizer: Any | None = None,
         glossary_path: Path | str | None = None,
     ) -> None:
         self._voice_loader = voice_loader or _download_voice
-        self._phonemizer = phonemizer
         self._glossary_path = glossary_path
         self._glossary: dict[str, str] = {}
         self._voice_id: str = DEFAULT_VOICE_ID
@@ -79,10 +81,6 @@ class PiperTTS:
 
     def load(self) -> None:
         """Load the current voice and the glossary.  Must be called from a background thread."""
-        if self._phonemizer is None:
-            from piper.phonemize_espeak import EspeakPhonemizer
-
-            self._phonemizer = EspeakPhonemizer()
         path = self._glossary_path or _voice_stack_dir() / "pi_voice" / "terms.json"
         self._glossary = load_glossary(path)
         self._piper_voice(self._current_voice())
@@ -121,11 +119,11 @@ class PiperTTS:
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             piper_voice.synthesize_wav(
-                self._with_english_phonemes(spoken),
+                spoken,
                 wav_file,
                 syn_config=SynthesisConfig(length_scale=_length_scale(voice)),
             )
-        return buffer.getvalue()
+        return _with_lead_in(buffer.getvalue())
 
     def _current_voice(self) -> Voice:
         voice = get_voice(self._voice_id)
@@ -138,17 +136,17 @@ class PiperTTS:
                 self._voices[voice.id] = self._voice_loader(voice)
             return self._voices[voice.id]
 
-    def _with_english_phonemes(self, text: str) -> str:
-        """Keep Spanish as text and inline each glossary match as Piper raw phonemes."""
-        parts = []
-        for segment in speech_segments(text, self._glossary):
-            if segment["language"] == "en-us":
-                phonemes = self._phonemes(segment["spoken"])
-                parts.append(f"[[ {phonemes} ]]" if phonemes else segment["text"])
-            else:
-                parts.append(segment["text"])
-        return "".join(parts)
 
-    def _phonemes(self, spoken: str) -> str:
-        sentences = self._phonemizer.phonemize("en-us", spoken)
-        return " ".join("".join(sentence) for sentence in sentences).strip()
+def _with_lead_in(wav_bytes: bytes) -> bytes:
+    """Return the same WAV with LEAD_IN_MS of silence before its first sample."""
+    with wave.open(io.BytesIO(wav_bytes), "rb") as source:
+        params = source.getparams()
+        frames = source.readframes(source.getnframes())
+    lead = round(params.framerate * LEAD_IN_MS / 1000)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as padded:
+        padded.setnchannels(params.nchannels)
+        padded.setsampwidth(params.sampwidth)
+        padded.setframerate(params.framerate)
+        padded.writeframes(bytes(lead * params.nchannels * params.sampwidth) + frames)
+    return buffer.getvalue()

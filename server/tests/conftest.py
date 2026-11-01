@@ -105,7 +105,7 @@ class FakeSTT:
         return self.reply
 
     # --- fake faster-whisper model surface (used by WhisperSTT.transcribe_with_glossary) ---
-    def transcribe_model(self, audio, language="es", vad_filter=True, initial_prompt=None):
+    def transcribe_model(self, audio, language="en", vad_filter=True, initial_prompt=None):
         self.last_prompt = initial_prompt
         # Return a fake segments iterator
         class Seg:

@@ -70,7 +70,7 @@ claude mcp add --scope user socra -- uv run --project "C:\path\to\socra\server" 
 
 The Piper voice (about 115 MB) and the Whisper model (`large-v3-turbo` by
 default) download on first use, so the first spoken turn can take a while.
-Socra currently ships one voice, Daniela (Spanish, Argentina).
+Socra speaks and listens in English, with one voice: Ryan (US English, Piper).
 
 ### Take an exam
 

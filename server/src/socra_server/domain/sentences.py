@@ -20,8 +20,8 @@ _BLANK_LINE = re.compile(r"\n[ \t]*\n")
 # A new list item or heading on the next line ends the current piece.
 _BLOCK_START = re.compile(r"\n[ \t]*(?:[-*+]|\d{1,3}[.)]|#{1,6})[ \t]")
 _ABBREVIATIONS = frozenset({
-    "mr", "mrs", "ms", "dr", "prof", "sr", "sra", "srta", "dra", "vs", "e.g", "i.e",
-    "fig", "approx", "cf", "st", "jr", "no", "pág", "pag", "núm", "ej",
+    "mr", "mrs", "ms", "dr", "prof", "vs", "e.g", "i.e", "fig", "approx", "cf", "st", "jr",
+    "no", "inc", "ltd", "corp", "dept", "mt", "sen", "gen", "capt", "rev",
 })
 # Ends a sentence only when a capitalised word follows; otherwise it is mid-sentence.
 _SOFT_STOPS = frozenset({"etc"})

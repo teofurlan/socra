@@ -844,7 +844,18 @@ class _ReplySpeech:
         except Exception as exc:
             self._fail(exc)
             ready = False
-        while (spoken := await self._queue.get()) is not None:
+        done = False
+        while not done and (first := await self._queue.get()) is not None:
+            # Everything complete by now goes out as one clip (#85 S13); the first
+            # sentence of a stream is alone in the queue, so it still starts at once.
+            pieces = [first]
+            while not self._queue.empty():
+                nxt = self._queue.get_nowait()
+                if nxt is None:
+                    done = True
+                    break
+                pieces.append(nxt)
+            spoken = " ".join(pieces)
             try:
                 if not ready:
                     continue
@@ -867,7 +878,8 @@ class _ReplySpeech:
             except Exception as exc:
                 self._fail(exc)  # skip this sentence, keep speaking the next ones
             finally:
-                self._settled_one()
+                for _ in pieces:
+                    self._settled_one()
 
     async def _wait_for_sent(self) -> None:
         while not self._cancelled and self._outstanding:

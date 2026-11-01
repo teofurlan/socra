@@ -466,10 +466,12 @@ async def test_text_turn_streams_events_and_speaks_the_clean_reply(tmp_path):
     assert [k for k in kinds if k != "tts_audio"] == [
         "agent_text", "agent_tool", "agent_text", "agent_reply",
     ]
-    assert kinds.count("tts_audio") == 2
+    # The scripted backend yields everything at once, so both sentences are pending when the
+    # speech worker is free and go out as one clip (#85 S13).
+    assert kinds.count("tts_audio") == 1
     assert channel.of_type("agent_tool")[0] == {"type": "agent_tool", "tool": "Read", "summary": "app.py"}
     assert channel.of_type("agent_reply")[0]["text"].startswith("It has `ExamApp`")
-    assert loader.tts.spoken == ["Looking.", "It has ExamApp:"]
+    assert loader.tts.spoken == ["Looking. It has ExamApp:"]
     states = [m["state"] for m in channel.of_type("state")]
     assert states == ["thinking", "speaking", "listening"]
 
@@ -719,7 +721,7 @@ async def test_blank_text_turn_is_ignored(tmp_path):
 async def test_turn_audio_is_saved_with_its_transcript_when_opted_in(tmp_path, monkeypatch):
     save_dir = tmp_path / "stt"
     monkeypatch.setenv("SOCRA_STT_SAVE_DIR", str(save_dir))
-    app, channel, backend, _ = _app(heard="Socra, explícame el proyecto")
+    app, channel, backend, _ = _app(heard="Socra, explain the project to me")
     await app.handle_start("fake", "small", str(tmp_path))
     audio = _wav(0.5)
 
@@ -729,8 +731,8 @@ async def test_turn_audio_is_saved_with_its_transcript_when_opted_in(tmp_path, m
     wavs = sorted(save_dir.glob("*.wav"))
     assert len(wavs) == 1
     assert wavs[0].read_bytes() == audio
-    assert wavs[0].with_suffix(".txt").read_text(encoding="utf-8") == "Socra, explícame el proyecto"
-    assert backend.conversations[0].turns == ["Socra, explícame el proyecto"]
+    assert wavs[0].with_suffix(".txt").read_text(encoding="utf-8") == "Socra, explain the project to me"
+    assert backend.conversations[0].turns == ["Socra, explain the project to me"]
 
 
 async def test_unheard_turn_audio_is_saved_with_an_empty_transcript(tmp_path, monkeypatch):

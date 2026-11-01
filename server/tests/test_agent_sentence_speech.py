@@ -56,6 +56,14 @@ async def _settle() -> None:
         await asyncio.sleep(0.01)
 
 
+async def _clips_apart(convo, channel, *sentences: str) -> None:
+    """Stream sentences one at a time, each becoming its own clip (the worker is free for each)."""
+    for sentence in sentences:
+        before = len(channel.of_type("tts_audio"))
+        await convo.events.put(TextDelta(sentence + " "))
+        await _until(lambda: len(channel.of_type("tts_audio")) == before + 1)
+
+
 def _states(channel) -> list[str]:
     return [m["state"] for m in channel.of_type("state")]
 
@@ -84,14 +92,14 @@ async def test_first_sentence_is_spoken_before_the_reply_finishes(tmp_path):  # 
 async def test_text_before_a_tool_call_is_spoken_when_the_tool_starts(tmp_path):  # S2
     app, channel, loader, convo = await _live(tmp_path)
 
-    await convo.events.put(TextDelta("Voy a verificarlo en la memoria de esa sesión"))
+    await convo.events.put(TextDelta("I will check that in the memory of that session"))
     await _settle()
     assert loader.tts.spoken == []  # no sentence end yet, nothing forces it out
 
-    await convo.events.put(ToolActivity("mem_search", "sesión"))
+    await convo.events.put(ToolActivity("mem_search", "session"))
     await _settle()
 
-    assert loader.tts.spoken == ["Voy a verificarlo en la memoria de esa sesión"]
+    assert loader.tts.spoken == ["I will check that in the memory of that session"]
     assert len(channel.of_type("tts_audio")) == 1
     assert not app.turn_task.done()  # the agent is still working
     await app.shutdown()
@@ -101,7 +109,7 @@ async def test_clips_go_out_in_order_and_listening_waits_for_the_last_ack(tmp_pa
     app, channel, loader, convo = await _live(tmp_path)
     text = "One. Two. Three."
 
-    await convo.events.put(TextDelta(text))
+    await _clips_apart(convo, channel, "One.", "Two.", "Three.")
     await convo.events.put(ReplyDone(text))
     await _settle()
 
@@ -128,7 +136,7 @@ async def test_code_and_markdown_markers_are_not_spoken_per_sentence(tmp_path): 
     await convo.events.put(ReplyDone(text))
     await _settle()
 
-    assert loader.tts.spoken == ["Plan", "Run ls.", "Then:", "See docs.", "Done."]
+    assert loader.tts.spoken == ["Plan Run ls. Then: See docs. Done."]  # pending together: one clip (S13)
     await app.shutdown()
 
 
@@ -144,9 +152,12 @@ async def test_interrupt_discards_pending_synthesis_and_later_clips(tmp_path):  
 
     loader.tts.synthesize = slow
 
-    await convo.events.put(TextDelta("One. Two. Three. "))
+    await _clips_apart(convo, channel, "One.")
+    await convo.events.put(TextDelta("Two. "))
     await _settle()
-    assert len(channel.of_type("tts_audio")) == 1  # "Two." is still being synthesized
+    await convo.events.put(TextDelta("Three. "))  # pending behind "Two.", which is being synthesized
+    await _settle()
+    assert len(channel.of_type("tts_audio")) == 1
 
     await app.handle_interrupt()
     gate.set()
@@ -193,10 +204,9 @@ async def test_a_reply_without_streamed_text_is_still_spoken_by_sentence(tmp_pat
     await convo.events.put(ReplyDone("Alpha. Beta."))
     await _settle()
     app.handle_playback_done()
-    app.handle_playback_done()
     await asyncio.wait_for(app.turn_task, timeout=2)
 
-    assert loader.tts.spoken == ["Alpha.", "Beta."]
+    assert loader.tts.spoken == ["Alpha. Beta."]  # pending together: one clip (S13)
 
 
 SCENE = {
@@ -264,8 +274,7 @@ async def test_state_goes_back_to_thinking_when_the_clips_end_but_tools_still_ru
 
 async def test_a_late_ack_from_an_interrupted_turn_does_not_count_for_the_next_turn(tmp_path):  # S5
     app, channel, loader, convo = await _live(tmp_path)
-    await convo.events.put(TextDelta("One. Two. "))
-    await _until(lambda: len(channel.of_type("tts_audio")) == 2)
+    await _clips_apart(convo, channel, "One.", "Two.")
     await app.handle_interrupt()
     await convo.events.put(ReplyDone("One. Two."))
     await asyncio.wait_for(app.turn_task, timeout=2)
@@ -296,7 +305,10 @@ async def test_a_sentence_that_fails_to_synthesize_is_skipped_and_reported_once(
         return real(text)
 
     loader.tts.synthesize = flaky
-    await convo.events.put(TextDelta("One. Two. Three."))
+    await _clips_apart(convo, channel, "One.")
+    await convo.events.put(TextDelta("Two. "))  # fails on its own, so the next sentence is separate
+    await _settle()
+    await convo.events.put(TextDelta("Three."))
     await convo.events.put(ReplyDone("One. Two. Three."))
     await _until(lambda: len(channel.of_type("tts_audio")) == 2)
 
@@ -370,8 +382,7 @@ async def _restart(app, backend, old):
 
 async def test_restarting_the_session_keeps_the_debt_of_clips_still_on_the_page(tmp_path):  # S5 (F3)
     app, channel, loader, convo = await _live(tmp_path)
-    await convo.events.put(TextDelta("One. Two. "))
-    await _until(lambda: len(_reply_clips(channel)) == 2)
+    await _clips_apart(convo, channel, "One.", "Two.")
 
     second = await _restart(app, app._backend, tmp_path)
     await app.handle_turn_text("again")
@@ -392,8 +403,7 @@ async def test_restarting_the_session_keeps_the_debt_of_clips_still_on_the_page(
 
 async def test_a_page_that_left_owes_no_ack_debt_to_the_next_session(tmp_path):  # S5 (F3)
     app, channel, loader, convo = await _live(tmp_path)
-    await convo.events.put(TextDelta("One. Two. "))
-    await _until(lambda: len(_reply_clips(channel)) == 2)
+    await _clips_apart(convo, channel, "One.", "Two.")
     await app.handle_interrupt()
     await convo.events.put(ReplyDone("One. Two."))
     await asyncio.wait_for(app.turn_task, timeout=2)
@@ -408,4 +418,60 @@ async def test_a_page_that_left_owes_no_ack_debt_to_the_next_session(tmp_path): 
     await _until(lambda: len(_reply_clips(channel)) == 3)
     app.handle_playback_done()
     await asyncio.wait_for(app.turn_task, timeout=2)
+    await app.shutdown()
+
+
+async def test_a_short_reply_that_arrives_at_once_is_one_clip(tmp_path):  # S13
+    app, channel, loader, convo = await _live(tmp_path)
+    text = "I'm listening. What do you mean? Please finish the sentence."
+
+    await convo.events.put(TextDelta(text))
+    await convo.events.put(ReplyDone(text))
+    await _settle()
+
+    assert loader.tts.spoken == [text]  # one synthesize call, sentences joined by one space
+    assert len(channel.of_type("tts_audio")) == 1
+    app.handle_playback_done()  # one clip sent, so one ack is the whole debt
+    await asyncio.wait_for(app.turn_task, timeout=2)
+    assert _states(channel) == ["thinking", "speaking", "listening"]
+
+
+async def test_sentences_pending_while_the_worker_is_busy_go_out_together(tmp_path):  # S13
+    app, channel, loader, convo = await _live(tmp_path)
+    gate = threading.Event()
+    real = loader.tts.synthesize
+
+    def slow(text: str) -> bytes:
+        if text == "One.":
+            gate.wait(timeout=2)
+        return real(text)
+
+    loader.tts.synthesize = slow
+
+    await convo.events.put(TextDelta("One. Tw"))  # sentence 1 is complete: it starts alone
+    await _settle()
+    await convo.events.put(TextDelta("o. Three. Fo"))  # 2 and 3 complete while 1 is synthesizing
+    await _settle()
+    gate.set()
+    await _until(lambda: len(channel.of_type("tts_audio")) == 2)
+
+    assert loader.tts.spoken == ["One.", "Two. Three."]
+
+    await convo.events.put(TextDelta("ur."))
+    await convo.events.put(ReplyDone("One. Two. Three. Four."))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 3)
+    assert loader.tts.spoken[-1] == "Four."
+    app.handle_playback_done()
+    app.handle_playback_done()
+    app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+
+async def test_the_first_sentence_does_not_wait_for_more_text_to_batch(tmp_path):  # S13
+    app, channel, loader, convo = await _live(tmp_path)
+
+    await convo.events.put(TextDelta("First. Second par"))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 1)
+
+    assert loader.tts.spoken == ["First."]
     await app.shutdown()

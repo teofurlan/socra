@@ -22,11 +22,11 @@ class _FakeSegment:
 class _FakeWhisperModel:
     """Records every transcribe() call for assertion."""
 
-    def __init__(self, reply: str = "hola mundo"):
+    def __init__(self, reply: str = "hello world"):
         self.reply = reply
         self.last_call: dict = {}
 
-    def transcribe(self, audio, language="es", vad_filter=True, initial_prompt=None, **kw):
+    def transcribe(self, audio, language="en", vad_filter=True, initial_prompt=None, **kw):
         self.last_call = {
             "language": language,
             "vad_filter": vad_filter,
@@ -38,7 +38,7 @@ class _FakeWhisperModel:
 class _FakeTranscriber:
     """Mimics dictation.transcriber.WhisperTranscriber with a fake model."""
 
-    def __init__(self, reply: str = "hola mundo"):
+    def __init__(self, reply: str = "hello world"):
         self.model = _FakeWhisperModel(reply)
 
 
@@ -66,7 +66,7 @@ def test_whisper_passes_initial_prompt_with_glossary():
 
 def test_whisper_base_terms_only_when_no_extra_glossary():
     stt = WhisperSTT()
-    stt._transcriber = _FakeTranscriber(reply="respuesta")
+    stt._transcriber = _FakeTranscriber(reply="answer")
     stt.set_base_terms(["commit", "branch"])
 
     wav = make_wav_bytes()
@@ -78,8 +78,8 @@ def test_whisper_base_terms_only_when_no_extra_glossary():
     assert "branch" in prompt
 
 
-def test_whisper_language_es_and_vad_filter():
-    """Adapter always passes language='es' and vad_filter=True (S4, S6)."""
+def test_whisper_language_en_and_vad_filter():
+    """Whisper is called with the profile language (English) and vad_filter=True (S1)."""
     stt = WhisperSTT()
     stt._transcriber = _FakeTranscriber()
     stt.set_base_terms([])
@@ -88,7 +88,7 @@ def test_whisper_language_es_and_vad_filter():
     stt.transcribe_with_glossary(wav)
 
     model: _FakeWhisperModel = stt._transcriber.model
-    assert model.last_call["language"] == "es"
+    assert model.last_call["language"] == "en"
     assert model.last_call["vad_filter"] is True
 
 

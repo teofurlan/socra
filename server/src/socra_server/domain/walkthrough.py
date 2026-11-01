@@ -92,21 +92,16 @@ def parse_walkthrough(code: Any, language: Any, steps: Any) -> tuple[Walkthrough
 # ---------------------------------------------------------------------------
 
 _PHRASES: dict[Command, tuple[str, ...]] = {
-    "pause": ("pause", "wait", "hold on", "pausa", "espera", "un momento"),
-    "repeat": ("repeat", "repeat that", "repeat it", "again", "say that again", "say it again",
-               "repite", "repetir", "otra vez", "de nuevo", "repitelo"),
-    "back": ("back", "go back", "previous", "previous step", "step back",
-             "atras", "anterior", "vuelve", "volver", "paso anterior"),
-    "next": ("next", "next step", "skip", "skip this", "go next",
-             "siguiente", "adelante", "salta", "paso siguiente"),
-    "resume": ("continue", "resume", "go on", "keep going", "carry on", "go ahead",
-               "continua", "continuar", "sigue", "seguir", "reanuda"),
-    "stop": ("stop", "stop it", "end", "thats enough", "enough", "done", "quit",
-             "para", "parar", "detente", "basta", "ya esta", "ya basta", "termina"),
+    "pause": ("pause", "wait", "hold on"),
+    "repeat": ("repeat", "repeat that", "repeat it", "again", "say that again", "say it again"),
+    "back": ("back", "go back", "previous", "previous step", "step back"),
+    "next": ("next", "next step", "skip", "skip this", "go next"),
+    "resume": ("continue", "resume", "go on", "keep going", "carry on", "go ahead"),
+    "stop": ("stop", "stop it", "end", "thats enough", "enough", "done", "quit"),
 }
 
 
-_POLITE = {"please", "por", "favor"}
+_POLITE = {"please"}
 
 
 def _normalize(text: str) -> str:

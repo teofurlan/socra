@@ -12,14 +12,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from socra_server.domain.speech import SPEECH_LANGUAGE
-
-SILENCE_HALLUCINATIONS: tuple[str, ...] = (
-    "subtítulos realizados por",
-    "amara.org",
-    "gracias por ver",
-    "suscríbete",
-)
+from socra_server.domain.speech import SILENCE_HALLUCINATIONS, SPEECH_LANGUAGE
 
 DEFAULT_WHISPER_MODEL = "large-v3-turbo"
 PRODUCT_NAME = "Socra"

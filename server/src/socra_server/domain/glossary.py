@@ -1,13 +1,11 @@
-"""Pronunciation glossary: English technical terms inside Spanish speech.
+"""Glossary of technical terms.
 
-``terms.json`` maps a written term to its English spoken form. Segmentation
-splits text into Spanish stretches and glossary matches so an adapter can give
-each match English pronunciation.
+``terms.json`` maps a written term to its spoken form. The written terms prime the
+recognizer so Whisper spells them right; the voice reads the text as plain English.
 """
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 DEFAULT_TERMS: dict[str, str] = {
@@ -44,41 +42,3 @@ def load_glossary(path: Path | str | None = None) -> dict[str, str]:
             raise ValueError(f"Spoken text for term '{term}' must be a non-empty string")
         terms[term] = spoken
     return terms
-
-
-def speech_segments(text: str, terms: dict[str, str]) -> list[dict[str, str]]:
-    """Split text into Spanish and en-us segments, matching the longest term first."""
-    if not text:
-        return []
-    if not terms:
-        return [{"text": text, "language": "es"}]
-
-    ordered = sorted(terms, key=len, reverse=True)
-    alternatives = []
-    for term in ordered:
-        # Word boundaries only where the term starts or ends with a word character
-        # (terms such as "c++" or "README.md" end in punctuation).
-        prefix = r"(?<!\w)" if term[0].isalnum() or term[0] == "_" else ""
-        suffix = r"(?!\w)" if term[-1].isalnum() or term[-1] == "_" else ""
-        alternatives.append(f"{prefix}{re.escape(term)}{suffix}")
-    pattern = re.compile("|".join(f"({alt})" for alt in alternatives), flags=re.IGNORECASE)
-    spoken_by_lower: dict[str, str] = {}
-    for term in ordered:
-        spoken_by_lower.setdefault(term.lower(), terms[term])
-
-    segments: list[dict[str, str]] = []
-    last_end = 0
-    for match in pattern.finditer(text):
-        start, end = match.span()
-        if start > last_end:
-            segments.append({"text": text[last_end:start], "language": "es"})
-        written = match.group(0)
-        segments.append({
-            "text": written,
-            "spoken": spoken_by_lower.get(written.lower(), written),
-            "language": "en-us",
-        })
-        last_end = end
-    if last_end < len(text):
-        segments.append({"text": text[last_end:], "language": "es"})
-    return segments

@@ -10,7 +10,7 @@ import wave
 from socra_server.adapters.piper_tts import PiperTTS
 from socra_server.adapters.whisper_stt import WhisperSTT
 
-TEXT = "Un proceso tiene su propia memoria; un thread comparte la memoria del proceso."
+TEXT = "A process has its own memory; a thread shares the memory of its process."
 
 
 def main() -> None:
