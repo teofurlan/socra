@@ -88,7 +88,10 @@ uv run --project server socra-server --agent
 ```
 
 This opens `http://localhost:8767/?mode=agent`. Pick a folder, choose a backend
-and model, and talk. To get a one-click desktop shortcut instead:
+and model, and talk. Socra speaks each reply sentence by sentence while it is
+written, so the first words sound as soon as the first sentence is complete and
+anything said before a tool call is not held back. To get a one-click desktop
+shortcut instead:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File server\install-shortcut.ps1

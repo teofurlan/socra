@@ -42,6 +42,7 @@ from socra_server.domain.handoff import (
     retry_prompt,
 )
 from socra_server.domain.modes import DEFAULT_MODE, UnknownMode, get_mode
+from socra_server.domain.sentences import SentenceSplitter
 from socra_server.domain.speakable import speakable_text
 from socra_server.ports import AgentBackend, AgentConversation
 from socra_server.socra_tools import CallbackToolbox
@@ -97,6 +98,8 @@ class AgentApp:
         self._playback_done = asyncio.Event()
         self.turn_task: asyncio.Task | None = None
         self.acknowledged_clips = 0
+        # The reply being spoken sentence by sentence; None between turns.
+        self._speech: _ReplySpeech | None = None
         # Narrated scenes the mentor or exam agent plays with the present tool.
         self.walkthrough = WalkthroughRunner(
             synthesize=lambda text: self.loader.tts.synthesize(text),
@@ -271,6 +274,9 @@ class AgentApp:
         if self.walkthrough.active:
             self.walkthrough.command("stop")
         if self._conversation is not None and self._turn_running:
+            # Whatever is still being synthesized or queued must never sound.
+            if self._speech is not None:
+                self._speech.cancel()
             await self._conversation.interrupt()
 
     def handle_playback_done(self, seq: int | None = None) -> None:
@@ -403,12 +409,16 @@ class AgentApp:
         await self._state("thinking")
         if not hidden and self._transcript is not None:
             self._transcript.append("user", text)
+        speech = self._speech = _ReplySpeech(self)
         try:
             async for event in conversation.send(text):
                 if isinstance(event, TextDelta):
                     await self.channel.send({"type": "agent_text", "text": event.text})
+                    speech.feed(event.text)
                 elif isinstance(event, ToolActivity):
                     self._facts.record_tool(event)
+                    # Words before a tool call sound now, not after the tool finishes.
+                    speech.flush()
                     await self.channel.send({
                         "type": "agent_tool", "tool": event.tool, "summary": event.summary,
                     })
@@ -418,16 +428,19 @@ class AgentApp:
                     if not hidden:
                         self._turns.append(Turn(text, event.text))
                     await self.channel.send({"type": "agent_reply", "text": event.text})
-                    spoken = speakable_text(event.text)
-                    if spoken:
-                        await self._state("speaking")
-                        await self._speak(spoken)
+                    if not speech.fed:
+                        speech.feed(event.text)
+                    speech.flush()
+                    await speech.finish()
                 elif isinstance(event, AgentError):
                     await self._error(event.message)
         except Exception as exc:
             logger.exception("Agent turn failed")
             await self._error(f"The agent turn failed: {exc}")
         finally:
+            speech.cancel()
+            if self._speech is speech:
+                self._speech = None
             await self._state("listening")
 
     async def _decide_permission(self, request: PermissionRequest) -> bool:
@@ -660,20 +673,6 @@ class AgentApp:
     # Helpers                                                              #
     # ------------------------------------------------------------------ #
 
-    async def _speak(self, text: str) -> None:
-        await self.loader.ready()
-        wav = await asyncio.to_thread(self.loader.tts.synthesize, text)
-        self._playback_done.clear()
-        await self.channel.send({
-            "type": "tts_audio", "format": "wav", "data": base64.b64encode(wav).decode(),
-        })
-        try:
-            await asyncio.wait_for(
-                self._playback_done.wait(), timeout=get_wav_duration(wav) + PLAYBACK_GRACE_S
-            )
-        except TimeoutError:
-            logger.warning("Agent reply playback wait timed out")
-
     async def _close_conversation(self) -> None:
         conversation, self._conversation = self._conversation, None
         self._session = None
@@ -688,3 +687,102 @@ class AgentApp:
 
     async def _error(self, message: str) -> None:
         await self.channel.send({"type": "agent_error", "message": message})
+
+
+class _ReplySpeech:
+    """Speaks one agent reply sentence by sentence while it streams.
+
+    ``feed`` and ``flush`` only queue text; a worker synthesizes the pieces in
+    order and sends each clip as soon as it is ready, so the page can queue them
+    back to back. ``finish`` returns once the page has played every clip.
+    """
+
+    def __init__(self, app: AgentApp) -> None:
+        self._app = app
+        self._splitter = SentenceSplitter()
+        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._worker: asyncio.Task | None = None
+        self._base_acks = app.acknowledged_clips
+        self._sent = 0
+        self._play_end = 0.0
+        self._cancelled = False
+        self._closed = False
+        self._error: Exception | None = None
+        self.fed = False
+
+    def feed(self, text: str) -> None:
+        if self._cancelled or self._closed:
+            return
+        self.fed = True
+        self._enqueue(self._splitter.feed(text))
+
+    def flush(self) -> None:
+        """Release the unfinished sentence (a tool call started or the reply ended)."""
+        if self._cancelled or self._closed:
+            return
+        self._enqueue(self._splitter.flush())
+
+    def cancel(self) -> None:
+        """Drop pending synthesis and every later clip; wake a waiting ``finish``."""
+        self._cancelled = True
+        if self._worker is not None and not self._worker.done():
+            self._worker.cancel()
+        while not self._queue.empty():
+            self._queue.get_nowait()
+        self._app._playback_done.set()
+
+    async def finish(self) -> None:
+        """Wait until the worker has sent every clip and the page has played them."""
+        self._closed = True
+        if self._worker is not None:
+            self._queue.put_nowait(None)
+            await asyncio.gather(self._worker, return_exceptions=True)
+        if self._error is not None and not self._cancelled:
+            raise self._error
+        await self._wait_for_playback()
+
+    def _enqueue(self, pieces: list[str]) -> None:
+        for piece in pieces:
+            spoken = speakable_text(piece)
+            if not spoken:
+                continue
+            self._queue.put_nowait(spoken)
+            if self._worker is None:
+                self._worker = asyncio.create_task(self._run(), name="agent-speech")
+
+    async def _run(self) -> None:
+        app = self._app
+        try:
+            await app.loader.ready()
+            while (spoken := await self._queue.get()) is not None:
+                wav = await asyncio.to_thread(app.loader.tts.synthesize, spoken)
+                if self._cancelled:
+                    return
+                if self._sent == 0:
+                    await app._state("speaking")
+                self._sent += 1
+                loop = asyncio.get_running_loop()
+                self._play_end = max(loop.time(), self._play_end) + get_wav_duration(wav)
+                await app.channel.send({
+                    "type": "tts_audio", "format": "wav",
+                    "data": base64.b64encode(wav).decode(),
+                })
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Speaking the agent reply failed: %s", exc)
+            self._error = exc
+
+    async def _wait_for_playback(self) -> None:
+        app = self._app
+        loop = asyncio.get_running_loop()
+        while not self._cancelled and app.acknowledged_clips - self._base_acks < self._sent:
+            app._playback_done.clear()
+            if self._cancelled or app.acknowledged_clips - self._base_acks >= self._sent:
+                break
+            remaining = max(0.0, self._play_end - loop.time()) + PLAYBACK_GRACE_S
+            try:
+                await asyncio.wait_for(app._playback_done.wait(), timeout=remaining)
+            except TimeoutError:
+                logger.warning("Agent reply playback wait timed out")
+                return
