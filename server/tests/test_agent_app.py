@@ -58,8 +58,10 @@ class FakeTTS:
 class FakeSTT:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.glossaries: list = []
 
     def transcribe_with_glossary(self, wav_bytes: bytes, glossary) -> str:
+        self.glossaries.append(glossary)
         return self.text
 
 
@@ -499,6 +501,18 @@ async def test_audio_turn_is_transcribed_shown_and_sent(tmp_path):
 
     assert channel.of_type("transcript") == [{"type": "transcript", "text": "list the files", "final": True}]
     assert backend.conversations[0].turns == ["list the files"]
+
+
+async def test_audio_turn_gives_the_stt_the_project_folder_name(tmp_path):
+    project = tmp_path / "socra"
+    project.mkdir()
+    app, channel, _, loader = _app(heard="list the files")
+    await app.handle_start("fake", "small", str(project))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert loader.stt.glossaries == [["socra"]]
 
 
 async def test_unclear_audio_asks_to_repeat_without_a_turn(tmp_path):

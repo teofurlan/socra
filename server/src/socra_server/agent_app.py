@@ -199,6 +199,13 @@ class AgentApp:
             else:
                 self._start_turn(text)
 
+    def _stt_terms(self) -> list[str] | None:
+        """Project-specific words to bias recognition: the open folder's name."""
+        if not self._session:
+            return None
+        name = Path(self._session["cwd"]).name
+        return [name] if name else None
+
     async def handle_turn_audio(self, b64_data: str) -> None:
         scene_playing = self.walkthrough.active
         if not scene_playing and not self._switching and not await self._can_take_turn():
@@ -213,7 +220,7 @@ class AgentApp:
         try:
             await self.loader.ready()
             text = await asyncio.to_thread(
-                self.loader.stt.transcribe_with_glossary, wav_bytes, None
+                self.loader.stt.transcribe_with_glossary, wav_bytes, self._stt_terms()
             )
         except Exception as exc:
             logger.error("Agent turn transcription failed: %s", exc)
