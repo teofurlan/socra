@@ -100,11 +100,28 @@ def sdk_tools(mode: Mode, toolbox: SocraToolbox) -> list[SdkMcpTool[Any]]:
     return [_sdk_tool(spec, toolbox) for spec in specs_for(mode)]
 
 
+def _is_interrupted_result(message: ResultMessage) -> bool:
+    terminal_reason = getattr(message, "terminal_reason", None)
+    if terminal_reason in ("aborted_streaming", "aborted_tools"):
+        return True
+    if message.is_error:
+        detail = "; ".join(message.errors or []) or message.result or ""
+        if (
+            "[ede_diagnostic" in detail
+            or "stop_reason=null" in detail
+            or detail.startswith("prompt_check")
+        ):
+            return True
+    return False
+
+
 class ClaudeCodeConversation:
     def __init__(self, client: Any) -> None:
         self._client = client
+        self._interrupted = False
 
     async def send(self, text: str) -> AsyncIterator[AgentEvent]:
+        self._interrupted = False
         last_text = ""
         try:
             await self._client.query(text)
@@ -117,21 +134,30 @@ class ClaudeCodeConversation:
                         elif isinstance(block, ToolUseBlock):
                             yield ToolActivity(block.name, _summarize(block.input), tool_path(block.input))
                 elif isinstance(message, ResultMessage):
-                    if message.is_error:
+                    if self._interrupted or _is_interrupted_result(message):
+                        yield AgentError("The turn was interrupted.")
+                    elif message.is_error:
                         detail = "; ".join(message.errors or []) or message.result
                         yield AgentError(detail or f"Claude Code failed ({message.subtype})")
                     else:
                         yield ReplyDone(message.result or last_text)
                     return
         except Exception as exc:
+            if self._interrupted:
+                yield AgentError("The turn was interrupted.")
+                return
             logger.error("Claude Code turn failed: %s", exc)
             yield AgentError(f"Claude Code failed: {exc}")
+            return
+        if self._interrupted:
+            yield AgentError("The turn was interrupted.")
             return
         # The SDK stream can end silently when the CLI's output closes; every
         # turn must still end with ReplyDone or AgentError.
         yield AgentError("Claude Code stopped before finishing the reply.")
 
     async def interrupt(self) -> None:
+        self._interrupted = True
         await self._client.interrupt()
 
     async def close(self) -> None:
