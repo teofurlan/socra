@@ -74,6 +74,22 @@
   padding: 24px clamp(14px, 3vw, 32px) 14px;
 }
 
+/* Agent page: the conversation is a backdrop to the voice, so its area is a bit shorter. */
+.shell-scroll--agent {
+  margin-bottom: clamp(16px, 6vh, 56px);
+}
+
+/* Voice-first transcript: inline code carries its own colour, so dim it with the rest. */
+.transcript code {
+  color: var(--transcript) !important;
+}
+
+/* The clip being spoken, marked with the CSS Custom Highlight API (see AgentTimeline). */
+::highlight(socra-spoken) {
+  color: var(--label);
+  background-color: transparent;
+}
+
 /* Pending permission and mode-switch cards sit between the conversation and the composer. */
 .decision-dock {
   max-height: 40%;

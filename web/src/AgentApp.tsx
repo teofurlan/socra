@@ -333,7 +333,7 @@ export const AgentApp: React.FC = () => {
             />
           </div>
 
-          <div className="shell-scroll flex flex-col items-center gap-5">
+          <div className="shell-scroll shell-scroll--agent flex flex-col items-center gap-5">
             {(micError || setupError) && (
               <div
                 role="alert"
@@ -354,7 +354,7 @@ export const AgentApp: React.FC = () => {
             )}
 
             <div className="flex w-full max-w-[80ch] flex-1 flex-col">
-              <AgentTimeline entries={state.timeline} protocolState={state.protocolState} />
+              <AgentTimeline entries={state.timeline} protocolState={state.protocolState} spoken={state.spoken} />
             </div>
           </div>
 
