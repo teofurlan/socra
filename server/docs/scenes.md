@@ -50,7 +50,17 @@ Every primitive supports `show` and `hide`. Primitive-specific actions:
 
 | Primitive | Params | Actions |
 | --- | --- | --- |
-| `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. |
+| `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. The page outlines the focused lines with particles. |
+| `headline` | `text` (required, one line, at most 24 characters after trimming) | `set` with `{ "text": "..." }` replaces the words. |
+
+### Presenting with particles
+
+The page's particle field takes part in a scene. While a `headline` is visible, the
+particles leave the voice shape and assemble its words in the voice stage, still pulsing
+and colouring with who is speaking; the words are also in the page for screen readers.
+Only the first visible headline is drawn. While a `code` object has a focus, a few
+particles outline the focused lines in the code panel and follow them as it scrolls.
+Everything that has to be read stays crisp text: code, labels and what is being said.
 
 New primitives (diagrams, call flows, data structures) register their params, actions
 and state in `PRIMITIVES` without changing the scene contract.

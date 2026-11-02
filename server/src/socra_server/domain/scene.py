@@ -29,11 +29,14 @@ PRESENT_PURPOSE = "Use to explain something out loud while the page changes what
 SCENE_GUIDE = (
     'scene is {"version": 1, "title", "objects", "steps", "cues"}: '
     'objects [{"id", "primitive", "params", "hidden"?}] are what can be shown '
-    '(primitive "code": params {"code", "language"?}); '
+    '(primitive "code": params {"code", "language"?}; primitive "headline": params {"text"}, '
+    "a title or key term of at most 24 characters on one line, drawn large with the page's "
+    "particles; the page shows the first visible headline); "
     'steps [{"id", "say"}] are spoken in order, each on its own; '
     'cues [{"at": step id, "do": [{"object": id, "action", "params"?}]}] change the picture '
     "when that step starts. Every primitive supports show and hide; code also supports "
-    'focus {"lines": [start, end]} (1-based, inclusive) and clear. A step without a cue '
+    'focus {"lines": [start, end]} (1-based, inclusive) and clear, which the page also '
+    'marks with particles; headline supports set {"text"} to change its words. A step without a cue '
     "keeps the previous picture. Limits: 60 steps, 16 objects, one cue per step, 16 actions "
     "per cue. Blocks until the scene ends; the user may pause, repeat, go back, skip or stop "
     "meanwhile. Returns completed (steps), stopped (step, total), invalid (errors: each with "
@@ -147,7 +150,49 @@ _COMMON_ACTIONS: dict[str, ActionSpec] = {
     "hide": ActionSpec(_no_params("hide"), lambda state, _params: state | {"visible": False}),
 }
 
-PRIMITIVES: dict[str, Primitive] = {CODE.name: CODE}
+MAX_HEADLINE_CHARS = 24
+
+
+def _parse_headline_text(raw: Any, path: str) -> tuple[str, Errors]:
+    field = f"{path}.text"
+    if not _is_text(raw):
+        return "", [_error(field, "text must be a non-empty string")]
+    text = raw.strip()
+    if "\n" in text or "\r" in text:
+        return text, [_error(field, "text must fit on one line")]
+    if len(text) > MAX_HEADLINE_CHARS:
+        return text, [_error(field, f"text holds at most {MAX_HEADLINE_CHARS} characters, got {len(text)}")]
+    return text, []
+
+
+def _parse_headline_params(raw: Any, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "params must be an object with text")]
+    errors = _unknown_fields(raw, {"text"}, path)
+    text, problems = _parse_headline_text(raw.get("text"), path)
+    return {"text": text}, errors + problems
+
+
+def _parse_set_text(raw: Any, _object_params: dict, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "set needs params.text, the new words")]
+    errors = _unknown_fields(raw, {"text"}, path)
+    text, problems = _parse_headline_text(raw.get("text"), path)
+    return {"text": text}, errors + problems
+
+
+# A few words the page assembles out of particles, like a title on a whiteboard.
+HEADLINE = Primitive(
+    name="headline",
+    parse_params=_parse_headline_params,
+    initial_state=lambda params: {"text": params["text"]},
+    actions={
+        # Replace the words; the particles reassemble into the new ones.
+        "set": ActionSpec(_parse_set_text, lambda state, params: state | {"text": params["text"]}),
+    },
+)
+
+PRIMITIVES: dict[str, Primitive] = {CODE.name: CODE, HEADLINE.name: HEADLINE}
 
 
 def _actions_of(primitive: Primitive) -> dict[str, ActionSpec]:

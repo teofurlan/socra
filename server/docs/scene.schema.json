@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/teofurlan/socra/server/docs/scene.schema.json",
   "title": "Socra narrated scene",
-  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive and line ranges inside the code.",
+  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive, line ranges inside the code and headline length after trimming.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "title", "steps"],
@@ -18,7 +18,7 @@
         "required": ["id", "primitive", "params"],
         "properties": {
           "id": { "$ref": "#/$defs/id" },
-          "primitive": { "enum": ["code"] },
+          "primitive": { "enum": ["code", "headline"] },
           "params": { "type": "object" },
           "hidden": { "type": "boolean", "default": false, "description": "Start hidden; a show action reveals it." }
         },
@@ -26,6 +26,10 @@
           {
             "if": { "properties": { "primitive": { "const": "code" } } },
             "then": { "properties": { "params": { "$ref": "#/$defs/codeParams" } } }
+          },
+          {
+            "if": { "properties": { "primitive": { "const": "headline" } } },
+            "then": { "properties": { "params": { "$ref": "#/$defs/headlineParams" } } }
           }
         ]
       }
@@ -74,13 +78,27 @@
         "language": { "type": "string", "default": "", "description": "Only affects syntax colours." }
       }
     },
+    "headlineParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "$ref": "#/$defs/headlineText" }
+      }
+    },
+    "headlineText": {
+      "type": "string",
+      "pattern": "^[^\\n\\r]*\\S[^\\n\\r]*$",
+      "maxLength": 24,
+      "description": "A title or key term on one line, drawn large with particles. Trimmed; at most 24 characters after trimming."
+    },
     "action": {
       "type": "object",
       "additionalProperties": false,
       "required": ["object", "action"],
       "properties": {
         "object": { "$ref": "#/$defs/id" },
-        "action": { "enum": ["show", "hide", "focus", "clear"] },
+        "action": { "enum": ["show", "hide", "focus", "clear", "set"] },
         "params": { "type": "object" }
       },
       "allOf": [
@@ -102,6 +120,20 @@
                     "description": "[start, end], 1-based and inclusive."
                   }
                 }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "const": "set" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["text"],
+                "properties": { "text": { "$ref": "#/$defs/headlineText" } }
               }
             }
           }

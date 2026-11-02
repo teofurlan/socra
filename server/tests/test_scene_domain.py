@@ -237,3 +237,90 @@ def test_the_schema_rejects_blank_text_like_the_server():
     schema = json.loads((DOCS / "scene.schema.json").read_text(encoding="utf-8"))
     assert schema["properties"]["title"]["pattern"] == r"\S"
     assert schema["properties"]["steps"]["items"]["properties"]["say"]["pattern"] == r"\S"
+
+
+# ---------------------------------------------------------------------------
+# headline: short words the particles assemble
+# ---------------------------------------------------------------------------
+
+def headline_scene() -> dict:
+    return {
+        "version": 1,
+        "title": "Hash tables",
+        "objects": [{"id": "big", "primitive": "headline", "params": {"text": "  Hash tables "}}],
+        "steps": [
+            {"id": "intro", "say": "Let's talk about hash tables."},
+            {"id": "cost", "say": "Lookups take constant time on average."},
+            {"id": "end", "say": "That's it."},
+        ],
+        "cues": [
+            {"at": "cost", "do": [{"object": "big", "action": "set", "params": {"text": "O(1) lookups"}}]},
+            {"at": "end", "do": [{"object": "big", "action": "hide"}]},
+        ],
+    }
+
+
+def test_a_headline_holds_its_trimmed_text_and_set_replaces_it():
+    scene, errors = parse_scene(headline_scene())
+    assert errors == []
+    assert scene is not None
+    assert scene.objects[0].params == {"text": "Hash tables"}
+    assert [scene.state_at(i)["big"] for i in range(3)] == [
+        {"visible": True, "text": "Hash tables"},
+        {"visible": True, "text": "O(1) lookups"},
+        {"visible": False, "text": "O(1) lookups"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate, path, fragment",
+    [
+        (lambda s: s["objects"][0].update(params={}), "objects[0].params.text", "non-empty string"),
+        (lambda s: s["objects"][0].update(params={"text": "   "}), "objects[0].params.text", "non-empty string"),
+        (lambda s: s["objects"][0].update(params={"text": "x" * 25}), "objects[0].params.text", "at most 24 characters"),
+        (lambda s: s["objects"][0].update(params={"text": "two\nlines"}), "objects[0].params.text", "one line"),
+        (lambda s: s["objects"][0].update(params={"text": "ok", "size": 3}), "objects[0].params.size", "unknown field"),
+        (lambda s: s["objects"][0].update(params="Hash"), "objects[0].params", "object with text"),
+        (lambda s: s["cues"][0]["do"][0].update(params={}), "cues[0].do[0].params.text", "non-empty string"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"text": "y" * 25}), "cues[0].do[0].params.text", "at most 24 characters"),
+        (lambda s: s["cues"][0]["do"][0].pop("params"), "cues[0].do[0].params", "set needs params.text"),
+        (
+            lambda s: s["cues"][0]["do"][0].update(action="focus", params={"lines": [1, 1]}),
+            "cues[0].do[0].action",
+            "headline objects support",
+        ),
+    ],
+)
+def test_each_headline_problem_is_reported_with_its_path(mutate, path, fragment):
+    raw = headline_scene()
+    mutate(raw)
+    scene, errors = parse_scene(raw)
+    assert scene is None
+    assert path in paths(errors), errors
+    assert fragment in next(e["message"] for e in errors if e["path"] == path)
+
+
+def test_code_and_headline_objects_share_a_scene():
+    raw = valid_scene()
+    raw["objects"].append({"id": "big", "primitive": "headline", "params": {"text": "Adding"}, "hidden": True})
+    raw["cues"][1]["do"].append({"object": "big", "action": "show"})
+    scene, errors = parse_scene(raw)
+    assert errors == []
+    assert scene.state_at(0)["big"] == {"visible": False, "text": "Adding"}
+    assert scene.state_at(1)["big"] == {"visible": True, "text": "Adding"}
+    assert scene.state_at(1)["src"] == {"visible": True, "lines": [3, 3]}
+
+
+def test_the_guide_tells_callers_about_headlines():
+    from socra_server.domain.scene import SCENE_GUIDE
+
+    assert 'primitive "headline"' in SCENE_GUIDE
+    assert "24 characters" in SCENE_GUIDE
+    assert 'set {"text"}' in SCENE_GUIDE
+
+
+def test_the_json_schema_describes_headline_params_and_set():
+    schema = json.loads((DOCS / "scene.schema.json").read_text(encoding="utf-8"))
+    assert schema["$defs"]["headlineParams"]["properties"]["text"] == {"$ref": "#/$defs/headlineText"}
+    assert schema["$defs"]["headlineText"]["maxLength"] == 24
+    assert "set" in schema["$defs"]["action"]["properties"]["action"]["enum"]
