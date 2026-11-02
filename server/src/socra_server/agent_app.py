@@ -275,6 +275,7 @@ class AgentApp:
 
     async def handle_interrupt(self) -> None:
         if self._switching:
+            logger.info("Mode switch: cancelled by an interrupt")
             conversation = self._conversation
             await self._cancel_switch()
             if conversation is not None:
@@ -516,15 +517,27 @@ class AgentApp:
     async def handle_mode_switch_response(self, target: str, allow: Any) -> None:
         """The user answered the on-screen confirmation of a voice-requested switch."""
         if self._switch_request != target:
+            logger.info(
+                "Mode switch to %s: answer ignored (pending request: %s)",
+                target, self._switch_request,
+            )
             return
         self._switch_request = None
         if allow is not True:
+            logger.info("Mode switch to %s: the user declined", target)
             await self.channel.send({"type": "mode_switch_closed", "mode": target})
             return
+        logger.info("Mode switch to %s: the user accepted", target)
         await self.handle_switch_mode(target)
 
     async def _switch_problem(self, target: str) -> str | None:
         """Report why a switch cannot start (to the page), or None when it can."""
+        problem = await self._find_switch_problem(target)
+        if problem is not None:
+            logger.info("Mode switch to %s: not started (%s)", target, problem)
+        return problem
+
+    async def _find_switch_problem(self, target: str) -> str | None:
         try:
             mode = get_mode(target)
         except UnknownMode as exc:
@@ -551,22 +564,36 @@ class AgentApp:
         assert self._session is not None and self._backend is not None
         mode = get_mode(target)
         session = self._session
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+
+        def step(text: str) -> None:
+            logger.info(
+                "Mode switch to %s: %s after %.1f s", target, text, loop.time() - started
+            )
+
+        logger.info("Mode switch to %s: started (%s -> %s)", target, session["mode"], target)
         await self.channel.send({"type": "agent_switching", "mode": target})
         await self._state("thinking")
         # A voice request can arrive while the agent is still answering: let it finish.
         running = self.turn_task
         if running is not None and not running.done():
+            step("waiting for the running reply")
             await asyncio.wait({running})
+            step("the running reply finished")
         old = self._conversation
         assert old is not None
-        summary = await self._request_summary(old)
+        summary = await self._request_summary(old, target)
         if summary is None:
+            step("no valid summary, staying in the current mode")
             await self._error(
                 f"Could not switch to {mode.label} mode: the agent did not produce a "
                 "valid summary. You stay in the current mode."
             )
             await self._switch_failed()
             return
+        step("summary ready")
+        step(f"opening the {target} session")
         try:
             new = await self._open_conversation(
                 self._backend, session["model"], Path(session["cwd"]), target
@@ -578,6 +605,7 @@ class AgentApp:
             )
             await self._switch_failed()
             return
+        step(f"{target} session open")
         # The new session is up: adopt it first, so a failure to close the old one
         # can never leave the app without a conversation.
         self._conversation = new
@@ -596,17 +624,26 @@ class AgentApp:
                 self._transcript.append("user", text)
         seed = render_seed(mode, self._facts, summary, last_turns(self._turns), pending)
         self._start_turn(seed, hidden=True)
+        step("seed turn started")
 
-    async def _request_summary(self, conversation: AgentConversation) -> HandoffSummary | None:
+    async def _request_summary(
+        self, conversation: AgentConversation, target: str
+    ) -> HandoffSummary | None:
         prompt = SUMMARY_PROMPT
-        for _ in range(SUMMARY_ATTEMPTS):
+        for attempt in range(1, SUMMARY_ATTEMPTS + 1):
+            logger.info("Mode switch to %s: summary attempt %d", target, attempt)
             reply = await self._silent_turn(conversation, prompt)
             if reply is None:
+                logger.info("Mode switch to %s: summary attempt %d failed", target, attempt)
                 prompt = SUMMARY_PROMPT
                 continue
             try:
                 return parse_summary(reply)
             except InvalidSummary as exc:
+                logger.info(
+                    "Mode switch to %s: summary attempt %d invalid (missing: %s)",
+                    target, attempt, ", ".join(exc.missing),
+                )
                 prompt = retry_prompt(exc.missing)
         return None
 
@@ -661,6 +698,7 @@ class AgentApp:
         if self._switch_request and self._switch_request != target:
             await self.channel.send({"type": "mode_switch_closed", "mode": self._switch_request})
         self._switch_request = target
+        logger.info("Mode switch to %s: asked the user to confirm", target)
         await self.channel.send({
             "type": "mode_switch_request", "mode": target, "label": mode.label,
         })

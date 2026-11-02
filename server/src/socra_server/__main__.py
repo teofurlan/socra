@@ -217,6 +217,7 @@ async def _amain(protocol_stdout) -> None:
 
 def main() -> None:
     """Console script entry point."""
+    ws_server.setup_file_logging(ws_server.log_path())
     if "--agent" in sys.argv[1:]:
         try:
             asyncio.run(_standalone())

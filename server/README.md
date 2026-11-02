@@ -184,6 +184,7 @@ instead, so exam and agent mode can run at the same time.
 | `SOCRA_WHISPER_DEVICE` | `auto` | Execution device: `auto` (CUDA float16 if available, else CPU int8), `cuda`, or `cpu` |
 | `SOCRA_PREFERENCES_FILE` | `%LOCALAPPDATA%/Socra/preferences.json` | Page preferences shared by every server process |
 | `SOCRA_AGENT_IDLE_S` | `120` | Agent mode exits after this many seconds without an agent page |
+| `SOCRA_LOG_FILE` | `server/logs/socra.log` | Log file of the running server (every `socra_server` logger, including each step of a mode switch); importing the package never writes it |
 
 ### Whisper Model Benchmark (RTX 4060 8 GB)
 

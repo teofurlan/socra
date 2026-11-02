@@ -564,3 +564,76 @@ async def test_without_a_transcript_store_the_switch_still_works(tmp_path):
 
     assert backend.opens[1]["mode"].id == "exam"
     assert await backend.opens[1]["toolbox"].search_transcript("x", 5) == []
+
+
+def _switch_log(caplog):
+    return [
+        r.getMessage() for r in caplog.records
+        if r.name == "socra_server.agent_app" and r.getMessage().startswith("Mode switch")
+    ]
+
+
+async def test_each_step_of_a_selector_switch_is_logged(tmp_path, caplog):
+    old = Convo([[ReplyDone(VALID)]])
+    backend = ModeBackend([old, Convo([[ReplyDone("ok")]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+
+    with caplog.at_level("INFO", logger="socra_server.agent_app"):
+        await _switch(app, channel, "exam")
+
+    steps = _switch_log(caplog)
+    expected = [
+        "Mode switch to exam: started (mentor -> exam)",
+        "Mode switch to exam: summary attempt 1",
+        "Mode switch to exam: summary ready",
+        "Mode switch to exam: opening the exam session",
+        "Mode switch to exam: exam session open",
+        "Mode switch to exam: seed turn started",
+    ]
+    assert [s.split(" after ")[0] for s in steps] == expected
+
+
+async def test_a_voice_switch_logs_the_request_the_answer_and_the_wait(tmp_path, caplog):
+    gate = asyncio.Event()
+    old = Convo([[ReplyDone("working...")], [ReplyDone(VALID)]], gate=gate)
+    backend = ModeBackend([old, Convo([[ReplyDone("ok")]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+
+    with caplog.at_level("INFO", logger="socra_server.agent_app"):
+        await app.handle_turn_text("do it")
+        await asyncio.sleep(0)
+        await backend.opens[0]["toolbox"].switch_mode("exam")
+        await app.handle_mode_switch_response("exam", True)
+        await asyncio.sleep(0.01)
+        gate.set()
+        await _finish_turn(app, channel)
+        await asyncio.wait_for(app.switch_task, timeout=3)
+
+    steps = [s.split(" after ")[0] for s in _switch_log(caplog)]
+    assert steps[:5] == [
+        "Mode switch to exam: asked the user to confirm",
+        "Mode switch to exam: the user accepted",
+        "Mode switch to exam: started (mentor -> exam)",
+        "Mode switch to exam: waiting for the running reply",
+        "Mode switch to exam: the running reply finished",
+    ]
+
+
+async def test_a_failed_summary_attempt_is_logged_with_what_was_missing(tmp_path, caplog):
+    incomplete = json.dumps({"goal": "x"})
+    old = Convo([[ReplyDone(incomplete)], [ReplyDone(VALID)]])
+    backend = ModeBackend([old, Convo([[ReplyDone("ok")]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+
+    with caplog.at_level("INFO", logger="socra_server.agent_app"):
+        await _switch(app, channel, "exam")
+
+    steps = _switch_log(caplog)
+    assert any(
+        s.startswith("Mode switch to exam: summary attempt 1 invalid (missing: ") for s in steps
+    )
+    assert "Mode switch to exam: summary attempt 2" in [s.split(" after ")[0] for s in steps]
+
