@@ -354,7 +354,7 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 |---|---|
 | `state` | `state`: `"idle"` \| `"speaking"` \| `"listening"` \| `"thinking"` |
 | `question` | `index`, `total`, `text`, optional display-only `code` |
-| `tts_audio` | `format: "wav"`, `data: <base64>`, optional scene `step` (`index`, `total`, `id`, `say`, `state`, `seq`) applied when the clip starts |
+| `tts_audio` | `format: "wav"`, `data: <base64>`, optional scene `step` (`index`, `total`, `id`, `say`, `state`, `seq`) applied when the clip starts; agent reply clips carry optional `text`, the clip's source text with its markdown, so the page can highlight what is being spoken |
 | `transcript` | `text`, `final: true` |
 | `notice` | `text`: temporary notice (e.g. non-answer rejection) |
 | `voices` | `voices`: `[{id, label}]`, `current`: selected voice id |

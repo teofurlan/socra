@@ -497,3 +497,54 @@ async def test_the_first_sentence_does_not_wait_for_more_text_to_batch(tmp_path)
 
     assert loader.tts.spoken == ["First."]
     await app.shutdown()
+
+
+async def test_clip_carries_its_source_text_with_markdown(tmp_path):  # S3
+    app, channel, loader, convo = await _live(tmp_path)
+
+    await convo.events.put(TextDelta("**Bold** sentence. "))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 1)
+
+    clip = channel.of_type("tts_audio")[0]
+    assert clip["text"] == "**Bold** sentence."
+    assert "*" not in loader.tts.spoken[0]
+
+    await convo.events.put(ReplyDone("**Bold** sentence."))
+    await _settle()
+    app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+
+async def test_clip_text_joins_grouped_pieces_with_a_line_break(tmp_path):  # S3
+    """Each piece starts its own line, so the page can drop list numbers it does not show as text."""
+    app, channel, loader, convo = await _live(tmp_path)
+
+    await convo.events.put(TextDelta("First `code` one. Second **one**. "))
+    await _until(lambda: len(channel.of_type("tts_audio")) >= 1)
+
+    texts = "\n".join(c["text"] for c in channel.of_type("tts_audio"))
+    assert texts == "First `code` one.\nSecond **one**."
+
+    await convo.events.put(ReplyDone("First `code` one. Second **one**."))
+    await _settle()
+    for _ in channel.of_type("tts_audio"):
+        app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+
+async def test_numbered_list_items_keep_their_number_at_a_line_start(tmp_path):  # #92 bold subtitles
+    """User: "no se esté bugeando con los subtítulos que están en negrita"."""
+    app, channel, loader, convo = await _live(tmp_path)
+    text = "Two ideas:\n\n1. **Setup.** It helps.\n2. **Barge-in.** It feels natural."
+
+    await convo.events.put(TextDelta(text))
+    await convo.events.put(ReplyDone(text))
+    await _until(lambda: len(" ".join(loader.tts.spoken)) > 0 and "natural" in " ".join(loader.tts.spoken))
+    await _until(lambda: len(channel.of_type("tts_audio")) == len(loader.tts.spoken))
+
+    lines = [line for c in channel.of_type("tts_audio") for line in c["text"].split("\n")]
+    assert "1. **Setup.**" in lines
+    assert "2. **Barge-in.**" in lines
+    for _ in channel.of_type("tts_audio"):
+        app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
