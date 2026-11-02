@@ -137,8 +137,11 @@ as the exam MCP server), it only opens the page. The page talks to
   mode before closing the old one, so a failed start loses nothing. The new
   session is seeded with what Socra recorded itself (files changed, tools
   used, permission decisions, exam results), the summary and the last 4 turns
-  verbatim (replies capped at about 1,500 characters). It says one spoken
-  sentence of what it understood, which you can correct, and can call
+  verbatim (replies capped at about 1,500 characters). The seed states that you
+  already confirmed the switch, so the new agent never asks you to confirm
+  again. In exam mode it starts asking the first question right away; in mentor
+  mode it says one spoken sentence of what it understood, which you can
+  correct. Words you said during the switch are answered first. It can call
   `search_transcript` for details from the previous session. The timeline
   continues across the switch with a "Context condensed" marker.
 - **Transcripts.** Socra keeps its own JSONL transcript per session under

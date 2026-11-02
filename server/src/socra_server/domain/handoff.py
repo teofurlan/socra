@@ -150,17 +150,19 @@ def render_seed(
             f"## Said by the user during the switch\n{_bullets(pending)}\n\n"
             "If something is missing, call search_transcript to look it up in the previous "
             "session. Answer what the user said during the switch directly; do not restate "
-            "the situation first."
+            f"the situation first.{mode.after_pending}"
         )
     else:
         closing = (
             "If something is missing, call search_transcript to look it up in the previous "
-            "session. Now say, in one spoken sentence, what you understand the situation to be, "
-            "so the user can correct you. Do not start any work yet."
+            f"session. {mode.opening}"
         )
     return (
         f"You are continuing earlier work in {mode.label.lower()} mode. The previous session "
         "was closed; this is what Socra carries over.\n\n"
+        "The user already confirmed the switch. The switch is complete and the session is now "
+        f"in {mode.id} mode. Do not ask the user to confirm, accept or press anything about the "
+        "switch: earlier turns that mention confirming refer to this switch, which is done.\n\n"
         f"## Recorded by Socra\nFiles changed:\n{_bullets(facts.files_touched)}\n"
         f"Tools used:\n{_bullets(tools)}\nPermission decisions:\n{_bullets(permissions)}\n"
         f"Exam results:\n{_bullets(results)}\n\n"

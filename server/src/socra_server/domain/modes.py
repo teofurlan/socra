@@ -26,6 +26,10 @@ class Mode:
     instructions: str
     # Ids of the Socra tools the mode exposes (see socra_tools.TOOL_SPECS).
     tools: frozenset[str]
+    # Closing instruction of the handoff seed when the user said nothing during the switch.
+    opening: str
+    # What to do after answering words the user said during the switch ("" = nothing more).
+    after_pending: str = ""
 
 
 _COMMON = (
@@ -49,6 +53,10 @@ MODES: dict[str, Mode] = {
             f"that change anything. {_COMMON}"
         ),
         tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, PRESENT}),
+        opening=(
+            "Now say, in one spoken sentence, what you understand the situation to be, "
+            "so the user can correct you. Do not start any work yet."
+        ),
     ),
     "exam": Mode(
         id="exam",
@@ -61,6 +69,13 @@ MODES: dict[str, Mode] = {
             f"{_COMMON}"
         ),
         tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, PRESENT}),
+        opening=(
+            "Start the exam now: ask the first question right away, with at most a very short "
+            "lead-in, grounded in the context carried over above. Do not restate the situation."
+        ),
+        after_pending=(
+            " Then continue the exam: ask the first question if you have not asked it yet."
+        ),
     ),
 }
 

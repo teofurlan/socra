@@ -637,3 +637,41 @@ async def test_a_failed_summary_attempt_is_logged_with_what_was_missing(tmp_path
     )
     assert "Mode switch to exam: summary attempt 2" in [s.split(" after ")[0] for s in steps]
 
+
+class GatedSummaryConvo(Convo):
+    """Answers the first turn at once and holds the summary turn until released."""
+
+    def __init__(self, scripts, release: asyncio.Event) -> None:
+        super().__init__(scripts)
+        self.release = release
+
+    async def send(self, text):
+        if text == SUMMARY_PROMPT:
+            await self.release.wait()
+        async for event in super().send(text):
+            yield event
+
+
+async def test_the_page_is_not_told_to_listen_while_the_summary_runs(tmp_path):
+    release = asyncio.Event()
+    old = GatedSummaryConvo([[ReplyDone("working...")], [ReplyDone(VALID)]], release)
+    backend = ModeBackend([old, Convo([[ReplyDone("First question?")]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+    await app.handle_turn_text("do it")
+    await asyncio.sleep(0)
+    await backend.opens[0]["toolbox"].switch_mode("exam")
+    await app.handle_mode_switch_response("exam", True)
+    before = len(channel.sent)
+    await _finish_turn(app, channel)
+    await asyncio.sleep(0.01)
+
+    # The old reply ended but the switch still runs: the page keeps thinking.
+    states = [m["state"] for m in channel.sent[before:] if m["type"] == "state"]
+    assert "listening" not in states
+    assert app._switching
+
+    release.set()
+    await asyncio.wait_for(app.switch_task, timeout=3)
+    await _finish_turn(app, channel)
+    assert [m for m in channel.sent if m["type"] == "state"][-1]["state"] == "listening"

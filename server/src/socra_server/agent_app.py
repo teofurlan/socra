@@ -478,7 +478,8 @@ class AgentApp:
             speech.cancel()
             if self._speech is speech:
                 self._speech = None
-            await self._state("listening")
+            # A switch waiting for this reply goes on with its summary: still busy.
+            await self._state("thinking" if self._switching else "listening")
 
     async def _decide_permission(self, request: PermissionRequest) -> bool:
         if not self.channel.is_connected:
