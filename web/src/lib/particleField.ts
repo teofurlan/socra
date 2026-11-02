@@ -28,7 +28,40 @@ export interface FieldFrame {
   reducedMotion: boolean
   /** While idle, gather into a small, slow formation instead of drifting loose. */
   rest?: boolean
+  /** Shapes the particles assemble on screen while they are shown; omitted or empty for none. */
+  figures?: Figure[]
 }
+
+/** A point of a figure, normalised to 0..1 of its box; ``a`` is the angle a line takes there. */
+export interface FigurePoint {
+  x: number
+  y: number
+  a?: number
+}
+
+export interface FigureBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * Something the particles assemble: a share of them is recruited, one per point, and the
+ * rest carry on. A ``lead`` figure takes the stage, so the rest drift loose instead of
+ * forming the voice shape; a ``pointer`` figure only borrows a few, leaving the voice shape.
+ * A figure keeps its particles while its ``id`` and ``points`` stay the same; its box is read
+ * every frame, so it follows whatever it is drawn on.
+ */
+export interface Figure {
+  id: string
+  points: FigurePoint[]
+  box: FigureBox
+  role: 'lead' | 'pointer'
+}
+
+/** At most this share of the particles is recruited by figures, all together. */
+export const FIGURE_SHARE = 0.7
 
 export interface Particle {
   x: number
@@ -60,6 +93,16 @@ export interface Particle {
   size: number
   /** Where in the two-colour gradient it is painted, 0..1. */
   tint: number
+  /** Index of the figure it is recruited by in the current frame's figures, or -1. */
+  figure: number
+  /** How far it has moved onto its figure, 0..1, and its point there (0..1 of the box). */
+  fg: number
+  fx: number
+  fy: number
+  fa: number | undefined
+  /** Last screen point of its figure, where it lets go from once the figure is gone. */
+  gx: number
+  gy: number
 }
 
 const TAU = Math.PI * 2
@@ -137,6 +180,10 @@ export class ParticleField {
   private col1: [number, number, number] = [192, 132, 252]
   private target0 = this.col0
   private target1 = this.col1
+  /** Particle indices in a fixed random order, so figures recruit from all over the screen. */
+  private order: number[] = []
+  /** Who each figure recruited, kept while its id and points stay the same. */
+  private recruits: { id: string; points: FigurePoint[]; members: number[] }[] = []
   /** Additive light reads on a dark ground; a light ground needs plain paint. */
   private additive = 'lighter' as GlobalCompositeOperation
 
@@ -197,8 +244,75 @@ export class ParticleField {
         alpha: 0,
         size: 1,
         tint: hue,
+        figure: -1,
+        fg: 0,
+        fx: 0,
+        fy: 0,
+        fa: undefined,
+        gx: 0,
+        gy: 0,
       }
     })
+    this.order = this.particles.map((_, i) => i)
+    for (let i = this.order.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1))
+      ;[this.order[i], this.order[j]] = [this.order[j], this.order[i]]
+    }
+    this.recruits = []
+  }
+
+  /**
+   * Matches recruits to this frame's figures: a figure with the same id and points keeps its
+   * particles, a new or changed one recruits free particles, one per point (spread evenly over
+   * its points when the share runs short), and particles of figures that went away are freed.
+   */
+  private recruit(figures: Figure[]) {
+    const same =
+      figures.length === this.recruits.length &&
+      figures.every((f, i) => f.id === this.recruits[i].id && f.points === this.recruits[i].points)
+    if (same) return
+
+    const previous = new Map(this.recruits.map((r) => [r.id, r]))
+    const kept = new Map<string, number[]>()
+    const taken = new Set<number>()
+    for (const f of figures) {
+      const r = previous.get(f.id)
+      if (r && r.points === f.points && !kept.has(f.id)) {
+        kept.set(f.id, r.members)
+        r.members.forEach((i) => taken.add(i))
+      }
+    }
+
+    let budget = Math.floor(FIGURE_SHARE * this.particles.length) - taken.size
+    let cursor = 0
+    const next: typeof this.recruits = []
+    for (const f of figures) {
+      let members = kept.get(f.id)
+      if (!members || next.some((r) => r.id === f.id)) {
+        const want = Math.max(0, Math.min(f.points.length, budget))
+        budget -= want
+        members = []
+        while (members.length < want && cursor < this.order.length) {
+          const i = this.order[cursor++]
+          if (!taken.has(i)) {
+            taken.add(i)
+            members.push(i)
+          }
+        }
+        members.forEach((i, k) => {
+          const q = f.points[Math.floor((k * f.points.length) / members!.length)]
+          const p = this.particles[i]
+          p.fx = q.x
+          p.fy = q.y
+          p.fa = q.a
+        })
+      }
+      next.push({ id: f.id, points: f.points, members })
+    }
+
+    for (const p of this.particles) p.figure = -1
+    next.forEach((r, n) => r.members.forEach((i) => (this.particles[i].figure = n)))
+    this.recruits = next
   }
 
   setLetters(letters: string[]) {
@@ -246,7 +360,11 @@ export class ParticleField {
       this.col1[i] = lerp(this.col1[i], this.target1[i], ck)
     }
 
-    const G = f.state === 'idle' && !resting ? 0 : 1
+    const figures = f.figures ?? []
+    this.recruit(figures)
+    const lead = figures.some((fig) => fig.role === 'lead')
+    // A lead figure takes the stage: everyone else drifts loose as if nothing were said.
+    const G = (f.state === 'idle' && !resting) || lead ? 0 : 1
     const R = f.radius * (resting ? 0.6 : 0.85) * (1 + vol * 0.1)
     const cr = Math.cos(this.rot), sr = Math.sin(this.rot)
     const ct = Math.cos(TILT), st = Math.sin(TILT)
@@ -298,12 +416,29 @@ export class ParticleField {
         depth = clamp((z2 + 1) / 2, 0, 1)
       }
 
+      // A recruited particle moves onto its figure point, which breathes with the voice.
+      const fig = p.figure >= 0 ? figures[p.figure] : undefined
+      p.fg += ((fig ? 1 : 0) - p.fg) * (1 - Math.exp(-dt * (p.rate + 1.5)))
+      if (p.fg < 1e-3) p.fg = 0
+      const ef = smooth(clamp(p.fg, 0, 1))
+      let gx = 0, gy = 0
+      if (fig) {
+        const breath = (1.2 + 2.6 * vol) * motion
+        gx = fig.box.x + p.fx * fig.box.w + Math.sin(t * 2.3 + p.ph) * breath
+        gy = fig.box.y + p.fy * fig.box.h + Math.cos(t * 1.9 + p.ph * 1.3) * breath
+        p.gx = gx
+        p.gy = gy
+      } else if (p.fg > 0) {
+        gx = p.gx
+        gy = p.gy
+      }
+
       // Spring toward a blend of the loose home and the formation, swirling while in transit.
-      const tx = lerp(p.hx * W, fx, e), ty = lerp(p.hy * H, fy, e)
-      const k = lerp(9, 95, e), c = 2 * Math.sqrt(k) * 0.78
+      const tx = lerp(lerp(p.hx * W, fx, e), gx, ef), ty = lerp(lerp(p.hy * H, fy, e), gy, ef)
+      const k = lerp(lerp(9, 95, e), 110, ef), c = 2 * Math.sqrt(k) * 0.78
       let ax = (tx - p.x) * k - p.vx * c
       let ay = (ty - p.y) * k - p.vy * c
-      const transit = e * (1 - e) * 4 * (f.reducedMotion ? 0.3 : 1)
+      const transit = e * (1 - e) * 4 * (f.reducedMotion ? 0.3 : 1) * (1 - ef)
       if (transit > 0.01) {
         const rx = p.x - cx, ry = p.y - cy, rl = Math.hypot(rx, ry) + 1
         ax += (-ry / rl) * 700 * transit
@@ -322,6 +457,10 @@ export class ParticleField {
       let sy = lerp(Math.sin(2 * da), Math.sin(2 * va), w)
       sx = lerp(sx, Math.cos(2 * fa), e)
       sy = lerp(sy, Math.sin(2 * fa), e)
+      // On a figure, lines follow the stroke they sit on, or lie flat when it has none.
+      const pa = p.fa ?? 0
+      sx = lerp(sx, Math.cos(2 * pa), ef)
+      sy = lerp(sy, Math.sin(2 * pa), ef)
       p.ang = Math.atan2(sy, sx) / 2
 
       const twinkle = 0.7 + 0.3 * Math.sin(t * (0.8 + p.spd) + p.ph)
@@ -332,6 +471,12 @@ export class ParticleField {
       // On the wave each strand leans toward its own colour; at rest everything leans to the first.
       p.tint = wave ? lerp(p.hue, STRANDS[p.strand].hue, 0.75 * e) : p.hue
       if (resting) p.tint *= 0.3
+      if (ef > 0) {
+        // A figure is drawn bright and even, so it reads as one shape; it swells with the voice.
+        p.depth = lerp(p.depth, 1, ef)
+        p.alpha = lerp(p.alpha, 0.62 + 0.3 * twinkle * (0.5 + vol), ef)
+        p.size = lerp(p.size, 5 + 5 * vol, ef)
+      }
     }
   }
 

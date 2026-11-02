@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ParticleField, fibonacciSphere, lettersFrom, particleCount, type FieldFrame } from './particleField'
+import { FIGURE_SHARE, ParticleField, fibonacciSphere, lettersFrom, particleCount, type Figure, type FieldFrame } from './particleField'
 
 /** Small deterministic PRNG so the physics runs the same way every time. */
 function seeded(seed = 1) {
@@ -274,5 +274,125 @@ describe('ParticleField', () => {
       expect(Number.isFinite(p.x)).toBe(true)
       expect(Number.isFinite(p.y)).toBe(true)
     }
+  })
+})
+
+describe('ParticleField figures', () => {
+  const BOX = { x: 100, y: 400, w: 200, h: 100 }
+  /** A 10 x 6 grid of points inside the box, normalised to 0..1. */
+  const GRID = Array.from({ length: 60 }, (_, i) => ({ x: (i % 10) / 9, y: Math.floor(i / 10) / 5 }))
+
+  function runWith(field: ParticleField, state: FieldFrame['state'], seconds: number, start: number, figures: Figure[]) {
+    let time = start
+    for (let i = 0; i < seconds * 60; i++) {
+      time += BASE.dt
+      field.step({ ...BASE, state, volume: state === 'idle' ? 0 : 0.5, time, figures })
+    }
+    return time
+  }
+
+  function recruited(field: ParticleField) {
+    return field.particles.filter((p) => p.figure >= 0)
+  }
+
+  /** Mean distance from each recruited particle to the nearest figure point on screen. */
+  function figureError(field: ParticleField, points: { x: number; y: number }[], box = BOX) {
+    const ps = recruited(field)
+    const onScreen = points.map((q) => ({ x: box.x + q.x * box.w, y: box.y + q.y * box.h }))
+    return ps.reduce((sum, p) => sum + Math.min(...onScreen.map((q) => Math.hypot(p.x - q.x, p.y - q.y))), 0) / ps.length
+  }
+
+  it('recruits one particle per figure point and settles them on the points inside the box', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    runWith(field, 'speaking', 4, 0, [{ id: 'title', points: GRID, box: BOX, role: 'pointer' }])
+    expect(recruited(field)).toHaveLength(GRID.length)
+    expect(figureError(field, GRID)).toBeLessThan(12)
+  })
+
+  it('keeps the other particles in the voice formation while a pointer figure is shown', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    runWith(field, 'speaking', 4, 0, [{ id: 'title', points: GRID, box: BOX, role: 'pointer' }])
+    const rest = field.particles.filter((p) => p.figure < 0)
+    const mean = rest.reduce((sum, p) => sum + Math.hypot(p.x - BASE.cx, p.y - BASE.cy), 0) / rest.length
+    expect(mean).toBeLessThan(BASE.radius * 1.3)
+  })
+
+  it('lets the other particles drift loose while a lead figure takes the stage', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    runWith(field, 'speaking', 5, 0, [{ id: 'title', points: GRID, box: BOX, role: 'lead' }])
+    const rest = field.particles.filter((p) => p.figure < 0)
+    const mean = rest.reduce((sum, p) => sum + Math.hypot(p.x - BASE.cx, p.y - BASE.cy), 0) / rest.length
+    expect(mean).toBeGreaterThan(180)
+    expect(figureError(field, GRID)).toBeLessThan(12)
+  })
+
+  it('follows its box when the box moves', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    const moved = { ...BOX, x: BOX.x + 150, y: BOX.y - 200 }
+    let t = runWith(field, 'speaking', 3, 0, [{ id: 'title', points: GRID, box: BOX, role: 'pointer' }])
+    t = runWith(field, 'speaking', 3, t, [{ id: 'title', points: GRID, box: moved, role: 'pointer' }])
+    expect(figureError(field, GRID, moved)).toBeLessThan(12)
+  })
+
+  it('releases its particles back to the voice formation when the figure goes away', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    const t = runWith(field, 'speaking', 3, 0, [{ id: 'title', points: GRID, box: BOX, role: 'lead' }])
+    runWith(field, 'speaking', 4, t, [])
+    expect(recruited(field)).toHaveLength(0)
+    expect(meanDistance(field)).toBeLessThan(BASE.radius * 1.3)
+  })
+
+  it('recruits again when the figure changes its points', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    const fewer = GRID.slice(0, 20)
+    const t = runWith(field, 'speaking', 3, 0, [{ id: 'title', points: GRID, box: BOX, role: 'pointer' }])
+    runWith(field, 'speaking', 3, t, [{ id: 'title', points: fewer, box: BOX, role: 'pointer' }])
+    expect(recruited(field)).toHaveLength(fewer.length)
+    expect(figureError(field, fewer)).toBeLessThan(12)
+  })
+
+  it('never recruits more than its share of the particles, spreading them over the points', () => {
+    const field = new ParticleField({ count: 100, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    runWith(field, 'speaking', 4, 0, [{ id: 'title', points: GRID, box: BOX, role: 'lead' }])
+    const ps = recruited(field)
+    expect(ps.length).toBeLessThanOrEqual(FIGURE_SHARE * 100)
+    expect(ps.length).toBeGreaterThan(0)
+    // Spread over the whole figure: both ends of the grid are covered.
+    expect(Math.min(...ps.map((p) => p.x))).toBeLessThan(BOX.x + 30)
+    expect(Math.max(...ps.map((p) => p.x))).toBeGreaterThan(BOX.x + BOX.w - 30)
+  })
+
+  it('shares the particles between two figures without recruiting one twice', () => {
+    const field = new ParticleField({ count: 400, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    const other = { x: 500, y: 100, w: 100, h: 50 }
+    runWith(field, 'speaking', 4, 0, [
+      { id: 'a', points: GRID, box: BOX, role: 'lead' },
+      { id: 'b', points: GRID.slice(0, 30), box: other, role: 'pointer' },
+    ])
+    expect(field.particles.filter((p) => p.figure === 0)).toHaveLength(60)
+    expect(field.particles.filter((p) => p.figure === 1)).toHaveLength(30)
+  })
+
+  it('keeps every position finite with figures, also under reduced motion and while idle', () => {
+    const field = new ParticleField({ count: 200, style: 'letters', random: seeded(5) })
+    field.resize(BASE.width, BASE.height)
+    let time = 0
+    for (let i = 0; i < 120; i++) {
+      time += BASE.dt
+      field.step({ ...BASE, state: 'idle', volume: 0, time, reducedMotion: true, figures: [{ id: 'x', points: GRID, box: BOX, role: 'lead' }] })
+    }
+    for (const p of field.particles) {
+      expect(Number.isFinite(p.x)).toBe(true)
+      expect(Number.isFinite(p.y)).toBe(true)
+    }
+    expect(figureError(field, GRID)).toBeLessThan(12)
   })
 })
