@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-const jitiPath = 'C:/Users/teofu/.pi/agent/install/releases/1.3.0/node_modules/jiti/lib/jiti.mjs';
+const jitiPath = process.env.PI_JITI_PATH;
+assert.ok(jitiPath, 'Set PI_JITI_PATH to jiti/lib/jiti.mjs inside your Pi install');
 const { createJiti } = await import(pathToFileURL(jitiPath).href);
 
 const extensionPath = fileURLToPath(new URL('./extension.mjs', import.meta.url));

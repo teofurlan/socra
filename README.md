@@ -1,3 +1,5 @@
+<p align="center"><img src="web/public/branding/logo.png" width="180" alt="Socra logo: comedy and tragedy masks joined by a voice waveform"></p>
+
 # Socra
 
 [![CI](https://github.com/teofurlan/socra/actions/workflows/ci.yml/badge.svg)](https://github.com/teofurlan/socra/actions/workflows/ci.yml)
