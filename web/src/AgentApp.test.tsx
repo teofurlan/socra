@@ -106,6 +106,22 @@ describe('AgentApp', () => {
       expect(visualizer).toHaveAttribute('data-figures', '')
     })
 
+    it('forms the headline with the particles and keeps its text for screen readers', () => {
+      const { ws } = openPage()
+      startSession(ws)
+      act(() => {
+        ws.receive({ type: 'walkthrough', title: 'T', objects: [{ id: 'h', primitive: 'headline', params: { text: 'Big idea' }, hidden: false }], total: 1 })
+        ws.receive({ type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'Hi.', state: { h: { visible: true, text: 'Big idea' } } })
+      })
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', 'headline:h:Big idea')
+      const text = screen.getByTestId('scene-headline')
+      expect(text).toHaveTextContent('Big idea')
+      expect(text).toHaveAttribute('aria-live', 'polite')
+      act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
+      expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
+    })
+
     it('points the particles at nothing without a scene', () => {
       const { ws } = openPage()
       startSession(ws)

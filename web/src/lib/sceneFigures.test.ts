@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from 'vitest'
-import { sceneFigureSources } from './sceneFigures'
+import { sceneFigureSources, sceneHeadline } from './sceneFigures'
 import type { WalkthroughData } from '@/types/exam'
 
 const CODE = { id: 'src', primitive: 'code', params: { code: 'one\ntwo\nthree\nfour', language: 'python' }, hidden: false }
@@ -83,5 +83,44 @@ describe('sceneFigureSources', () => {
     expect(small.length).toBeGreaterThan(60)
     expect(small.length).toBeLessThan(140)
     expect(source.build({ x: 0, y: 0, w: 4000, h: 3000 }).length).toBeLessThanOrEqual(220)
+  })
+})
+
+describe('headline figure', () => {
+  const HEAD = { id: 'title', primitive: 'headline', params: { text: 'Hello' }, hidden: false }
+  const withHeadline = (state: Record<string, unknown>, objects: unknown[] = [HEAD, CODE]) =>
+    scene({ objects: objects as WalkthroughData['objects'], step: { index: 1, total: 2, id: 'mid', say: 'x', state } as WalkthroughData['step'] })
+
+  it('leads with the visible headline, before the code focus', () => {
+    const sources = sceneFigureSources(withHeadline({ title: { visible: true, text: 'Hello' }, src: { visible: true, lines: [2, 3] } }))
+    expect(sources.map((s) => [s.id, s.role])).toEqual([['headline:title:Hello', 'lead'], ['focus:src:2-3', 'pointer']])
+  })
+
+  it('is absent when hidden, ended or without a step', () => {
+    expect(sceneFigureSources(withHeadline({ title: { visible: false, text: 'Hello' } }))).toEqual([])
+    expect(sceneFigureSources({ ...withHeadline({ title: { visible: true, text: 'Hello' } }), status: 'ended' })).toEqual([])
+    expect(sceneFigureSources({ ...withHeadline({ title: { visible: true, text: 'Hello' } }), step: null })).toEqual([])
+    expect(sceneHeadline(null)).toBeNull()
+  })
+
+  it('changes id when set changes the text', () => {
+    const a = sceneFigureSources(withHeadline({ title: { visible: true, text: 'Hello' } }))[0].id
+    const b = sceneFigureSources(withHeadline({ title: { visible: true, text: 'Bye' } }))[0].id
+    expect(a).not.toBe(b)
+  })
+
+  it('uses only the first visible headline', () => {
+    const second = { ...HEAD, id: 'other' }
+    const w = withHeadline({ title: { visible: false, text: 'A' }, other: { visible: true, text: 'B' } }, [HEAD, second])
+    expect(sceneFigureSources(w).map((s) => s.id)).toEqual(['headline:other:B'])
+    expect(sceneHeadline(w)).toEqual({ id: 'other', text: 'B' })
+  })
+
+  it('has no box without a canvas to rasterize the text', () => {
+    const stage = document.createElement('div')
+    stage.className = 'voice-stage'
+    document.body.appendChild(stage)
+    const [source] = sceneFigureSources(withHeadline({ title: { visible: true, text: 'Hello' } }))
+    expect(source.box()).toBeNull()
   })
 })

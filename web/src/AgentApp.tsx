@@ -15,7 +15,7 @@ import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { sceneKey, visibleCodeViews } from '@/lib/scene'
-import { sceneFigureSources } from '@/lib/sceneFigures'
+import { sceneFigureSources, sceneHeadline } from '@/lib/sceneFigures'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
 import { PromptLine } from '@/components/shell/PromptLine'
@@ -86,6 +86,7 @@ export const AgentApp: React.FC = () => {
   const walkthrough = state.walkthrough
   // While a scene plays, the particles point at what it shows.
   const sceneFigures = useMemo(() => sceneFigureSources(walkthrough), [walkthrough])
+  const headline = useMemo(() => sceneHeadline(walkthrough), [walkthrough])
   const sceneRunning = !!walkthrough && walkthrough.status !== 'ended'
   const busy = !sceneRunning && (state.protocolState === 'thinking' || state.protocolState === 'speaking')
   const selectedBackend = state.backends.find((backend) => backend.id === selection?.backend)
@@ -328,6 +329,10 @@ export const AgentApp: React.FC = () => {
                 figures={sceneFigures}
               />
             </div>
+
+            {headline && (
+              <p className="sr-only" data-testid="scene-headline" aria-live="polite">{headline.text}</p>
+            )}
 
             <StateLine
               state={inputProtocolState}

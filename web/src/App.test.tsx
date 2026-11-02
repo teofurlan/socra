@@ -278,6 +278,21 @@ describe('App Integration', () => {
       expect(visualizer).toHaveAttribute('data-figures', '')
     })
 
+    it('forms the headline with the particles and keeps its text for screen readers', () => {
+      const ws = start()
+      act(() => {
+        ws.simulateMessage({ type: 'walkthrough', title: 'T', objects: [{ id: 'h', primitive: 'headline', params: { text: 'Big idea' }, hidden: false }, { id: 'code', primitive: 'code', params: { code: 'one\ntwo\nthree', language: 'python' }, hidden: false }], total: 2 })
+        ws.simulateMessage({ type: 'walkthrough_step', index: 1, total: 2, id: 's1', say: 'Hi.', state: { h: { visible: true, text: 'Big idea' }, code: { visible: true, lines: [2, 2] } } })
+      })
+      expect(screen.getByTestId('particle-visualizer').getAttribute('data-figures')).toMatch(/^headline:h:Big idea focus:code:2-2$/)
+      const text = screen.getByTestId('scene-headline')
+      expect(text).toHaveTextContent('Big idea')
+      expect(text).toHaveAttribute('aria-live', 'polite')
+      act(() => ws.simulateMessage({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
+      expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
+    })
+
     it('hides the code panel while the step hides its object', () => {
       const ws = start()
       act(() => ws.simulateMessage({ type: 'walkthrough_step', index: 2, total: 2, id: 's2', say: 'Gone.', state: { code: { visible: false, lines: null } } }))

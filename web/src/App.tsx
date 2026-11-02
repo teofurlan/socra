@@ -11,7 +11,7 @@ import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
 import { sceneKey, visibleCodeViews } from '@/lib/scene'
-import { sceneFigureSources } from '@/lib/sceneFigures'
+import { sceneFigureSources, sceneHeadline } from '@/lib/sceneFigures'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -73,6 +73,7 @@ export const App: React.FC = () => {
   const walkthrough = state.walkthrough
   // While a scene plays, the particles point at what it shows.
   const sceneFigures = useMemo(() => sceneFigureSources(walkthrough), [walkthrough])
+  const headline = useMemo(() => sceneHeadline(walkthrough), [walkthrough])
   const codeViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
   const questionCodeKey = question?.code !== undefined && !state.finished ? `${question.index}:${question.code}` : null
   const sceneCodeKey = walkthrough && codeViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
@@ -153,6 +154,10 @@ export const App: React.FC = () => {
                 figures={sceneFigures}
               />
             </div>
+
+            {headline && (
+              <p className="sr-only" data-testid="scene-headline" aria-live="polite">{headline.text}</p>
+            )}
 
             <StateLine
               state={state.protocolState}

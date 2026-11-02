@@ -3,7 +3,7 @@
  * finds its box on screen every frame (so it follows panels that slide or scroll), and
  * builds its points once from the first box it is shown in.
  */
-import { outlinePoints } from '@/lib/particleFigures'
+import { outlinePoints, textFigure } from '@/lib/particleFigures'
 import type { FigureBox, FigurePoint } from '@/lib/particleField'
 import type { WalkthroughData } from '@/types/exam'
 
@@ -51,11 +51,57 @@ function outline(box: FigureBox): FigurePoint[] {
   return outlinePoints(count, box.w, box.h)
 }
 
-/** The figures a scene shows right now; none once it has ended. */
+/** Same family as the page text (--sans in index.css), so the headline matches the UI. */
+const HEADLINE_FONT = '"Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'
+const HEADLINE_POINTS = 900
+/** How much of the voice stage the headline may fill. */
+const HEADLINE_WIDTH = 0.9
+const HEADLINE_HEIGHT = 0.7
+
+function liveState(walkthrough: WalkthroughData | null) {
+  if (!walkthrough || walkthrough.status === 'ended' || !walkthrough.step) return null
+  return walkthrough.step.state
+}
+
+/** The first visible headline of the current step, if any; the page draws only this one. */
+export function sceneHeadline(walkthrough: WalkthroughData | null): { id: string; text: string } | null {
+  const state = liveState(walkthrough)
+  if (!state || !walkthrough) return null
+  for (const object of walkthrough.objects) {
+    const current = state[object.id]
+    if (object.primitive === 'headline' && current?.visible && typeof current.text === 'string' && current.text) {
+      return { id: object.id, text: current.text }
+    }
+  }
+  return null
+}
+
+/** The text, as wide as the stage allows without distorting it, centred on the stage. */
+function headlineSource(id: string, text: string): FigureSource {
+  let figure: ReturnType<typeof textFigure> | undefined
+  const rasterized = () => (figure === undefined ? (figure = textFigure(text, HEADLINE_POINTS, HEADLINE_FONT)) : figure)
+  return {
+    id: `headline:${id}:${text}`,
+    role: 'lead',
+    box: () => {
+      const stage = document.querySelector<HTMLElement>('.voice-stage')?.getBoundingClientRect()
+      const raster = rasterized()
+      if (!stage || !raster || raster.aspect <= 0) return null
+      const w = Math.min(stage.width * HEADLINE_WIDTH, stage.height * HEADLINE_HEIGHT * raster.aspect)
+      const h = w / raster.aspect
+      if (w < MIN_SIDE || h < MIN_SIDE) return null
+      return { x: stage.left + (stage.width - w) / 2, y: stage.top + (stage.height - h) / 2, w, h }
+    },
+    build: () => rasterized()?.points ?? [],
+  }
+}
+
+/** The figures a scene shows right now (headline first); none once it has ended. */
 export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureSource[] {
-  if (!walkthrough || walkthrough.status === 'ended' || !walkthrough.step) return []
-  const state = walkthrough.step.state
-  return walkthrough.objects.flatMap((object): FigureSource[] => {
+  const state = liveState(walkthrough)
+  if (!state || !walkthrough) return []
+  const headline = sceneHeadline(walkthrough)
+  const focus = walkthrough.objects.flatMap((object): FigureSource[] => {
     const current = state[object.id]
     if (object.primitive !== 'code' || !current?.visible || !isRange(current.lines)) return []
     const [start, end] = current.lines
@@ -66,4 +112,5 @@ export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureS
       build: outline,
     }]
   })
+  return headline ? [headlineSource(headline.id, headline.text), ...focus] : focus
 }
