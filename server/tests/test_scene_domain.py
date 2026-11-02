@@ -324,3 +324,88 @@ def test_the_json_schema_describes_headline_params_and_set():
     assert schema["$defs"]["headlineParams"]["properties"]["text"] == {"$ref": "#/$defs/headlineText"}
     assert schema["$defs"]["headlineText"]["maxLength"] == 24
     assert "set" in schema["$defs"]["action"]["properties"]["action"]["enum"]
+
+
+# ---------------------------------------------------------------------------
+# 3D Shapes (Zdog primitive)
+# ---------------------------------------------------------------------------
+
+def shape_scene() -> dict:
+    return {
+        "version": 1,
+        "title": "Examining a 3D cube",
+        "objects": [{"id": "cube", "primitive": "shape", "params": {"shape": "cube", "color": "#00f0ff", "wireframe": True}}],
+        "steps": [
+            {"id": "intro", "say": "A cube has six identical square faces."},
+            {"id": "tilt", "say": "Let us rotate it to look at the top face."},
+            {"id": "reset", "say": "Back to the front orientation."},
+        ],
+        "cues": [
+            {"at": "tilt", "do": [{"object": "cube", "action": "rotate", "params": {"rx": 0.5, "ry": 0.25}}]},
+            {"at": "reset", "do": [{"object": "cube", "action": "reset"}]},
+        ],
+    }
+
+
+def test_a_valid_shape_scene_is_parsed_with_per_step_state():
+    scene, errors = parse_scene(shape_scene())
+    assert errors == []
+    assert scene is not None
+    assert scene.state_at(0)["cube"] == {
+        "visible": True,
+        "shape": "cube",
+        "color": "#00f0ff",
+        "wireframe": True,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 0.0,
+    }
+    assert scene.state_at(1)["cube"] == {
+        "visible": True,
+        "shape": "cube",
+        "color": "#00f0ff",
+        "wireframe": True,
+        "rx": 0.5,
+        "ry": 0.25,
+        "rz": 0.0,
+    }
+    assert scene.state_at(2)["cube"] == {
+        "visible": True,
+        "shape": "cube",
+        "color": "#00f0ff",
+        "wireframe": True,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 0.0,
+    }
+
+
+def test_shape_set_action_updates_shape_and_color():
+    raw = shape_scene()
+    raw["cues"][0]["do"].append({"object": "cube", "action": "set", "params": {"shape": "sphere", "color": "#ffaa00"}})
+    scene, errors = parse_scene(raw)
+    assert errors == []
+    assert scene.state_at(1)["cube"]["shape"] == "sphere"
+    assert scene.state_at(1)["cube"]["color"] == "#ffaa00"
+    assert scene.state_at(1)["cube"]["wireframe"] is True
+
+
+@pytest.mark.parametrize(
+    ("mutate", "path", "fragment"),
+    [
+        (lambda s: s["objects"][0].update(params={}), "objects[0].params.shape", "shape must be one of"),
+        (lambda s: s["objects"][0].update(params={"shape": "donut"}), "objects[0].params.shape", "shape must be one of"),
+        (lambda s: s["objects"][0].update(params={"shape": "cube", "unknown": 1}), "objects[0].params.unknown", "unknown field"),
+        (lambda s: s["objects"][0].update(params={"shape": "cube", "wireframe": "yes"}), "objects[0].params.wireframe", "wireframe must be a boolean"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rx": "up"}), "cues[0].do[0].params.rx", "rx must be a number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"spin": 1}), "cues[0].do[0].params.spin", "unknown field"),
+    ],
+)
+def test_each_shape_problem_is_reported_with_its_path(mutate, path, fragment):
+    raw = shape_scene()
+    mutate(raw)
+    scene, errors = parse_scene(raw)
+    assert scene is None
+    assert path in paths(errors), errors
+    assert fragment in next(e["message"] for e in errors if e["path"] == path)
+

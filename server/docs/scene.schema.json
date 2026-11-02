@@ -18,7 +18,7 @@
         "required": ["id", "primitive", "params"],
         "properties": {
           "id": { "$ref": "#/$defs/id" },
-          "primitive": { "enum": ["code", "headline"] },
+          "primitive": { "enum": ["code", "headline", "shape"] },
           "params": { "type": "object" },
           "hidden": { "type": "boolean", "default": false, "description": "Start hidden; a show action reveals it." }
         },
@@ -30,6 +30,10 @@
           {
             "if": { "properties": { "primitive": { "const": "headline" } } },
             "then": { "properties": { "params": { "$ref": "#/$defs/headlineParams" } } }
+          },
+          {
+            "if": { "properties": { "primitive": { "const": "shape" } } },
+            "then": { "properties": { "params": { "$ref": "#/$defs/shapeParams" } } }
           }
         ]
       }
@@ -92,13 +96,23 @@
       "maxLength": 24,
       "description": "A title or key term on one line, drawn large with particles. Trimmed; at most 24 characters after trimming."
     },
+    "shapeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shape"],
+      "properties": {
+        "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },
+        "color": { "type": "string", "default": "" },
+        "wireframe": { "type": "boolean", "default": false }
+      }
+    },
     "action": {
       "type": "object",
       "additionalProperties": false,
       "required": ["object", "action"],
       "properties": {
         "object": { "$ref": "#/$defs/id" },
-        "action": { "enum": ["show", "hide", "focus", "clear", "set"] },
+        "action": { "enum": ["show", "hide", "focus", "clear", "set", "rotate", "reset"] },
         "params": { "type": "object" }
       },
       "allOf": [
@@ -125,6 +139,23 @@
           }
         },
         {
+          "if": { "properties": { "action": { "const": "rotate" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "rx": { "type": "number" },
+                  "ry": { "type": "number" },
+                  "rz": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        {
           "if": { "properties": { "action": { "const": "set" } } },
           "then": {
             "required": ["params"],
@@ -132,14 +163,18 @@
               "params": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["text"],
-                "properties": { "text": { "$ref": "#/$defs/headlineText" } }
+                "properties": {
+                  "text": { "$ref": "#/$defs/headlineText" },
+                  "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },
+                  "color": { "type": "string" },
+                  "wireframe": { "type": "boolean" }
+                }
               }
             }
           }
         },
         {
-          "if": { "properties": { "action": { "enum": ["show", "hide", "clear"] } } },
+          "if": { "properties": { "action": { "enum": ["show", "hide", "clear", "reset"] } } },
           "then": { "properties": { "params": { "type": "object", "maxProperties": 0 } } }
         }
       ]
