@@ -381,6 +381,61 @@ describe('ParticleField figures', () => {
     expect(field.particles.filter((p) => p.figure === 1)).toHaveLength(30)
   })
 
+  it('gives a pointer figure its particles before a lead figure listed first shares the rest', () => {
+    const field = new ParticleField({ count: 100, style: 'lines', random: seeded(3) })
+    field.resize(BASE.width, BASE.height)
+    const big = Array.from({ length: 900 }, (_, i) => ({ x: (i % 30) / 29, y: Math.floor(i / 30) / 29 }))
+    runWith(field, 'speaking', 4, 0, [
+      { id: 'headline', points: big, box: BOX, role: 'lead' },
+      { id: 'outline', points: GRID.slice(0, 40), box: { x: 500, y: 100, w: 100, h: 50 }, role: 'pointer' },
+    ])
+    // figure keeps the index into the frame's figures list.
+    expect(field.particles.filter((p) => p.figure === 1)).toHaveLength(40)
+    expect(field.particles.filter((p) => p.figure === 0)).toHaveLength(Math.floor(FIGURE_SHARE * 100) - 40)
+  })
+
+  describe('draw layers', () => {
+    /** Draws in the free-letters look at dpr 1, so each letter lands exactly on its particle. */
+    function drawn(field: ParticleField, layer?: 'back' | 'front') {
+      const spots: [number, number][] = []
+      let at: [number, number] = [0, 0]
+      const ctx = {
+        setTransform: (_a: number, _b: number, _c: number, _d: number, e: number, f: number) => {
+          at = [e, f]
+        },
+        clearRect: () => {},
+        fillText: () => spots.push(at),
+      } as unknown as CanvasRenderingContext2D
+      field.draw(ctx, 1, layer)
+      return spots
+    }
+
+    function staged() {
+      const field = new ParticleField({ count: 100, style: 'letters', random: seeded(7) })
+      field.resize(BASE.width, BASE.height)
+      runWith(field, 'speaking', 3, 0, [
+        { id: 'lead', points: GRID, box: BOX, role: 'lead' },
+        { id: 'pointer', points: GRID.slice(0, 20), box: { x: 500, y: 100, w: 100, h: 50 }, role: 'pointer' },
+      ])
+      return field
+    }
+    const key = (s: [number, number][]) => s.map(([x, y]) => `${x},${y}`).sort()
+
+    it('front paints only the pointer particles and back the rest', () => {
+      const field = staged()
+      const pointer = field.particles.filter((p) => p.figure === 1).map((p) => `${p.x},${p.y}`).sort()
+      const others = field.particles.filter((p) => p.figure !== 1).map((p) => `${p.x},${p.y}`).sort()
+      expect(pointer).toHaveLength(20)
+      expect(key(drawn(field, 'front'))).toEqual(pointer)
+      expect(key(drawn(field, 'back'))).toEqual(others)
+    })
+
+    it('paints every particle when no layer is given', () => {
+      const field = staged()
+      expect(drawn(field)).toHaveLength(100)
+    })
+  })
+
   it('keeps every position finite with figures, also under reduced motion and while idle', () => {
     const field = new ParticleField({ count: 200, style: 'letters', random: seeded(5) })
     field.resize(BASE.width, BASE.height)

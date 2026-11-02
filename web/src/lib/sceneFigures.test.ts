@@ -56,10 +56,18 @@ describe('sceneFigureSources', () => {
     expect(sceneFigureSources(null)).toEqual([])
   })
 
-  it('boxes the focused lines on screen with a margin', () => {
+  it('boxes the focused lines on screen with a margin above and below', () => {
     mountPane(120, [2, 3])
     const [source] = sceneFigureSources(scene())
-    expect(source.box()).toEqual({ x: 494, y: 134, w: 312, h: 52 })
+    expect(source.box()).toEqual({ x: 500, y: 137, w: 300, h: 46 })
+  })
+
+  it('keeps the box inside the pane when the lines are wider than it', () => {
+    mountPane(120, [2, 3])
+    document.querySelectorAll<HTMLElement>('pre > span').forEach((span, i) => {
+      span.getBoundingClientRect = () => rect(480, 120 + i * 20, 900, 20)
+    })
+    expect(sceneFigureSources(scene())[0].box()).toEqual({ x: 500, y: 137, w: 300, h: 46 })
   })
 
   it('clips the box to the visible part of the code', () => {
@@ -69,7 +77,7 @@ describe('sceneFigureSources', () => {
     expect(source.box()).toBeNull()
     document.body.innerHTML = ''
     mountPane(60, [2, 3])
-    expect(sceneFigureSources(scene())[0].box()).toEqual({ x: 494, y: 100, w: 312, h: 26 })
+    expect(sceneFigureSources(scene())[0].box()).toEqual({ x: 500, y: 100, w: 300, h: 23 })
   })
 
   it('has no box while the code pane is not on the page', () => {
