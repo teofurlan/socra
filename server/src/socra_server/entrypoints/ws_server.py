@@ -11,7 +11,6 @@ import json
 import logging
 import logging.handlers
 import os
-import sys
 from pathlib import Path
 
 from websockets.asyncio.server import serve, ServerConnection
@@ -23,30 +22,34 @@ LOG_DIR = Path(__file__).resolve().parents[3] / "logs"
 LOG_PATH = LOG_DIR / "socra.log"
 
 
-def _setup_logger() -> logging.Logger:
-    ws_logger = logging.getLogger("socra_server.entrypoints.ws_server")
-    ws_logger.setLevel(logging.DEBUG)
-    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in ws_logger.handlers):
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.handlers.RotatingFileHandler(
-            LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-        )
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-        )
-        ws_logger.addHandler(file_handler)
-    if not any(
-        isinstance(h, logging.StreamHandler)
-        and not isinstance(h, logging.handlers.RotatingFileHandler)
-        for h in ws_logger.handlers
-    ):
-        stderr_handler = logging.StreamHandler(sys.stderr)
-        stderr_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-        ws_logger.addHandler(stderr_handler)
-    return ws_logger
+def log_path() -> Path:
+    """Where the running server writes its log: ``SOCRA_LOG_FILE``, else ``server/logs``."""
+    configured = os.environ.get("SOCRA_LOG_FILE")
+    return Path(configured) if configured else LOG_PATH
 
 
-logger = _setup_logger()
+def setup_file_logging(path: Path = LOG_PATH) -> logging.Handler:
+    """Record every ``socra_server`` logger (WebSocket, agent flow, mode switches) in ``path``.
+
+    The running server calls this once at start; importing the server never does, so
+    tests do not write into the developer's log. Console output comes from the root
+    logger's stderr handler, set up by ``__main__``.
+    """
+    package = logging.getLogger("socra_server")
+    package.setLevel(logging.DEBUG)
+    for handler in package.handlers:
+        if isinstance(handler, logging.handlers.RotatingFileHandler):
+            return handler
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    package.addHandler(handler)
+    return handler
+
+
+logger = logging.getLogger(__name__)
 
 WS_HOST = "127.0.0.1"
 # The port the page dials when its URL has no ?ws (web/src/lib/socketUrl.ts).

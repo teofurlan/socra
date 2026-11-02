@@ -8,7 +8,7 @@ import pytest
 from websockets.asyncio.client import connect
 
 from socra_server.app import ExamApp, PageChannel
-from socra_server.entrypoints.ws_server import WS_PATH, _handle, _check_path, LOG_PATH
+from socra_server.entrypoints.ws_server import WS_PATH, _handle, _check_path
 from tests.conftest import FakeLoader, make_wav_bytes
 
 
@@ -131,9 +131,12 @@ async def test_get_answer_times_out_with_no_client_when_page_does_not_connect():
 
 
 @pytest.mark.asyncio
-async def test_connect_and_disconnect_logged_with_code():
+async def test_connect_and_disconnect_logged_with_code(tmp_path):
     from socra_server.entrypoints import ws_server as ws_mod
     from websockets.asyncio.server import serve
+
+    log_path = tmp_path / "socra.log"
+    handler = ws_mod.setup_file_logging(log_path)
 
     channel = PageChannel()
     loader = FakeLoader()
@@ -157,10 +160,13 @@ async def test_connect_and_disconnect_logged_with_code():
 
     # Give time for disconnect handler to log
     await asyncio.sleep(0.05)
+    handler.flush()
+    logging.getLogger("socra_server").removeHandler(handler)
+    handler.close()
 
     # Verify log file exists and contains disconnect info
-    assert Path(LOG_PATH).is_file()
-    content = Path(LOG_PATH).read_text(encoding="utf-8")
+    assert log_path.is_file()
+    content = log_path.read_text(encoding="utf-8")
     assert "connected" in content.lower()
     assert "disconnected" in content.lower()
     assert "1000" in content

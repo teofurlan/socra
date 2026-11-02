@@ -96,19 +96,21 @@ def test_facts_record_permissions_and_exam_results():
     assert facts.exam_results == [("What is a port?", "partial", "missed the adapter side")]
 
 
-def test_seed_carries_facts_summary_turns_and_the_restatement_request():
+def test_seed_carries_facts_summary_turns_and_the_restatement_request():  # also pins S3
     facts = SessionFacts()
     facts.record_tool(ToolActivity("Edit", "a.py", "src/a.py"))
     facts.record_permission("Bash", "Run tests", False)
     facts.record_exam_result("Q1", "correct", "")
     summary = HandoffSummary("Add login", ["Use Auth0"], ["Write tests"], ["Is the token stored?"])
 
-    seed = render_seed(get_mode("exam"), facts, summary, [Turn("hi", "hello")])
+    seed = render_seed(get_mode("mentor"), facts, summary, [Turn("hi", "hello")])
 
-    for expected in ("exam", "src/a.py", "Edit: 1", "Bash: Run tests (denied)", "Q1: correct",
+    for expected in ("mentor", "src/a.py", "Edit: 1", "Bash: Run tests (denied)", "Q1: correct",
                      "Add login", "Use Auth0", "Write tests", "Is the token stored?",
-                     "hi", "hello", "search_transcript", "one spoken sentence"):
+                     "hi", "hello", "search_transcript"):
         assert expected in seed
+    assert "Now say, in one spoken sentence, what you understand the situation to be" in seed
+    assert "Do not start any work yet." in seed
 
 
 def test_seed_asks_to_answer_what_the_user_said_during_the_switch():
@@ -119,3 +121,52 @@ def test_seed_asks_to_answer_what_the_user_said_during_the_switch():
     assert "fix the login first" in seed
     assert "Answer what the user said during the switch directly" in seed
     assert "one spoken sentence" not in seed
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+@pytest.mark.parametrize("pending", [None, ["fix the login first"]])
+def test_seed_states_the_switch_is_confirmed_and_done(mode_id, pending):  # S1
+    summary = HandoffSummary("Add login", [], [], [])
+
+    seed = render_seed(get_mode(mode_id), SessionFacts(), summary, [], pending)
+
+    assert "already confirmed the switch" in seed
+    assert f"The switch is complete and the session is now in {mode_id} mode" in seed
+    assert "Do not ask the user to confirm, accept or press anything about the switch" in seed
+
+
+def test_exam_seed_tells_the_agent_to_start_the_exam_now():  # S2
+    summary = HandoffSummary("Add login", [], [], [])
+
+    seed = render_seed(get_mode("exam"), SessionFacts(), summary, [])
+
+    assert "Start the exam now" in seed
+    assert "first question right away" in seed
+    assert "Do not restate the situation" in seed
+    assert "Do not start any work yet" not in seed
+    assert "one spoken sentence" not in seed
+
+
+def test_mentor_seed_keeps_the_restatement_closing():  # S3
+    summary = HandoffSummary("Add login", [], [], [])
+
+    seed = render_seed(get_mode("mentor"), SessionFacts(), summary, [])
+
+    assert (
+        "Now say, in one spoken sentence, what you understand the situation to be, "
+        "so the user can correct you. Do not start any work yet."
+    ) in seed
+    assert "Start the exam now" not in seed
+
+
+def test_exam_seed_with_pending_words_answers_them_then_continues_the_exam():  # S4
+    summary = HandoffSummary("Add login", [], [], [])
+
+    seed = render_seed(get_mode("exam"), SessionFacts(), summary, [], ["fix the login first"])
+
+    assert "fix the login first" in seed
+    assert "Answer what the user said during the switch directly" in seed
+    assert "Then continue the exam" in seed
+    assert "ask the first question if you have not asked it yet" in seed
+    mentor = render_seed(get_mode("mentor"), SessionFacts(), summary, [], ["x"])
+    assert "Then continue the exam" not in mentor

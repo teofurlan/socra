@@ -137,8 +137,11 @@ as the exam MCP server), it only opens the page. The page talks to
   mode before closing the old one, so a failed start loses nothing. The new
   session is seeded with what Socra recorded itself (files changed, tools
   used, permission decisions, exam results), the summary and the last 4 turns
-  verbatim (replies capped at about 1,500 characters). It says one spoken
-  sentence of what it understood, which you can correct, and can call
+  verbatim (replies capped at about 1,500 characters). The seed states that you
+  already confirmed the switch, so the new agent never asks you to confirm
+  again. In exam mode it starts asking the first question right away; in mentor
+  mode it says one spoken sentence of what it understood, which you can
+  correct. Words you said during the switch are answered first. It can call
   `search_transcript` for details from the previous session. The timeline
   continues across the switch with a "Context condensed" marker.
 - **Transcripts.** Socra keeps its own JSONL transcript per session under
@@ -184,6 +187,7 @@ instead, so exam and agent mode can run at the same time.
 | `SOCRA_WHISPER_DEVICE` | `auto` | Execution device: `auto` (CUDA float16 if available, else CPU int8), `cuda`, or `cpu` |
 | `SOCRA_PREFERENCES_FILE` | `%LOCALAPPDATA%/Socra/preferences.json` | Page preferences shared by every server process |
 | `SOCRA_AGENT_IDLE_S` | `120` | Agent mode exits after this many seconds without an agent page |
+| `SOCRA_LOG_FILE` | `server/logs/socra.log` | Log file of the running server (every `socra_server` logger, including each step of a mode switch); importing the package never writes it |
 
 ### Whisper Model Benchmark (RTX 4060 8 GB)
 
@@ -350,7 +354,7 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 |---|---|
 | `state` | `state`: `"idle"` \| `"speaking"` \| `"listening"` \| `"thinking"` |
 | `question` | `index`, `total`, `text`, optional display-only `code` |
-| `tts_audio` | `format: "wav"`, `data: <base64>`, optional scene `step` (`index`, `total`, `id`, `say`, `state`, `seq`) applied when the clip starts |
+| `tts_audio` | `format: "wav"`, `data: <base64>`, optional scene `step` (`index`, `total`, `id`, `say`, `state`, `seq`) applied when the clip starts; agent reply clips carry optional `text`, the clip's source text with its markdown, so the page can highlight what is being spoken |
 | `transcript` | `text`, `final: true` |
 | `notice` | `text`: temporary notice (e.g. non-answer rejection) |
 | `voices` | `voices`: `[{id, label}]`, `current`: selected voice id |

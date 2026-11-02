@@ -275,6 +275,7 @@ class AgentApp:
 
     async def handle_interrupt(self) -> None:
         if self._switching:
+            logger.info("Mode switch: cancelled by an interrupt")
             conversation = self._conversation
             await self._cancel_switch()
             if conversation is not None:
@@ -477,7 +478,8 @@ class AgentApp:
             speech.cancel()
             if self._speech is speech:
                 self._speech = None
-            await self._state("listening")
+            # A switch waiting for this reply goes on with its summary: still busy.
+            await self._state("thinking" if self._switching else "listening")
 
     async def _decide_permission(self, request: PermissionRequest) -> bool:
         if not self.channel.is_connected:
@@ -516,15 +518,27 @@ class AgentApp:
     async def handle_mode_switch_response(self, target: str, allow: Any) -> None:
         """The user answered the on-screen confirmation of a voice-requested switch."""
         if self._switch_request != target:
+            logger.info(
+                "Mode switch to %s: answer ignored (pending request: %s)",
+                target, self._switch_request,
+            )
             return
         self._switch_request = None
         if allow is not True:
+            logger.info("Mode switch to %s: the user declined", target)
             await self.channel.send({"type": "mode_switch_closed", "mode": target})
             return
+        logger.info("Mode switch to %s: the user accepted", target)
         await self.handle_switch_mode(target)
 
     async def _switch_problem(self, target: str) -> str | None:
         """Report why a switch cannot start (to the page), or None when it can."""
+        problem = await self._find_switch_problem(target)
+        if problem is not None:
+            logger.info("Mode switch to %s: not started (%s)", target, problem)
+        return problem
+
+    async def _find_switch_problem(self, target: str) -> str | None:
         try:
             mode = get_mode(target)
         except UnknownMode as exc:
@@ -551,22 +565,36 @@ class AgentApp:
         assert self._session is not None and self._backend is not None
         mode = get_mode(target)
         session = self._session
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+
+        def step(text: str) -> None:
+            logger.info(
+                "Mode switch to %s: %s after %.1f s", target, text, loop.time() - started
+            )
+
+        logger.info("Mode switch to %s: started (%s -> %s)", target, session["mode"], target)
         await self.channel.send({"type": "agent_switching", "mode": target})
         await self._state("thinking")
         # A voice request can arrive while the agent is still answering: let it finish.
         running = self.turn_task
         if running is not None and not running.done():
+            step("waiting for the running reply")
             await asyncio.wait({running})
+            step("the running reply finished")
         old = self._conversation
         assert old is not None
-        summary = await self._request_summary(old)
+        summary = await self._request_summary(old, target)
         if summary is None:
+            step("no valid summary, staying in the current mode")
             await self._error(
                 f"Could not switch to {mode.label} mode: the agent did not produce a "
                 "valid summary. You stay in the current mode."
             )
             await self._switch_failed()
             return
+        step("summary ready")
+        step(f"opening the {target} session")
         try:
             new = await self._open_conversation(
                 self._backend, session["model"], Path(session["cwd"]), target
@@ -578,6 +606,7 @@ class AgentApp:
             )
             await self._switch_failed()
             return
+        step(f"{target} session open")
         # The new session is up: adopt it first, so a failure to close the old one
         # can never leave the app without a conversation.
         self._conversation = new
@@ -596,17 +625,26 @@ class AgentApp:
                 self._transcript.append("user", text)
         seed = render_seed(mode, self._facts, summary, last_turns(self._turns), pending)
         self._start_turn(seed, hidden=True)
+        step("seed turn started")
 
-    async def _request_summary(self, conversation: AgentConversation) -> HandoffSummary | None:
+    async def _request_summary(
+        self, conversation: AgentConversation, target: str
+    ) -> HandoffSummary | None:
         prompt = SUMMARY_PROMPT
-        for _ in range(SUMMARY_ATTEMPTS):
+        for attempt in range(1, SUMMARY_ATTEMPTS + 1):
+            logger.info("Mode switch to %s: summary attempt %d", target, attempt)
             reply = await self._silent_turn(conversation, prompt)
             if reply is None:
+                logger.info("Mode switch to %s: summary attempt %d failed", target, attempt)
                 prompt = SUMMARY_PROMPT
                 continue
             try:
                 return parse_summary(reply)
             except InvalidSummary as exc:
+                logger.info(
+                    "Mode switch to %s: summary attempt %d invalid (missing: %s)",
+                    target, attempt, ", ".join(exc.missing),
+                )
                 prompt = retry_prompt(exc.missing)
         return None
 
@@ -661,6 +699,7 @@ class AgentApp:
         if self._switch_request and self._switch_request != target:
             await self.channel.send({"type": "mode_switch_closed", "mode": self._switch_request})
         self._switch_request = target
+        logger.info("Mode switch to %s: asked the user to confirm", target)
         await self.channel.send({
             "type": "mode_switch_request", "mode": target, "label": mode.label,
         })
@@ -746,7 +785,7 @@ class _ReplySpeech:
     def __init__(self, app: AgentApp) -> None:
         self._app = app
         self._splitter = SentenceSplitter()
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         self._worker: asyncio.Task | None = None
         self._base_acks = app.acknowledged_clips
         self._sent = 0
@@ -827,7 +866,7 @@ class _ReplySpeech:
             if not spoken:
                 continue
             self._outstanding += 1
-            self._queue.put_nowait(spoken)
+            self._queue.put_nowait((spoken, piece))
             if self._worker is None:
                 self._worker = asyncio.create_task(self._run(), name="agent-speech")
 
@@ -851,7 +890,7 @@ class _ReplySpeech:
             self._fail(exc)
             ready = False
         done = False
-        held: list[str] = []  # complete pieces taken from the queue, not yet spoken
+        held: list[tuple[str, str]] = []  # (speakable, source) pieces taken from the queue, not yet spoken
         while held or not done:
             if not held:
                 first = await self._queue.get()
@@ -865,7 +904,10 @@ class _ReplySpeech:
                 else:
                     held.append(nxt)
             pieces = self._next_clip(held)
-            spoken = " ".join(pieces)
+            spoken = " ".join(p[0] for p in pieces)
+            # One piece per line: a list item keeps its number at a line start, where the
+            # page can tell it apart from text (it draws list numbers as markers).
+            source = "\n".join(p[1] for p in pieces)
             try:
                 if not ready:
                     continue
@@ -882,6 +924,7 @@ class _ReplySpeech:
                 await app.channel.send({
                     "type": "tts_audio", "format": "wav",
                     "data": base64.b64encode(wav).decode(),
+                    "text": source,
                 })
             except asyncio.CancelledError:
                 raise
@@ -891,7 +934,7 @@ class _ReplySpeech:
                 for _ in pieces:
                     self._settled_one()
 
-    def _next_clip(self, held: list[str]) -> list[str]:
+    def _next_clip(self, held: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """Take the pieces for the next clip: complete sentences together, up to a length.
 
         Short replies come out as one clip (#85 S13), but a long reply that arrived at once
@@ -899,9 +942,9 @@ class _ReplySpeech:
         """
         limit = FIRST_CLIP_MAX_CHARS if self._sent == 0 else CLIP_MAX_CHARS
         pieces = [held.pop(0)]
-        size = len(pieces[0])
-        while held and size + 1 + len(held[0]) <= limit:
-            size += 1 + len(held[0])
+        size = len(pieces[0][0])
+        while held and size + 1 + len(held[0][0]) <= limit:
+            size += 1 + len(held[0][0])
             pieces.append(held.pop(0))
         return pieces
 

@@ -15,6 +15,7 @@ export const initialAgentState: AgentState = {
   switching: null,
   modeRequest: null,
   walkthrough: null,
+  spoken: null,
   nextEntryId: 1,
 }
 
@@ -29,7 +30,7 @@ function dropEndedScene(state: AgentState): AgentState {
 }
 
 function userTurn(state: AgentState, text: string): AgentState {
-  return dropEndedScene(append(state, { kind: 'user', text }))
+  return dropEndedScene(append({ ...state, spoken: null }, { kind: 'user', text }))
 }
 
 function append(state: AgentState, entry: Omit<TimelineEntry, 'id'>): AgentState {
@@ -107,7 +108,18 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'mode_switch_failed':
       return { ...state, switching: null }
     case 'state':
-      return { ...state, protocolState: action.state }
+      // Once the agent listens or idles, nothing is being said any more.
+      return {
+        ...state,
+        protocolState: action.state,
+        spoken: action.state === 'listening' || action.state === 'idle' ? null : state.spoken,
+      }
+    case 'speech_started':
+      return { ...state, spoken: { id: action.id, text: action.text } }
+    case 'speech_ended':
+      // A clip's end must not clear the next clip that already began.
+      if (!state.spoken || (action.id !== undefined && state.spoken.id !== action.id)) return state
+      return { ...state, spoken: null }
     case 'transcript':
       return action.final ? userTurn(state, action.text) : state
     case 'user_text':

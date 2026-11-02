@@ -128,7 +128,7 @@ async def test_answer_arrives_while_get_answer_waits(ws_bundle):
 
 
 @pytest.mark.asyncio
-async def test_mcp_handshake_does_not_wait_for_noisy_models():
+async def test_mcp_handshake_does_not_wait_for_noisy_models(tmp_path):
     code = '''
 import os, threading
 from socra_server.app import ExamApp
@@ -164,7 +164,11 @@ main()
 '''
     # Free ports of its own: a running Socra must not decide the page URL.
     ws_port, http_port = free_ports(2)
-    env = {**os.environ, "SOCRA_WS_PORT": str(ws_port), "SOCRA_HTTP_PORT": str(http_port)}
+    env = {
+        **os.environ, "SOCRA_WS_PORT": str(ws_port), "SOCRA_HTTP_PORT": str(http_port),
+        # A test server must not write into the developer's real log.
+        "SOCRA_LOG_FILE": str(tmp_path / "socra.log"),
+    }
     proc = await asyncio.create_subprocess_exec(sys.executable, "-c", code, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     try:
         startup_stderr = bytearray()

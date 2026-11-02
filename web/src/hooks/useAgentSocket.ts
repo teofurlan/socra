@@ -27,7 +27,14 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
   const [voices, setVoices] = useState<VoiceCatalog>(EMPTY_VOICE_CATALOG)
   const socketRef = useRef<WebSocket | null>(null)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const { playAudio, stopAudio, getOutputVolume } = useExamAudio()
+  const { playAudio, stopAudio: silenceAudio, getOutputVolume } = useExamAudio()
+  const clipIdRef = useRef(0)
+
+  /** Silence everything and drop the spoken-text highlight with it. */
+  const stopAudio = useCallback(() => {
+    silenceAudio()
+    dispatch({ type: 'speech_ended' })
+  }, [silenceAudio])
 
   const send = useCallback((message: AgentClientMessage) => {
     const socket = socketRef.current
@@ -125,10 +132,15 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
         const done = () => send(step ? { type: 'playback_done', seq: step.seq } : { type: 'playback_done' })
         // A scene step replaces whatever clip is still playing; its picture changes when its sound begins.
         if (step) stopAudio()
+        const text = step ? undefined : message.text
+        const clipId = text ? (clipIdRef.current += 1) : 0
         const onStart = step
           ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
-          : undefined
-        if (message.format === 'wav') playAudio(message.data, done, onStart)
+          : text
+            ? () => dispatch({ type: 'speech_started', id: clipId, text })
+            : undefined
+        const onDone = text ? () => { done(); dispatch({ type: 'speech_ended', id: clipId }) } : done
+        if (message.format === 'wav') playAudio(message.data, onDone, onStart)
         else done()
         return
       }
