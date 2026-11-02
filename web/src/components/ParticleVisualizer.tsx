@@ -35,7 +35,8 @@ const NO_FIGURES: FigureSource[] = []
 
 /**
  * Holds the visualizer's slot in the layout and paints a screen-wide canvas behind the
- * content: particles roam the whole screen and gather into a sphere in this slot.
+ * content: particles roam the whole screen and gather into a sphere in this slot. A second
+ * canvas above the content carries only the particles that point at something.
  */
 export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
   protocolState,
@@ -52,6 +53,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
 }) => {
   const slotRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const frontRef = useRef<HTMLCanvasElement>(null)
   const fieldRef = useRef<ParticleField | null>(null)
   const live = useRef({ protocolState, colors, getOutputVolume, getInputVolume, lightBackground, resting, figures })
   live.current = { protocolState, colors, getOutputVolume, getInputVolume, lightBackground, resting, figures }
@@ -59,13 +61,17 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
   useEffect(() => {
     const canvas = canvasRef.current
     const slot = slotRef.current
-    let ctx: CanvasRenderingContext2D | null = null
-    try {
-      ctx = canvas?.getContext('2d') ?? null
-    } catch {
-      ctx = null
+    const front = frontRef.current
+    const context = (c: HTMLCanvasElement | null) => {
+      try {
+        return c?.getContext('2d') ?? null
+      } catch {
+        return null
+      }
     }
-    if (!canvas || !slot || !ctx) return
+    const ctx = context(canvas)
+    const frontCtx = context(front)
+    if (!canvas || !front || !slot || !ctx || !frontCtx) return
 
     const field = new ParticleField({
       count: particleCount(window.innerWidth, window.innerHeight),
@@ -79,8 +85,10 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
     let dpr = 1
     const resize = () => {
       dpr = Math.min(2, window.devicePixelRatio || 1)
-      canvas.width = Math.round(window.innerWidth * dpr)
-      canvas.height = Math.round(window.innerHeight * dpr)
+      for (const c of [canvas, front]) {
+        c.width = Math.round(window.innerWidth * dpr)
+        c.height = Math.round(window.innerHeight * dpr)
+      }
       field.resize(window.innerWidth, window.innerHeight)
       const count = particleCount(window.innerWidth, window.innerHeight)
       if (Math.abs(count - field.particles.length) > 150) field.setCount(count)
@@ -137,7 +145,8 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
         rest: live.current.resting,
         figures: frameFigures(),
       })
-      field.draw(ctx, dpr)
+      field.draw(ctx, dpr, 'back')
+      field.draw(frontCtx, dpr, 'front')
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
@@ -163,8 +172,16 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
     <div ref={slotRef} data-testid="particle-visualizer" data-style={style} data-shape={shape} data-resting={resting} data-figures={figures.map((f) => f.id).join(' ')} className={className}>
       <canvas
         ref={canvasRef}
+        data-layer="back"
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 h-full w-full"
+      />
+      {/* Over the panels (z-index 1 headers, opaque code pane) but under menus and popovers (z-30), so particles outlining focused lines stay visible. */}
+      <canvas
+        ref={frontRef}
+        data-layer="front"
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-20 h-full w-full"
       />
     </div>
   )

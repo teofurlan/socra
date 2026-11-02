@@ -100,6 +100,8 @@ export interface Particle {
   fx: number
   fy: number
   fa: number | undefined
+  /** Whether its current figure is a pointer, so it is painted over the content; set by step(). */
+  pointer: boolean
   /** Last screen point of its figure, where it lets go from once the figure is gone. */
   gx: number
   gy: number
@@ -249,6 +251,7 @@ export class ParticleField {
         fx: 0,
         fy: 0,
         fa: undefined,
+        pointer: false,
         gx: 0,
         gy: 0,
       }
@@ -285,10 +288,16 @@ export class ParticleField {
 
     let budget = Math.floor(FIGURE_SHARE * this.particles.length) - taken.size
     let cursor = 0
-    const next: typeof this.recruits = []
-    for (const f of figures) {
-      let members = kept.get(f.id)
-      if (!members || next.some((r) => r.id === f.id)) {
+    const membersOf: (number[] | undefined)[] = figures.map((f) => kept.get(f.id))
+    const firstOf = new Map<string, number>()
+    figures.forEach((f, n) => firstOf.has(f.id) || firstOf.set(f.id, n))
+    // Pointers recruit before leads, so a big headline cannot leave the focus outline empty;
+    // every figure keeps its index in the frame's list.
+    const turns = figures.map((_, n) => n).sort((a, b) => Number(figures[a].role !== 'pointer') - Number(figures[b].role !== 'pointer'))
+    for (const n of turns) {
+      const f = figures[n]
+      let members = firstOf.get(f.id) === n ? membersOf[n] : undefined
+      if (!members) {
         const want = Math.max(0, Math.min(f.points.length, budget))
         budget -= want
         members = []
@@ -307,8 +316,9 @@ export class ParticleField {
           p.fa = q.a
         })
       }
-      next.push({ id: f.id, points: f.points, members })
+      membersOf[n] = members
     }
+    const next: typeof this.recruits = figures.map((f, n) => ({ id: f.id, points: f.points, members: membersOf[n] ?? [] }))
 
     for (const p of this.particles) p.figure = -1
     next.forEach((r, n) => r.members.forEach((i) => (this.particles[i].figure = n)))
@@ -418,6 +428,9 @@ export class ParticleField {
 
       // A recruited particle moves onto its figure point, which breathes with the voice.
       const fig = p.figure >= 0 ? figures[p.figure] : undefined
+      // Stays on its layer while it flies back after the figure is gone, so it never jumps layers mid-flight.
+      if (fig) p.pointer = fig.role === 'pointer'
+      else if (p.fg === 0) p.pointer = false
       p.fg += ((fig ? 1 : 0) - p.fg) * (1 - Math.exp(-dt * (p.rate + 1.5)))
       if (p.fg < 1e-3) p.fg = 0
       const ef = smooth(clamp(p.fg, 0, 1))
@@ -480,7 +493,13 @@ export class ParticleField {
     }
   }
 
-  draw(ctx: CanvasRenderingContext2D, dpr: number) {
+  /**
+   * Paints the particles. With a ``layer`` only that one is painted: ``front`` is the particles
+   * a pointer figure recruited (drawn over the content), ``back`` all the others. Without one,
+   * everything is painted.
+   */
+  draw(ctx: CanvasRenderingContext2D, dpr: number, layer?: 'back' | 'front') {
+    const shown = (p: Particle) => layer === undefined || p.pointer === (layer === 'front')
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.globalAlpha = 1
     ctx.globalCompositeOperation = 'source-over'
@@ -497,6 +516,7 @@ export class ParticleField {
       ctx.globalCompositeOperation = this.additive
       ctx.lineCap = 'round'
       for (const p of this.particles) {
+        if (!shown(p)) continue
         const hx = (Math.cos(p.ang) * p.size) / 2, hy = (Math.sin(p.ang) * p.size) / 2
         ctx.globalAlpha = p.alpha
         ctx.strokeStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]
@@ -512,6 +532,7 @@ export class ParticleField {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       for (const p of this.particles) {
+        if (!shown(p)) continue
         ctx.globalAlpha = p.alpha
         ctx.fillStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]
         ctx.fillText(p.letter, Math.round(p.x / CELL_W) * CELL_W, Math.round(p.y / CELL_H) * CELL_H)
@@ -523,6 +544,7 @@ export class ParticleField {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       for (const p of this.particles) {
+        if (!shown(p)) continue
         const s = clamp(p.size / 8, 0.6, 2) * dpr
         ctx.globalAlpha = p.alpha
         ctx.fillStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]

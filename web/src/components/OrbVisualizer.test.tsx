@@ -33,4 +33,14 @@ describe('OrbVisualizer', () => {
     rerender(<OrbVisualizer protocolState="idle" resting />)
     expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-resting', 'true')
   })
+
+  it('paints on two decorative screen canvases, one behind the content and one above it for pointing', () => {
+    render(<OrbVisualizer protocolState="idle" />)
+    const slot = screen.getByTestId('particle-visualizer')
+    const back = slot.querySelector('canvas[data-layer="back"]')
+    const front = slot.querySelector('canvas[data-layer="front"]')
+    expect(back).toHaveClass('-z-10', 'pointer-events-none')
+    expect(front).toHaveClass('z-20', 'pointer-events-none')
+    for (const canvas of [back, front]) expect(canvas).toHaveAttribute('aria-hidden', 'true')
+  })
 })

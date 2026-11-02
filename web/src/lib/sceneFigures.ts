@@ -16,8 +16,8 @@ export interface FigureSource {
   build: (box: FigureBox) => FigurePoint[]
 }
 
-/** Space around the focused lines, in pixels. */
-const MARGIN = 6
+/** Space above and below the focused lines, in pixels; lines sit close, so it stays small. */
+const MARGIN = 3
 /** A box squeezed thinner than this by scrolling is out of sight. */
 const MIN_SIDE = 12
 const OUTLINE_SPACING = 8
@@ -29,7 +29,8 @@ function isRange(value: unknown): value is [number, number] {
 
 /**
  * The focused lines of a scene code object on screen, padded, and clipped to the part of
- * its scrolling code that is visible.
+ * its scrolling code that is visible: lines are as wide as the longest one, often wider
+ * than the pane, so the box never leaves the pane sideways either.
  */
 function focusBox(objectId: string): FigureBox | null {
   const pre = document.querySelector<HTMLElement>(`pre[data-scene-object="${objectId}"]`)
@@ -38,8 +39,8 @@ function focusBox(objectId: string): FigureBox | null {
   const first = lines[0].getBoundingClientRect()
   const last = lines[lines.length - 1].getBoundingClientRect()
   const view = pre.getBoundingClientRect()
-  const left = Math.min(first.left, last.left) - MARGIN
-  const right = Math.max(first.right, last.right) + MARGIN
+  const left = Math.max(Math.min(first.left, last.left), view.left)
+  const right = Math.min(Math.max(first.right, last.right), view.right)
   const top = Math.max(first.top - MARGIN, view.top)
   const bottom = Math.min(last.bottom + MARGIN, view.bottom)
   if (bottom - top < MIN_SIDE || right - left < MIN_SIDE) return null
