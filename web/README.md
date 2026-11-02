@@ -18,6 +18,7 @@ A narrated walkthrough (`explain` over MCP) replaces the question with the step 
 spoken, opens the code panel with that code, and highlights the step's lines when its
 audio starts. Back, Repeat, Pause/Resume, Next and Stop buttons steer it; while paused
 the microphone listens (or the composer accepts) repeat, back, next, continue or stop.
+The particles take part: a visible `headline` object is assembled from particles in the voice stage (still coloured and pulsing by state, and present as text for screen readers), and a few particles outline the focused code lines. Both let go when the scene ends; code and labels stay crisp text.
 
 Settings offer a System/Light/Dark theme; the choice is stored in `socra_theme` and
 applied before the first paint by a script in `index.html`. Tokens live in
@@ -95,3 +96,4 @@ For manual and automated testing of conversation scrolling, code pane split, spe
 - Intercepts typed composer sends to append simulated follow-up replies.
 - Visual badge and document title clearly indicate simulated fixture state without altering production layout.
 - Smoke test script: `uv run --no-project --with playwright python web/tests/test_voice_viewport_demo.py`
+- Particle presentation script (headline words and code-focus outline read from the canvas, agent and exam pages, both themes; Vite on port 5199, screenshots in `.impeccable/review/particle-presentation/`): `uv run --no-project --with playwright python web/tests/test_particle_presentation.py`
