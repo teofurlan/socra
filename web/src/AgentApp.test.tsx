@@ -96,6 +96,38 @@ describe('AgentApp', () => {
       expect(lines.map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, false])
     })
 
+    it('points the particles at the focused lines while the scene plays, and lets go once it ends', () => {
+      const { ws } = openPage()
+      playScene(ws)
+      const visualizer = screen.getByTestId('particle-visualizer')
+      expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
+      expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
+      act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(visualizer).toHaveAttribute('data-figures', '')
+    })
+
+    it('forms the headline with the particles and keeps its text for screen readers', () => {
+      const { ws } = openPage()
+      startSession(ws)
+      act(() => {
+        ws.receive({ type: 'walkthrough', title: 'T', objects: [{ id: 'h', primitive: 'headline', params: { text: 'Big idea' }, hidden: false }], total: 1 })
+        ws.receive({ type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'Hi.', state: { h: { visible: true, text: 'Big idea' } } })
+      })
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', 'headline:h:Big idea')
+      const text = screen.getByTestId('scene-headline')
+      expect(text).toHaveTextContent('Big idea')
+      expect(text).toHaveAttribute('aria-live', 'polite')
+      act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
+      expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
+    })
+
+    it('points the particles at nothing without a scene', () => {
+      const { ws } = openPage()
+      startSession(ws)
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
+    })
+
     it('sends the controls to the server', async () => {
       const user = userEvent.setup()
       const { ws } = openPage()
