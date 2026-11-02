@@ -52,6 +52,7 @@ Every primitive supports `show` and `hide`. Primitive-specific actions:
 | --- | --- | --- |
 | `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. The page outlines the focused lines with particles. |
 | `headline` | `text` (required, one line, at most 24 characters after trimming) | `set` with `{ "text": "..." }` replaces the words. |
+| `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `color` (optional string), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (numbers), `reset` (restores rotation to 0), `set` with `{ "shape"?, "color"?, "wireframe"? }`. Rendered interactively via Zdog; users can drag to spin. |
 
 ### Presenting with particles
 

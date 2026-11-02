@@ -311,12 +311,15 @@ def test_code_and_headline_objects_share_a_scene():
     assert scene.state_at(1)["src"] == {"visible": True, "lines": [3, 3]}
 
 
-def test_the_guide_tells_callers_about_headlines():
-    from socra_server.domain.scene import SCENE_GUIDE
-
-    assert 'primitive "headline"' in SCENE_GUIDE
-    assert "24 characters" in SCENE_GUIDE
-    assert 'set {"text"}' in SCENE_GUIDE
+def test_the_shape_example_scene_is_valid():
+    content = json.loads((DOCS / "scene.shape.example.json").read_text(encoding="utf-8"))
+    scene, errors = parse_scene(content)
+    assert errors == []
+    assert scene is not None
+    assert scene.title == "What is a cube?"
+    assert scene.state_at(0)["my_cube"]["shape"] == "cube"
+    assert scene.state_at(1)["my_cube"]["rx"] == 0.35
+    assert scene.state_at(2)["my_cube"]["wireframe"] is True
 
 
 def test_the_json_schema_describes_headline_params_and_set():

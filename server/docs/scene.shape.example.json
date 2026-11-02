@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "title": "What is a cube?",
+  "objects": [
+    {
+      "id": "my_cube",
+      "primitive": "shape",
+      "params": {
+        "shape": "cube",
+        "color": "#00f0ff",
+        "wireframe": false
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "intro",
+      "say": "A cube is a three-dimensional solid object bounded by six square faces."
+    },
+    {
+      "id": "rotate",
+      "say": "Notice that all six faces meet each other at right angles."
+    },
+    {
+      "id": "wireframe",
+      "say": "In wireframe mode, we can clearly see its twelve equal edges and eight vertices."
+    }
+  ],
+  "cues": [
+    {
+      "at": "rotate",
+      "do": [
+        {
+          "object": "my_cube",
+          "action": "rotate",
+          "params": { "rx": 0.35, "ry": 0.25 }
+        }
+      ]
+    },
+    {
+      "at": "wireframe",
+      "do": [
+        {
+          "object": "my_cube",
+          "action": "set",
+          "params": { "wireframe": true }
+        }
+      ]
+    }
+  ]
+}
