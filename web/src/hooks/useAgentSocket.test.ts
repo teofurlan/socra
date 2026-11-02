@@ -177,6 +177,61 @@ describe('useAgentSocket', () => {
     expect(ws.sent()).toContainEqual({ type: 'playback_done' })
   })
 
+  describe('spoken clip', () => {
+    const clip = (text?: string) => ({ type: 'tts_audio', format: 'wav', data: 'UklGRg==', ...(text ? { text } : {}) })
+
+    it('marks a reply clip when its sound begins and clears it when the clip ends', async () => {
+      const { result, ws } = connected()
+
+      await act(async () => {
+        ws.receive(clip('**Bold** sentence.'))
+        await vi.runAllTimersAsync()
+      })
+      expect(result.current.state.spoken?.text).toBe('**Bold** sentence.')
+
+      act(() => FakeAudioContext.latest().sources[0].onended?.())
+      expect(result.current.state.spoken).toBeNull()
+      expect(ws.sent()).toContainEqual({ type: 'playback_done' })
+    })
+
+    it('clears the mark when the speech is interrupted', async () => {
+      const { result, ws } = connected()
+      await act(async () => {
+        ws.receive(clip('Talking.'))
+        await vi.runAllTimersAsync()
+      })
+
+      act(() => result.current.interrupt())
+
+      expect(result.current.state.spoken).toBeNull()
+    })
+
+    it('clears the mark when the agent goes back to listening', async () => {
+      const { result, ws } = connected()
+      await act(async () => {
+        ws.receive(clip('Talking.'))
+        await vi.runAllTimersAsync()
+      })
+
+      act(() => ws.receive({ type: 'state', state: 'listening' }))
+
+      expect(result.current.state.spoken).toBeNull()
+    })
+
+    it('marks nothing for a clip without text (an older server)', async () => {
+      const { result, ws } = connected()
+
+      await act(async () => {
+        ws.receive(clip())
+        await vi.runAllTimersAsync()
+      })
+
+      expect(result.current.state.spoken).toBeNull()
+      act(() => FakeAudioContext.latest().sources[0].onended?.())
+      expect(ws.sent()).toContainEqual({ type: 'playback_done' })
+    })
+  })
+
   describe('scenes', () => {
     const sceneClip = (index: number, seq: number) => ({
       type: 'tts_audio',

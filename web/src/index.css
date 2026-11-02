@@ -18,6 +18,8 @@
   --label: #e6e8eb;
   --label-2: #a2a9b2;
   --label-3: #6b727c;
+  /* Conversation text steps back; the clip being spoken returns to --label (voice-first). */
+  --transcript: #868d97;
 
   --accent: #5aa9e6;
   --accent-hover: #74b8ec;
@@ -49,6 +51,7 @@
   --label: #1b1e22;
   --label-2: #535a64;
   --label-3: #858c96;
+  --transcript: #727984;
 
   --accent: #1f78c1;
   --accent-hover: #1a68a8;

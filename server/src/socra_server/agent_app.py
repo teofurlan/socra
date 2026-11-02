@@ -785,7 +785,7 @@ class _ReplySpeech:
     def __init__(self, app: AgentApp) -> None:
         self._app = app
         self._splitter = SentenceSplitter()
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         self._worker: asyncio.Task | None = None
         self._base_acks = app.acknowledged_clips
         self._sent = 0
@@ -866,7 +866,7 @@ class _ReplySpeech:
             if not spoken:
                 continue
             self._outstanding += 1
-            self._queue.put_nowait(spoken)
+            self._queue.put_nowait((spoken, piece))
             if self._worker is None:
                 self._worker = asyncio.create_task(self._run(), name="agent-speech")
 
@@ -890,7 +890,7 @@ class _ReplySpeech:
             self._fail(exc)
             ready = False
         done = False
-        held: list[str] = []  # complete pieces taken from the queue, not yet spoken
+        held: list[tuple[str, str]] = []  # (speakable, source) pieces taken from the queue, not yet spoken
         while held or not done:
             if not held:
                 first = await self._queue.get()
@@ -904,7 +904,10 @@ class _ReplySpeech:
                 else:
                     held.append(nxt)
             pieces = self._next_clip(held)
-            spoken = " ".join(pieces)
+            spoken = " ".join(p[0] for p in pieces)
+            # One piece per line: a list item keeps its number at a line start, where the
+            # page can tell it apart from text (it draws list numbers as markers).
+            source = "\n".join(p[1] for p in pieces)
             try:
                 if not ready:
                     continue
@@ -921,6 +924,7 @@ class _ReplySpeech:
                 await app.channel.send({
                     "type": "tts_audio", "format": "wav",
                     "data": base64.b64encode(wav).decode(),
+                    "text": source,
                 })
             except asyncio.CancelledError:
                 raise
@@ -930,7 +934,7 @@ class _ReplySpeech:
                 for _ in pieces:
                     self._settled_one()
 
-    def _next_clip(self, held: list[str]) -> list[str]:
+    def _next_clip(self, held: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """Take the pieces for the next clip: complete sentences together, up to a length.
 
         Short replies come out as one clip (#85 S13), but a long reply that arrived at once
@@ -938,9 +942,9 @@ class _ReplySpeech:
         """
         limit = FIRST_CLIP_MAX_CHARS if self._sent == 0 else CLIP_MAX_CHARS
         pieces = [held.pop(0)]
-        size = len(pieces[0])
-        while held and size + 1 + len(held[0]) <= limit:
-            size += 1 + len(held[0])
+        size = len(pieces[0][0])
+        while held and size + 1 + len(held[0][0]) <= limit:
+            size += 1 + len(held[0][0])
             pieces.append(held.pop(0))
         return pieces
 

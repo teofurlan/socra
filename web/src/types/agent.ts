@@ -90,7 +90,7 @@ export type AgentServerMessage =
   | { type: 'agent_error'; message: string }
   | { type: 'permission_request'; id: string; tool: string; title: string; detail: string }
   | { type: 'permission_closed'; id: string }
-  | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number } }
+  | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number }; text?: string }
   | { type: 'notice'; text: string }
   | WalkthroughMessage
   | VoicesMessage
@@ -126,7 +126,14 @@ export interface AgentState {
   modeRequest: ModeSwitchRequest | null
   /** A narrated scene the mentor or exam agent is playing; kept until the next turn once it ends. */
   walkthrough: WalkthroughData | null
+  /** The reply clip that is playing now (its source text), so the page can highlight it. */
+  spoken: SpokenClip | null
   nextEntryId: number
+}
+
+export interface SpokenClip {
+  id: number
+  text: string
 }
 
 export type AgentAction =
@@ -138,3 +145,7 @@ export type AgentAction =
   | { type: 'permission_answered'; id: string }
   | { type: 'mode_switch_answered' }
   | { type: 'clear_notice' }
+  /** A reply clip began playing. */
+  | { type: 'speech_started'; id: number; text: string }
+  /** A clip ended (``id``), or all speech stopped (no ``id``). */
+  | { type: 'speech_ended'; id?: number }

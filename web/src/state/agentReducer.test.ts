@@ -266,4 +266,32 @@ describe('agentReducer mode switching', () => {
     expect(state.modeRequest).toBeNull()
     expect(state.switching).toBeNull()
   })
+
+  describe('spoken clip', () => {
+    const playing = run({ type: 'speech_started', id: 1, text: 'Hello there.' })
+
+    it('holds the clip that is playing', () => {
+      expect(playing.spoken).toEqual({ id: 1, text: 'Hello there.' })
+    })
+
+    it('replaces it when the next clip starts, and ignores the late end of the old one', () => {
+      const next = agentReducer(playing, { type: 'speech_started', id: 2, text: 'Next.' })
+
+      expect(agentReducer(next, { type: 'speech_ended', id: 1 }).spoken).toEqual({ id: 2, text: 'Next.' })
+      expect(agentReducer(next, { type: 'speech_ended', id: 2 }).spoken).toBeNull()
+    })
+
+    it('clears on interrupt (no id), a new turn, and when the agent listens or idles', () => {
+      expect(agentReducer(playing, { type: 'speech_ended' }).spoken).toBeNull()
+      expect(agentReducer(playing, { type: 'user_text', text: 'again' }).spoken).toBeNull()
+      expect(agentReducer(playing, { type: 'transcript', text: 'again', final: true }).spoken).toBeNull()
+      expect(agentReducer(playing, { type: 'state', state: 'listening' }).spoken).toBeNull()
+      expect(agentReducer(playing, { type: 'state', state: 'idle' }).spoken).toBeNull()
+    })
+
+    it('stays while the agent is still speaking or thinking between clips', () => {
+      expect(agentReducer(playing, { type: 'state', state: 'speaking' }).spoken).not.toBeNull()
+      expect(agentReducer(playing, { type: 'state', state: 'thinking' }).spoken).not.toBeNull()
+    })
+  })
 })
