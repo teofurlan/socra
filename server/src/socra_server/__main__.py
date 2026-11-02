@@ -218,6 +218,10 @@ async def _amain(protocol_stdout) -> None:
 def main() -> None:
     """Console script entry point."""
     ws_server.setup_file_logging(ws_server.log_path())
+    if len(sys.argv) > 1 and sys.argv[1] == "setup":
+        from socra_server.setup import main as setup_main
+        setup_main(sys.argv[2:])
+        return
     if "--agent" in sys.argv[1:]:
         try:
             asyncio.run(_standalone())
