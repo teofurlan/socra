@@ -5,9 +5,12 @@ import {
   particleCount,
   simulatedVoice,
   type FieldShape,
+  type Figure,
+  type FigurePoint,
   type FieldState,
   type ParticleStyle,
 } from '@/lib/particleField'
+import type { FigureSource } from '@/lib/sceneFigures'
 
 export interface ParticleVisualizerProps {
   protocolState: FieldState
@@ -23,8 +26,12 @@ export interface ParticleVisualizerProps {
   lightBackground?: boolean
   /** While idle, keep the particles gathered in their shape, small and slow. */
   resting?: boolean
+  /** What the particles assemble besides the voice shape, such as a scene's focused lines. */
+  figures?: FigureSource[]
   className?: string
 }
+
+const NO_FIGURES: FigureSource[] = []
 
 /**
  * Holds the visualizer's slot in the layout and paints a screen-wide canvas behind the
@@ -40,13 +47,14 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
   letters,
   lightBackground = false,
   resting = false,
+  figures = NO_FIGURES,
   className = '',
 }) => {
   const slotRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fieldRef = useRef<ParticleField | null>(null)
-  const live = useRef({ protocolState, colors, getOutputVolume, getInputVolume, lightBackground, resting })
-  live.current = { protocolState, colors, getOutputVolume, getInputVolume, lightBackground, resting }
+  const live = useRef({ protocolState, colors, getOutputVolume, getInputVolume, lightBackground, resting, figures })
+  live.current = { protocolState, colors, getOutputVolume, getInputVolume, lightBackground, resting, figures }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -80,6 +88,26 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
     resize()
     window.addEventListener('resize', resize)
 
+    // Each figure's points, built from the first box it is seen in and kept while its id lives.
+    const built = new Map<string, FigurePoint[]>()
+    const frameFigures = (): Figure[] => {
+      const out: Figure[] = []
+      const ids = new Set<string>()
+      for (const source of live.current.figures) {
+        ids.add(source.id)
+        const box = source.box()
+        if (!box) continue
+        let points = built.get(source.id)
+        if (!points) {
+          points = source.build(box)
+          built.set(source.id, points)
+        }
+        out.push({ id: source.id, points, box, role: source.role })
+      }
+      for (const id of built.keys()) if (!ids.has(id)) built.delete(id)
+      return out
+    }
+
     let raf = 0
     let last = performance.now() / 1000
     const frame = () => {
@@ -107,6 +135,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
         volume,
         reducedMotion,
         rest: live.current.resting,
+        figures: frameFigures(),
       })
       field.draw(ctx, dpr)
       raf = requestAnimationFrame(frame)
@@ -131,7 +160,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
   }, [shape])
 
   return (
-    <div ref={slotRef} data-testid="particle-visualizer" data-style={style} data-shape={shape} data-resting={resting} className={className}>
+    <div ref={slotRef} data-testid="particle-visualizer" data-style={style} data-shape={shape} data-resting={resting} data-figures={figures.map((f) => f.id).join(' ')} className={className}>
       <canvas
         ref={canvasRef}
         aria-hidden

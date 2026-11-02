@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import './App.css'
 import { AlertTriangle } from 'lucide-react'
 import { useExamSocket } from '@/hooks/useExamSocket'
@@ -11,6 +11,7 @@ import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
 import { sceneKey, visibleCodeViews } from '@/lib/scene'
+import { sceneFigureSources } from '@/lib/sceneFigures'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -70,6 +71,8 @@ export const App: React.FC = () => {
 
   const question = state.question
   const walkthrough = state.walkthrough
+  // While a scene plays, the particles point at what it shows.
+  const sceneFigures = useMemo(() => sceneFigureSources(walkthrough), [walkthrough])
   const codeViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
   const questionCodeKey = question?.code !== undefined && !state.finished ? `${question.index}:${question.code}` : null
   const sceneCodeKey = walkthrough && codeViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
@@ -147,6 +150,7 @@ export const App: React.FC = () => {
                 shape={shape}
                 questionText={question?.text}
                 theme={theme}
+                figures={sceneFigures}
               />
             </div>
 
@@ -218,6 +222,7 @@ export const App: React.FC = () => {
                   name={view.language || 'walkthrough'}
                   lang={view.language}
                   focus={view.focus}
+                  sceneObject={view.id}
                   label={codeViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
                   onClose={() => setClosedCode(codeKey)}
                 />

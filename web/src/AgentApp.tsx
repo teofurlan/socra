@@ -15,6 +15,7 @@ import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { sceneKey, visibleCodeViews } from '@/lib/scene'
+import { sceneFigureSources } from '@/lib/sceneFigures'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
 import { PromptLine } from '@/components/shell/PromptLine'
@@ -83,6 +84,8 @@ export const AgentApp: React.FC = () => {
   const connected = state.connectionStatus === 'connected'
   // While a scene plays, typed and spoken words steer it, so the prompt stays open.
   const walkthrough = state.walkthrough
+  // While a scene plays, the particles point at what it shows.
+  const sceneFigures = useMemo(() => sceneFigureSources(walkthrough), [walkthrough])
   const sceneRunning = !!walkthrough && walkthrough.status !== 'ended'
   const busy = !sceneRunning && (state.protocolState === 'thinking' || state.protocolState === 'speaking')
   const selectedBackend = state.backends.find((backend) => backend.id === selection?.backend)
@@ -322,6 +325,7 @@ export const AgentApp: React.FC = () => {
                 shape={shape}
                 questionText={lettersText}
                 theme={theme}
+                figures={sceneFigures}
               />
             </div>
 
@@ -401,6 +405,7 @@ export const AgentApp: React.FC = () => {
                   name={view.language || 'scene'}
                   lang={view.language}
                   focus={view.focus}
+                  sceneObject={view.id}
                   label={sceneViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
                   onClose={() => setClosedSceneKey(sceneCodeKey)}
                 />

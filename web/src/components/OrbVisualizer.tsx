@@ -3,6 +3,7 @@ import { orbColors } from '@/components/orbPalettes'
 import { ParticleVisualizer } from '@/components/ParticleVisualizer'
 import { DEFAULT_SHAPE, DEFAULT_VISUALIZER, type ShapeId, type VisualizerId } from '@/components/visualizers'
 import type { ParticleStyle } from '@/lib/particleField'
+import type { FigureSource } from '@/lib/sceneFigures'
 import type { ProtocolState } from '@/types/exam'
 
 const STYLE: Record<VisualizerId, ParticleStyle> = {
@@ -25,6 +26,8 @@ export interface OrbVisualizerProps {
   theme?: 'light' | 'dark'
   /** Keep the particles gathered while idle, as the focal point of a screen with no voice yet. */
   resting?: boolean
+  /** What the particles assemble besides the voice shape while a scene plays. */
+  figures?: FigureSource[]
 }
 
 export const OrbVisualizer: React.FC<OrbVisualizerProps> = ({
@@ -38,6 +41,7 @@ export const OrbVisualizer: React.FC<OrbVisualizerProps> = ({
   questionText,
   theme = 'dark',
   resting = false,
+  figures,
 }) => (
   <div
     data-testid="orb-visualizer"
@@ -55,6 +59,7 @@ export const OrbVisualizer: React.FC<OrbVisualizerProps> = ({
         getInputVolume={getInputVolume}
         letters={questionText}
         resting={resting}
+        figures={figures}
         className="w-full h-full"
       />
     </div>

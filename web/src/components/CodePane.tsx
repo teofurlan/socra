@@ -23,11 +23,13 @@ interface CodePaneProps {
   lang?: string
   /** 1-based inclusive line range being talked about; null or absent highlights nothing. */
   focus?: [number, number] | null
+  /** The scene object this code belongs to, so the particles can find its focused lines. */
+  sceneObject?: string
   onClose: () => void
 }
 
 /** The right-hand panel: line-numbered code, scrolling inside its own region. */
-export function CodePane({ code, name, label, lang = '', focus = null, onClose }: CodePaneProps) {
+export function CodePane({ code, name, label, lang = '', focus = null, sceneObject, onClose }: CodePaneProps) {
   const lines = code.replace(/\n$/, '').split('\n')
   const width = String(lines.length).length
   const firstFocused = useRef<HTMLSpanElement | null>(null)
@@ -62,7 +64,7 @@ export function CodePane({ code, name, label, lang = '', focus = null, onClose }
         </>
       }
     >
-      <pre tabIndex={0} className="t-code m-0 min-h-0 flex-1 overflow-auto py-3.5 select-text">
+      <pre tabIndex={0} data-scene-object={sceneObject} className="t-code m-0 min-h-0 flex-1 overflow-auto py-3.5 select-text">
         {/* As wide as the longest line, so its right padding scrolls clear of the edge. */}
         <code className="block w-max min-w-full">
           {lines.map((line, i) => (

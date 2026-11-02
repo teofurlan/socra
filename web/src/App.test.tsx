@@ -269,6 +269,15 @@ describe('App Integration', () => {
       expect(screen.queryByTestId('question-panel')).not.toBeInTheDocument()
     })
 
+    it('points the particles at the focused lines while the scene plays, and lets go once it ends', () => {
+      const ws = start()
+      const visualizer = screen.getByTestId('particle-visualizer')
+      expect(visualizer).toHaveAttribute('data-figures', 'focus:code:2-2')
+      expect(document.querySelector('pre[data-scene-object="code"]')).toBeInTheDocument()
+      act(() => ws.simulateMessage({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(visualizer).toHaveAttribute('data-figures', '')
+    })
+
     it('hides the code panel while the step hides its object', () => {
       const ws = start()
       act(() => ws.simulateMessage({ type: 'walkthrough_step', index: 2, total: 2, id: 's2', say: 'Gone.', state: { code: { visible: false, lines: null } } }))
