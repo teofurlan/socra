@@ -114,21 +114,34 @@ class ModelLoader:
         self._task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._error: Exception | None = None
+        self._lock: asyncio.Lock | None = None
 
     def start(self) -> None:
         """Start loading without blocking the MCP transport."""
-        self._task = asyncio.create_task(asyncio.to_thread(self._load), name="model-loader")
+        if self._task is None or self._task.done():
+            if self._loop is None:
+                try:
+                    self._loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+            self._error = None
+            self._event.clear()
+            self._task = asyncio.create_task(asyncio.to_thread(self._load), name="model-loader")
 
     def _load(self) -> None:
         try:
-            logger.debug("Loading Piper TTS…")
-            self.tts.load()
+            if not getattr(self.tts, "_loaded", False):
+                logger.debug("Loading Piper TTS…")
+                self.tts.load()
             self.stt.set_base_terms(self.tts.glossary_terms)
-            logger.debug("Loading Whisper STT…")
-            self.stt.load()
+            if getattr(self.stt, "_transcriber", None) is None:
+                logger.debug("Loading Whisper STT…")
+                self.stt.load()
             self._loaded = True
+            self._error = None
         except Exception as exc:
             self._error = exc
+            self._loaded = False
             logger.error("Model loading failed: %s", exc)
         finally:
             # Signal from the background thread: schedule set() on the event loop
@@ -137,8 +150,28 @@ class ModelLoader:
                 loop.call_soon_threadsafe(self._event.set)
 
     async def ready(self) -> None:
-        """Await until models are loaded (or failed)."""
-        await self._event.wait()
+        """Await until models are loaded (or failed). Retries if an earlier load failed."""
+        if self._loaded:
+            return
+
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
+
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+
+        async with self._lock:
+            if self._loaded:
+                return
+            if self._task is None or self._task.done():
+                self._error = None
+                self._event.clear()
+                self._task = asyncio.create_task(
+                    asyncio.to_thread(self._load), name="model-loader"
+                )
+            task = self._task
+
+        await task
         if self._error is not None:
             raise RuntimeError(f"Model loading failed: {self._error}") from self._error
 
