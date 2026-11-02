@@ -447,6 +447,8 @@ async def test_a_long_reply_that_arrives_at_once_still_starts_with_a_short_clip(
     await convo.events.put(TextDelta(text))
     await convo.events.put(ReplyDone(text))
     await _until(lambda: " ".join(loader.tts.spoken) == text)
+    # The last clip is sent only after its synthesis returns in a worker thread.
+    await _until(lambda: len(channel.of_type("tts_audio")) == len(loader.tts.spoken))
 
     clips = loader.tts.spoken
     assert clips[0] == sentences[0]  # the first clip is short, so speech starts quickly
