@@ -16,7 +16,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from socra_server.adapters.claude_code_agent import ClaudeCodeBackend
+from socra_server.adapters.claude_code_agent import ClaudeCodeBackend, ClaudeCodeConversation
 from socra_server.domain.agent import (
     AgentError,
     BackendStatus,
@@ -28,7 +28,13 @@ from socra_server.domain.agent import (
 from socra_server.ports import AgentBackend, AgentConversation
 
 
-def _result(text: str | None = "Done.", *, is_error: bool = False, errors=None) -> ResultMessage:
+def _result(
+    text: str | None = "Done.",
+    *,
+    is_error: bool = False,
+    errors=None,
+    terminal_reason: str | None = None,
+) -> ResultMessage:
     return ResultMessage(
         subtype="error_during_execution" if is_error else "success",
         duration_ms=1,
@@ -38,6 +44,7 @@ def _result(text: str | None = "Done.", *, is_error: bool = False, errors=None) 
         session_id="session-1",
         result=text,
         errors=errors,
+        terminal_reason=terminal_reason,
     )
 
 
@@ -164,6 +171,78 @@ async def test_failed_turn_yields_agent_error(tmp_path):
     events = await _collect(conversation)
 
     assert events == [AgentError("Rate limited")]
+
+
+async def test_interrupted_turn_yields_interrupted_error_when_conversation_interrupted(tmp_path):
+    script = [
+        AssistantMessage(content=[TextBlock(text="Thinking...")], model="opus"),
+        _result(None, is_error=True, errors=["[ede_diagnostic … stop_reason=null]"]),
+    ]
+    conversation = await _backend(script=script).open("opus", tmp_path, _never_asked)
+    await conversation.interrupt()
+
+    events = await _collect(conversation)
+
+    assert events == [TextDelta("Thinking..."), AgentError("The turn was interrupted.")]
+
+
+async def test_interrupted_turn_during_streaming_yields_interrupted_error(tmp_path):
+    client = FakeClient()
+
+    async def stream_and_interrupt():
+        yield AssistantMessage(content=[TextBlock(text="Thinking...")], model="opus")
+        await conversation.interrupt()
+        yield _result(None, is_error=True, errors=["some generic error"])
+
+    client.receive_response = stream_and_interrupt
+    conversation = ClaudeCodeConversation(client)
+
+    events = [event async for event in conversation.send("hello")]
+
+    assert events == [TextDelta("Thinking..."), AgentError("The turn was interrupted.")]
+
+
+async def test_interrupted_turn_recognized_from_terminal_reason(tmp_path):
+    script = [
+        _result(None, is_error=True, errors=["some error"], terminal_reason="aborted_streaming")
+    ]
+    conversation = await _backend(script=script).open("opus", tmp_path, _never_asked)
+
+    events = await _collect(conversation)
+
+    assert events == [AgentError("The turn was interrupted.")]
+
+
+@pytest.mark.parametrize(
+    "diag",
+    [
+        "[ede_diagnostic … stop_reason=null]",
+        "prompt_check failed: prompt was checked",
+    ],
+)
+async def test_raw_sdk_interruption_diagnostics_yield_clean_interrupted_error(tmp_path, diag):
+    script = [_result(None, is_error=True, errors=[diag])]
+    conversation = await _backend(script=script).open("opus", tmp_path, _never_asked)
+
+    events = await _collect(conversation)
+
+    assert events == [AgentError("The turn was interrupted.")]
+
+
+async def test_interrupted_turn_with_exception_yields_interrupted_error(tmp_path):
+    client = FakeClient()
+
+    async def stream_with_abort():
+        yield AssistantMessage(content=[TextBlock(text="Thinking...")], model="opus")
+        await conversation.interrupt()
+        raise CLIConnectionError("Stream closed")
+
+    client.receive_response = stream_with_abort
+    conversation = ClaudeCodeConversation(client)
+
+    events = [event async for event in conversation.send("hello")]
+
+    assert events == [TextDelta("Thinking..."), AgentError("The turn was interrupted.")]
 
 
 async def test_client_failure_yields_agent_error_instead_of_raising(tmp_path):
