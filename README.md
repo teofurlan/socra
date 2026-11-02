@@ -68,7 +68,7 @@ pnpm -C web build
 claude mcp add --scope user socra -- uv run --project "C:\path\to\socra\server" socra-server
 ```
 
-The Piper voice (about 115 MB) and the Whisper model (`large-v3-turbo` by
+The Piper voice (about 79 MB) and the Whisper model (`large-v3-turbo` by
 default) download on first use, so the first spoken turn can take a while.
 Socra speaks and listens in English, with one voice: LibriTTS-R speaker 0 (US English, Piper).
 
