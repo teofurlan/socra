@@ -59,7 +59,22 @@ time), a second server binds free ports and its page URL carries them.
 git clone https://github.com/teofurlan/socra.git
 cd socra
 
-# 1. Install the server and build the page
+# Run the one-command setup (builds the page, registers MCP with Claude, and pre-downloads speech models)
+powershell -ExecutionPolicy Bypass -File setup.ps1
+
+# Or run via uv directly:
+uv run --project server socra-server setup
+```
+
+The setup command checks all prerequisites, builds the web app, registers the
+MCP server idempotently with Claude Code, and pre-downloads the Piper voice and
+Whisper model so your first spoken turn starts immediately without waiting.
+
+<details>
+<summary>Manual setup steps (alternative)</summary>
+
+```powershell
+# 1. Install server dependencies and build the web client
 uv sync --project server
 pnpm -C web install
 pnpm -C web build
@@ -68,8 +83,8 @@ pnpm -C web build
 claude mcp add --scope user socra -- uv run --project "C:\path\to\socra\server" socra-server
 ```
 
-The Piper voice (about 115 MB) and the Whisper model (`large-v3-turbo` by
-default) download on first use, so the first spoken turn can take a while.
+</details>
+
 Socra speaks and listens in English, with one voice: LibriTTS-R speaker 0 (US English, Piper).
 
 ### Take an exam
