@@ -6,9 +6,6 @@ import {
   getStoredMicDeviceId,
   setStoredMicDeviceId,
   STORAGE_KEY_MIC_DEVICE,
-  getStoredVisualizer,
-  setStoredVisualizer,
-  STORAGE_KEY_VISUALIZER,
   getStoredShape,
   setStoredShape,
   STORAGE_KEY_SHAPE,
@@ -93,36 +90,22 @@ describe('storage (microphone selection)', () => {
   })
 })
 
-describe('storage (visualizer choice)', () => {
+describe('storage (retired particle looks)', () => {
   beforeEach(() => {
     window.localStorage.clear()
     vi.restoreAllMocks()
   })
 
-  it('defaults to the lines when nothing is stored', () => {
-    expect(getStoredVisualizer()).toBe('particle-lines')
-  })
-
-  it('falls back to the lines for the retired orb', () => {
-    window.localStorage.setItem(STORAGE_KEY_VISUALIZER, 'orb')
-    expect(getStoredVisualizer()).toBe('particle-lines')
-  })
-
-  it('persists the letters on a grid', () => {
-    setStoredVisualizer('particle-grid')
-    expect(getStoredVisualizer()).toBe('particle-grid')
-  })
-
-  it('persists a particle visualizer and reads it back', () => {
-    setStoredVisualizer('particle-letters')
-    expect(window.localStorage.getItem(STORAGE_KEY_VISUALIZER)).toBe('particle-letters')
-    expect(getStoredVisualizer()).toBe('particle-letters')
-  })
-
-  it('ignores an unknown stored value', () => {
-    window.localStorage.setItem(STORAGE_KEY_VISUALIZER, 'hologram')
-    expect(getStoredVisualizer()).toBe('particle-lines')
-  })
+  it.each(['particle-lines', 'particle-letters', 'particle-grid', 'orb', 'hologram'])(
+    'leaves other preferences intact when a stored look value %s is still there',
+    (look) => {
+      window.localStorage.setItem('socra_visualizer', look)
+      setStoredShape('wave')
+      expect(() => getStoredShape()).not.toThrow()
+      expect(getStoredShape()).toBe('wave')
+      expect(SHARED_PREFERENCE_KEYS).not.toContain('socra_visualizer')
+    },
+  )
 })
 
 describe('storage (particle shape)', () => {
@@ -182,7 +165,6 @@ describe('storage (shared across page origins, #27)', () => {
     setStoredTurnMode('push-to-talk')
     setStoredSilenceTimeout(2000)
     setStoredOrbPalette('ember')
-    setStoredVisualizer('particle-letters')
     setStoredShape('wave')
     setStoredAgentSelection({ backend: 'pi', model: 'm' })
     setStoredAgentFolder('C:/work')
@@ -193,7 +175,6 @@ describe('storage (shared across page origins, #27)', () => {
       [STORAGE_KEY_MODE, 'push-to-talk'],
       [STORAGE_KEY_SILENCE_TIMEOUT, '2000'],
       [STORAGE_KEY_ORB_PALETTE, 'ember'],
-      [STORAGE_KEY_VISUALIZER, 'particle-letters'],
       [STORAGE_KEY_SHAPE, 'wave'],
       [STORAGE_KEY_AGENT_SELECTION, JSON.stringify({ backend: 'pi', model: 'm' })],
       [STORAGE_KEY_AGENT_FOLDER, 'C:/work'],

@@ -4,11 +4,8 @@ import { sharePreference } from '@/lib/preferences'
 import { STORAGE_KEY_THEME } from '@/lib/theme'
 import {
   DEFAULT_SHAPE,
-  DEFAULT_VISUALIZER,
   isShapeId,
-  isVisualizerId,
   type ShapeId,
-  type VisualizerId,
 } from '@/components/visualizers'
 
 export const STORAGE_KEY_MODE = 'oral_exam_turn_mode'
@@ -82,27 +79,6 @@ export function setStoredOrbPalette(id: string): void {
     console.warn('Failed to write orb palette to localStorage:', err)
   }
   sharePreference(STORAGE_KEY_ORB_PALETTE, id)
-}
-
-export const STORAGE_KEY_VISUALIZER = 'socra_visualizer'
-
-export function getStoredVisualizer(): VisualizerId {
-  try {
-    const item = window.localStorage.getItem(STORAGE_KEY_VISUALIZER)
-    if (isVisualizerId(item)) return item
-  } catch (err) {
-    console.warn('Failed to read visualizer from localStorage:', err)
-  }
-  return DEFAULT_VISUALIZER
-}
-
-export function setStoredVisualizer(id: VisualizerId): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY_VISUALIZER, id)
-  } catch (err) {
-    console.warn('Failed to write visualizer to localStorage:', err)
-  }
-  sharePreference(STORAGE_KEY_VISUALIZER, id)
 }
 
 export const STORAGE_KEY_SHAPE = 'socra_shape'
@@ -224,7 +200,6 @@ export const SHARED_PREFERENCE_KEYS: readonly string[] = [
   STORAGE_KEY_MODE,
   STORAGE_KEY_SILENCE_TIMEOUT,
   STORAGE_KEY_ORB_PALETTE,
-  STORAGE_KEY_VISUALIZER,
   STORAGE_KEY_SHAPE,
   STORAGE_KEY_AGENT_SELECTION,
   STORAGE_KEY_AGENT_FOLDER,

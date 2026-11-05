@@ -5,11 +5,8 @@ import { ModeToggle } from '@/components/ModeToggle'
 import { ORB_PALETTES, STATE_PALETTES } from '@/components/orbPalettes'
 import {
   DEFAULT_SHAPE,
-  DEFAULT_VISUALIZER,
   SHAPES,
-  VISUALIZERS,
   type ShapeId,
-  type VisualizerId,
 } from '@/components/visualizers'
 import type { Microphone } from '@/hooks/useAudioInputs'
 import { MIN_SILENCE_TIMEOUT_MS, MAX_SILENCE_TIMEOUT_MS } from '@/lib/storage'
@@ -23,9 +20,6 @@ export interface SettingsMenuProps {
   onSilenceChange: (ms: number) => void
   paletteId: string
   onPaletteChange: (id: string) => void
-  /** Omit onVisualizerChange to hide the visualizer choice. */
-  visualizer?: VisualizerId
-  onVisualizerChange?: (id: VisualizerId) => void
   /** Omit onShapeChange to hide the shape choice. */
   shape?: ShapeId
   onShapeChange?: (id: ShapeId) => void
@@ -60,8 +54,6 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
   onSilenceChange,
   paletteId,
   onPaletteChange,
-  visualizer = DEFAULT_VISUALIZER,
-  onVisualizerChange,
   shape = DEFAULT_SHAPE,
   onShapeChange,
   microphones,
@@ -211,29 +203,6 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
               </div>
             )}
           </Section>
-
-          {onVisualizerChange && (
-            <Section title="Visualizer">
-              <div role="radiogroup" aria-label="Visualizer" className="grid grid-cols-3 gap-1">
-                {VISUALIZERS.map((v) => {
-                  const active = visualizer === v.id
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      data-testid={`visualizer-${v.id}`}
-                      onClick={() => onVisualizerChange(v.id)}
-                      className="key t-small min-h-8"
-                    >
-                      {v.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </Section>
-          )}
 
           {onShapeChange && (
             <Section title="Shape">

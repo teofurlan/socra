@@ -3,7 +3,7 @@ import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AgentApp from './AgentApp'
 import { FakeAudioContext, FakeWebSocket } from '@/test/fakeSocket'
-import { STORAGE_KEY_AGENT_FOLDER, STORAGE_KEY_AGENT_SELECTION, STORAGE_KEY_VISUALIZER } from '@/lib/storage'
+import { STORAGE_KEY_AGENT_FOLDER, STORAGE_KEY_AGENT_SELECTION } from '@/lib/storage'
 
 // Real capture needs a microphone and WebAudio; this page only wires it up.
 const micOptions: { protocolState?: string; onFinalize?: (b64: string) => void } = {}
@@ -362,18 +362,15 @@ describe('AgentApp', () => {
     ])
   })
 
-  it('uses the visualizer chosen in settings, shared with the exam page', async () => {
-    window.localStorage.setItem(STORAGE_KEY_VISUALIZER, 'particle-lines')
+  it.each(['particle-lines', 'particle-letters', 'particle-grid'])('loads with the retired look %s still stored, offering no look in settings', async (look) => {
+    window.localStorage.setItem('socra_visualizer', look)
     const user = userEvent.setup()
     openPage()
 
-    expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-style', 'lines')
-
+    expect(screen.getByTestId('particle-visualizer')).toBeInTheDocument()
     await user.click(screen.getByTestId('settings-button'))
-    await user.click(screen.getByTestId('visualizer-particle-grid'))
-
-    expect(window.localStorage.getItem(STORAGE_KEY_VISUALIZER)).toBe('particle-grid')
-    expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-style', 'grid')
+    expect(screen.queryByRole('radiogroup', { name: 'Visualizer' })).toBeNull()
+    expect(screen.getByRole('radiogroup', { name: 'Shape' })).toBeInTheDocument()
   })
 
   it('uses the particle shape chosen in settings, shared with the exam page', async () => {
