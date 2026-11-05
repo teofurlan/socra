@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { FIGURE_SHARE, ParticleField, fibonacciSphere, particleCount, type Figure, type FieldFrame } from './particleField'
+import { FIGURE_SHARE, ParticleField, headlineDotScale, fibonacciSphere, particleCount, type Figure, type FieldFrame } from './particleField'
 
 /** Small deterministic PRNG so the physics runs the same way every time. */
 function seeded(seed = 1) {
@@ -253,6 +253,17 @@ describe('ParticleField', () => {
   })
 })
 
+describe('headlineDotScale', () => {
+  it('keeps the normal size once about a thousand particles are recruited, and grows below that up to 1.5x', () => {
+    expect(headlineDotScale(1260)).toBe(1)
+    expect(headlineDotScale(1007)).toBe(1)
+    expect(headlineDotScale(500)).toBeCloseTo(Math.SQRT2, 5)
+    expect(headlineDotScale(280)).toBe(1.5)
+    expect(headlineDotScale(10)).toBe(1.5)
+    expect(headlineDotScale(0)).toBe(1)
+  })
+})
+
 describe('ParticleField figures', () => {
   const BOX = { x: 100, y: 400, w: 200, h: 100 }
   /** A 10 x 6 grid of points inside the box, normalised to 0..1. */
@@ -411,15 +422,29 @@ describe('ParticleField figures', () => {
     })
   })
 
-  describe('headline depth', () => {
-    const settle = (role: Figure['role'], opts: { light?: boolean; reducedMotion?: boolean; seed?: number } = {}) => {
+  it('draws a headline bigger where few particles are recruited, and a pointer outline unchanged', () => {
+    const size = (count: number, role: Figure['role']) => {
+      const field = new ParticleField({ count, random: seeded(3) })
+      field.resize(BASE.width, BASE.height)
+      const points = Array.from({ length: 1000 }, (_, i) => ({ x: (i % 40) / 39, y: Math.floor(i / 40) / 24 }))
+      runWith(field, 'speaking', 4, 0, [{ id: 'h', points, box: BOX, role }])
+      const ps = recruited(field)
+      return ps.reduce((sum, p) => sum + p.size, 0) / ps.length
+    }
+    // 1500 particles recruit 1000 points (no growth); 400 recruit 280 (the 1.5x cap).
+    expect(size(400, 'lead')).toBeGreaterThan(size(1500, 'lead') * 1.3)
+    expect(size(400, 'pointer')).toBeCloseTo(size(1500, 'pointer'), 0)
+  })
+
+  describe('figure depth (opt-in projection)', () => {
+    const settle = (role: Figure['role'], opts: { light?: boolean; reducedMotion?: boolean; seed?: number; depth?: boolean } = {}) => {
       const field = new ParticleField({ count: 400, random: seeded(opts.seed ?? 3) })
       field.resize(BASE.width, BASE.height)
       field.setLightBackground(opts.light ?? false)
       let time = 0
       for (let i = 0; i < 4 * 60; i++) {
         time += BASE.dt
-        field.step({ ...BASE, state: 'speaking', volume: 0.5, time, reducedMotion: opts.reducedMotion ?? false, figures: [{ id: 'h', points: GRID, box: BOX, role }] })
+        field.step({ ...BASE, state: 'speaking', volume: 0.5, time, reducedMotion: opts.reducedMotion ?? false, figures: [{ id: 'h', points: GRID, box: BOX, role, depth: opts.depth ?? true }] })
       }
       return field
     }
@@ -434,7 +459,7 @@ describe('ParticleField figures', () => {
       )
     }
 
-    it('puts about 60% of a headline on its front face and the rest through the thickness', () => {
+    it('puts about 60% of a solid figure on its front face and the rest through the thickness', () => {
       const ps = recruited(settle('lead'))
       const front = ps.filter((p) => p.fz === -1).length / ps.length
       expect(front).toBeGreaterThan(0.55)
@@ -446,10 +471,10 @@ describe('ParticleField figures', () => {
       expect(ps.some((p) => p.fz > 0.5)).toBe(true)
     })
 
-    it('settles headline particles on projected 3D points, off their flat points in x and scale', () => {
+    it('settles opted-in particles on projected 3D points, off their flat points in x and scale', () => {
       const lead = settle('lead')
       // Pointer figures stay flat: only the breathing moves them off their points.
-      const pointer = settle('pointer')
+      const pointer = settle('pointer', { depth: false })
       expect(flatError(pointer, 'both')).toBeLessThan(4)
       expect(flatError(lead, 'x')).toBeGreaterThan(2.5)
       expect(flatError(lead, 'both')).toBeGreaterThan(flatError(pointer, 'both') + 1)
@@ -479,7 +504,7 @@ describe('ParticleField figures', () => {
       }
     })
 
-    it('draws nearer headline dots larger and brighter', () => {
+    it('draws nearer dots larger and brighter', () => {
       const { near, far } = thirds(settle('lead'))
       expect(mean(near.map((p) => p.size))).toBeGreaterThan(mean(far.map((p) => p.size)))
       expect(mean(near.map((p) => p.alpha))).toBeGreaterThan(mean(far.map((p) => p.alpha)))
@@ -508,11 +533,24 @@ describe('ParticleField figures', () => {
       expect(flatError(field, 'x')).toBeGreaterThan(1.5)
       // A fixed turn: two frames later the targets have not moved beyond the small breathing.
       const before = ps.map((p) => [p.gx, p.gy])
-      field.step({ ...BASE, state: 'speaking', volume: 0.5, time: 3.5, reducedMotion: true, figures: [{ id: 'h', points: GRID, box: BOX, role: 'lead' }] })
+      field.step({ ...BASE, state: 'speaking', volume: 0.5, time: 3.5, reducedMotion: true, figures: [{ id: 'h', points: GRID, box: BOX, role: 'lead', depth: true }] })
       ps.forEach((p, i) => {
         expect(Math.abs(p.gx - before[i][0])).toBeLessThan(3)
         expect(Math.abs(p.gy - before[i][1])).toBeLessThan(3)
       })
+    })
+
+    it('keeps a lead figure flat unless it opts in: no turn, no perspective, no extrusion', () => {
+      const flat = settle('lead', { depth: false })
+      expect(flatError(flat, 'both')).toBeLessThan(4)
+      for (const p of recruited(flat)) {
+        expect(p.near).toBe(1)
+        expect(p.persp).toBe(1)
+      }
+      // Reduced motion changes nothing for a flat figure: there is no still yaw.
+      expect(flatError(settle('lead', { depth: false, reducedMotion: true }), 'both')).toBeLessThan(4)
+      // The same figure that opts in is off its flat points.
+      expect(flatError(settle('lead', { depth: true }), 'both')).toBeGreaterThan(flatError(flat, 'both') + 1)
     })
   })
 

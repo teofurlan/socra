@@ -57,6 +57,12 @@ export interface Figure {
   points: FigurePoint[]
   box: FigureBox
   role: 'lead' | 'pointer'
+  /**
+   * Opt-in 3D for solid figures (spheres, cylinders, ...): points get a depth through a
+   * thickness, the figure turns slowly and is drawn in perspective, nearer dots larger and
+   * brighter. Off by default: headlines and outlines are flat 2D, so text stays easy to read.
+   */
+  depth?: boolean
 }
 
 /** At most this share of the particles is recruited by figures, all together. */
@@ -97,7 +103,7 @@ export interface Particle {
   fx: number
   fy: number
   /**
-   * Depth through a headline's thickness, -1 (front face) .. 1 (back), fixed per recruit; and
+   * Depth through a depth figure's thickness, -1 (front face) .. 1 (back), fixed per recruit; and
    * how near it reads this frame (0 back .. 1 front) with the perspective scale it is drawn at.
    */
   fz: number
@@ -121,16 +127,28 @@ const STRANDS = [
   { amp: 0.32, f: 3.6, s: 1.6, ph: 5.2, thick: 0.5, alpha: 0.5, hue: 0.5 },
 ]
 const BUCKETS = 10
-/** Headline depth: the share of its particles on the front face, and the thickness as a share of the box height. */
+/** Figure depth (``Figure.depth``): the share of its particles on the front face, and the thickness as a share of the box height. */
 const FRONT_SHARE = 0.6
 const THICKNESS = 0.22
-/** The word turns slowly so the depth reads: yaw and pitch amplitudes (rad) and speeds, and the perspective focal length as a share of the box width. */
+/** The figure turns slowly so the depth reads: yaw and pitch amplitudes (rad) and speeds, and the perspective focal length as a share of the box width. */
 const YAW = 0.28
 const PITCH = 0.12
 const FOCAL = 1.4
 /** Under reduced motion the turn holds still at this small yaw, so the depth still reads. */
 const STILL_YAW = 0.16
 const GOLDEN = 0.6180339887498949
+/**
+ * Headline dot size follows density. Letters read filled when the dots are about one spacing
+ * wide, and spacing shrinks with the square root of the dot count, so a headline holding fewer
+ * than HEADLINE_FULL particles draws its dots sqrt(HEADLINE_FULL / count) times larger, at most
+ * HEADLINE_FILL_MAX. 1000 is about what a 1440x900 screen recruits (1007), so desktop keeps
+ * the normal size; a 360x640 phone recruits 280 and gets the 1.5x cap.
+ */
+const HEADLINE_FULL = 1000
+const HEADLINE_FILL_MAX = 1.5
+export function headlineDotScale(recruited: number): number {
+  return recruited <= 0 ? 1 : clamp(Math.sqrt(HEADLINE_FULL / recruited), 1, HEADLINE_FILL_MAX)
+}
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v)
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
@@ -310,7 +328,7 @@ export class ParticleField {
           const p = this.particles[i]
           p.fx = q.x
           p.fy = q.y
-          // Depth through a headline: golden-ratio spacing by rank, so the share on the front
+          // Depth through a solid figure: golden-ratio spacing by rank, so the share on the front
           // face is the same for any figure and every run.
           const u = ((k + 0.5) * GOLDEN) % 1
           p.fz = u < FRONT_SHARE ? -1 : -1 + (2 * (u - FRONT_SHARE)) / (1 - FRONT_SHARE)
@@ -429,9 +447,9 @@ export class ParticleField {
       if (fig) {
         const breath = (1.2 + 2.6 * vol) * motion
         let ox = (p.fx - 0.5) * fig.box.w, oy = (p.fy - 0.5) * fig.box.h
-        if (fig.role === 'lead') {
-          // A headline is a slab: its points sit at their depth through the thickness and the
-          // whole word turns a little, so the targets are the projected 3D points.
+        if (fig.depth) {
+          // A solid figure is a slab: its points sit at their depth through the thickness and the
+          // whole figure turns a little, so the targets are the projected 3D points.
           const yaw = f.reducedMotion ? STILL_YAW : YAW * Math.sin(t * 0.55)
           const pitch = f.reducedMotion ? 0 : PITCH * Math.sin(t * 0.37 + 1)
           const oz = p.fz * THICKNESS * fig.box.h
@@ -487,12 +505,14 @@ export class ParticleField {
       if (resting) p.tint *= 0.3
       if (ef > 0) {
         // A figure is drawn bright and even, so it reads as one shape; it swells with the voice.
-        // A headline's nearer dots are larger and brighter; the far side keeps a higher floor on
-        // a light ground, where it would wash out.
+        // A depth figure's nearer dots are larger and brighter; the far side keeps a higher floor
+        // on a light ground, where it would wash out. A flat headline's dots grow where few
+        // particles are recruited (headlineDotScale).
+        const fill = fig && fig.role === 'lead' ? headlineDotScale(this.recruits[p.figure]?.members.length ?? 0) : 1
         const far = this.additive === 'lighter' ? 0.4 : 0.7
         p.depth = lerp(p.depth, p.near, ef)
         p.alpha = lerp(p.alpha, (0.62 + 0.3 * twinkle * (0.5 + vol)) * (far + (1 - far) * p.near), ef)
-        p.size = lerp(p.size, (5 + 5 * vol) * (0.6 + 0.9 * p.near) * p.persp, ef)
+        p.size = lerp(p.size, (5 + 5 * vol) * (0.6 + 0.9 * p.near) * p.persp * fill, ef)
       }
     }
   }

@@ -101,7 +101,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
           points = source.build(box)
           built.set(source.id, points)
         }
-        out.push({ id: source.id, points, box, role: source.role })
+        out.push({ id: source.id, points, box, role: source.role, depth: source.depth })
       }
       for (const id of built.keys()) if (!ids.has(id)) built.delete(id)
       return out

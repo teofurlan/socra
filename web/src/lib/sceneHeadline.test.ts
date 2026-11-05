@@ -43,6 +43,12 @@ describe('headline box', () => {
     expect(box.y + box.h / 2).toBeCloseTo(250)
   })
 
+  it('is a flat lead figure: it does not opt in to the 3D projection', () => {
+    const source = sceneFigureSources(walkthrough)[0]
+    expect(source.role).toBe('lead')
+    expect(source.depth).toBeFalsy()
+  })
+
   it('is height-limited for a tall text', () => {
     textFigure.mockReturnValue({ points: [], aspect: 1 })
     mountStage(400, 200)
@@ -61,7 +67,7 @@ describe('headline box', () => {
     expect(source.build({ x: 0, y: 0, w: 1, h: 1 })).toBe(points)
     expect(textFigure).toHaveBeenCalledTimes(1)
     expect(textFigure.mock.calls[0][0]).toBe('Hi')
-    expect(textFigure.mock.calls[0][1]).toBe(900)
+    expect(textFigure.mock.calls[0][1]).toBe(1260)
     expect(String(textFigure.mock.calls[0][2])).toContain('Geist')
   })
 })
