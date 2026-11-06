@@ -218,3 +218,104 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+
+/* Diagram primitive: crisp SVG in the content panel; the theme's variables colour it. */
+.diagram-viewport {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+}
+.diagram-svg {
+  flex: none;
+  margin: auto;
+  font-family: var(--sans);
+  user-select: none;
+}
+.diagram-node rect {
+  fill: color-mix(in srgb, var(--tint, var(--label-3)) 14%, var(--raise));
+  stroke: color-mix(in srgb, var(--tint, var(--label-3)) 55%, var(--seam-strong));
+  stroke-width: 1.5;
+  transition: stroke 0.25s, fill 0.25s, opacity 0.25s;
+}
+.diagram-node text {
+  fill: var(--label);
+}
+.diagram-node,
+.diagram-edge {
+  transition: opacity 0.3s;
+}
+.diagram-node[data-dimmed="true"],
+.diagram-edge[data-dimmed="true"] {
+  opacity: 0.3;
+}
+.diagram-node[data-highlighted="true"] rect {
+  stroke: var(--accent);
+  stroke-width: 3;
+  fill: color-mix(in srgb, var(--accent) 20%, var(--raise));
+}
+.diagram-edge-line {
+  stroke: var(--label-3);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.diagram-edge-arrow {
+  fill: var(--label-3);
+}
+.diagram-edge[data-revealed="false"] {
+  opacity: 0;
+}
+.diagram-edge-label rect {
+  fill: var(--panel);
+}
+.diagram-edge-label text {
+  fill: var(--label-2);
+}
+.diagram-note rect {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+.diagram-note text {
+  fill: var(--label);
+}
+/* A traced edge draws from its source to its target, one after the other, then its node lights. */
+.diagram-edge[data-traced="true"] .diagram-edge-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: var(--len);
+  animation: diagram-draw var(--trace-duration, 0.45s) linear var(--trace-delay, 0s) both;
+}
+.diagram-edge[data-traced="true"] .diagram-edge-arrow {
+  fill: var(--accent);
+  animation: diagram-pop 0.12s linear calc(var(--trace-delay, 0s) + var(--trace-duration, 0.45s) - 0.05s) backwards;
+}
+.diagram-node[data-traced="true"] rect {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  animation: diagram-light 0.3s ease-out var(--trace-delay, 0s) backwards;
+}
+@keyframes diagram-draw {
+  from { stroke-dashoffset: var(--len); }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes diagram-pop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes diagram-light {
+  from { stroke: var(--seam-strong); stroke-width: 1.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .diagram-node,
+  .diagram-edge,
+  .diagram-node rect {
+    transition: none;
+  }
+  .diagram-edge[data-traced="true"] .diagram-edge-line,
+  .diagram-edge[data-traced="true"] .diagram-edge-arrow,
+  .diagram-node[data-traced="true"] rect {
+    animation: none;
+  }
+}

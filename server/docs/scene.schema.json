@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/teofurlan/socra/server/docs/scene.schema.json",
   "title": "Socra narrated scene",
-  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive, line ranges inside the code and headline length after trimming.",
+  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive, line ranges inside the code and headline length after trimming, diagram node and edge references, and that a traced path follows existing edges.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "title", "steps"],
@@ -18,7 +18,7 @@
         "required": ["id", "primitive", "params"],
         "properties": {
           "id": { "$ref": "#/$defs/id" },
-          "primitive": { "enum": ["code", "headline", "shape"] },
+          "primitive": { "enum": ["code", "headline", "shape", "diagram"] },
           "params": { "type": "object" },
           "hidden": { "type": "boolean", "default": false, "description": "Start hidden; a show action reveals it." }
         },
@@ -34,6 +34,10 @@
           {
             "if": { "properties": { "primitive": { "const": "shape" } } },
             "then": { "properties": { "params": { "$ref": "#/$defs/shapeParams" } } }
+          },
+          {
+            "if": { "properties": { "primitive": { "const": "diagram" } } },
+            "then": { "properties": { "params": { "$ref": "#/$defs/diagramParams" } } }
           }
         ]
       }
@@ -105,13 +109,63 @@
         "wireframe": { "type": "boolean", "default": false }
       }
     },
+    "diagramParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes"],
+      "description": "Boxes and arrows laid out by the page; the model never gives coordinates.",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 25,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "label": { "$ref": "#/$defs/diagramLine", "maxLength": 40 },
+              "group": { "type": "string", "maxLength": 24, "description": "Nodes of the same group share a tint." }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 60,
+          "description": "Directed; both ends must be declared nodes, different from each other; no repeated from/to pair.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "$ref": "#/$defs/id" },
+              "to": { "$ref": "#/$defs/id" },
+              "label": { "type": "string", "maxLength": 30 },
+              "hidden": { "type": "boolean", "default": false, "description": "Drawn only after a reveal or trace." }
+            }
+          }
+        },
+        "direction": { "enum": ["TB", "LR"], "default": "LR" }
+      }
+    },
+    "diagramLine": {
+      "type": "string",
+      "pattern": "^[^\\n\\r]*\\S[^\\n\\r]*$"
+    },
+    "diagramNodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/id" }
+    },
     "action": {
       "type": "object",
       "additionalProperties": false,
       "required": ["object", "action"],
       "properties": {
         "object": { "$ref": "#/$defs/id" },
-        "action": { "enum": ["show", "hide", "focus", "clear", "set", "rotate", "reset"] },
+        "action": { "enum": ["show", "hide", "focus", "clear", "set", "rotate", "reset", "highlight", "dim", "reveal", "trace", "annotate"] },
         "params": { "type": "object" }
       },
       "allOf": [
@@ -168,6 +222,73 @@
                   "text": { "$ref": "#/$defs/headlineText" },
                   "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },
                   "wireframe": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["highlight", "dim"] } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodes"],
+                "properties": { "nodes": { "$ref": "#/$defs/diagramNodes" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "const": "reveal" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["from", "to"],
+                "properties": { "from": { "$ref": "#/$defs/id" }, "to": { "$ref": "#/$defs/id" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "const": "trace" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path"],
+                "properties": {
+                  "path": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 30,
+                    "items": { "$ref": "#/$defs/id" },
+                    "description": "Each consecutive pair must be an edge, in its direction."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "const": "annotate" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["node", "text"],
+                "properties": {
+                  "node": { "$ref": "#/$defs/id" },
+                  "text": { "$ref": "#/$defs/diagramLine", "maxLength": 60 }
                 }
               }
             }

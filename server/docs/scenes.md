@@ -53,6 +53,7 @@ Every primitive supports `show` and `hide`. Primitive-specific actions:
 | `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. The page outlines the focused lines with particles. |
 | `headline` | `text` (required, one line, at most 24 characters after trimming) | `set` with `{ "text": "..." }` replaces the words. |
 | `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (finite numbers, in turns; at least one is required), `reset` (restores rotation to 0), `set` with `{ "shape"?, "wireframe"? }` (at least one is required). Shapes have no colour param; the page draws them with the state palette. |
+| `diagram` | `nodes` (required, 1 to 25: `{ id, label, group? }`), `edges` (`{ from, to, label?, hidden? }`, at most 60), `direction` (`LR` by default, or `TB`) | `highlight` / `dim` with `{ "nodes": [ids] }` (each replaces its previous set; a node is never both); `reveal` with `{ "from", "to" }` draws an edge declared `hidden`; `trace` with `{ "path": [ids] }` animates along existing edges in order and reveals them; `annotate` with `{ "node", "text" }` adds a note beside a node; `clear` drops highlight, dim, trace and notes (revealed edges stay). |
 
 ### Presenting with particles
 
@@ -63,16 +64,49 @@ Only the first visible headline is drawn. While a `code` object has a focus, a f
 particles outline the focused lines in the code panel and follow them as it scrolls.
 A visible `shape` is assembled from the particles as a solid and takes the stage over a
 headline: while a shape is visible, the headline is not drawn.
+A `diagram` is crisp SVG in the content panel; the particles only point at it: while nodes
+are highlighted they outline them, and while a path is traced they follow its edges.
 Everything that has to be read stays crisp text: code, labels and what is being said.
+
+### Diagrams
+
+The page lays the diagram out (dagre); you never provide coordinates. Rules:
+
+- Node ids are unique; labels are one line, at most 40 characters; `group` (at most 24) tints
+  nodes of the same group; edge labels hold at most 30 characters.
+- Edges are directed, join two declared and different nodes, and a `from`/`to` pair appears once
+  (that pair is how `reveal` and `trace` name an edge). Cycles are fine.
+- A `trace` path needs at least two nodes, and each consecutive pair must be an existing edge in
+  its direction (`no edge a -> b in this diagram` otherwise).
+- Diagrams of 3 to 15 nodes read best; 25 is the cap. `LR` suits request paths and call flows;
+  the page lays a wide `LR` diagram out top to bottom on a narrow screen when that reads better.
+- Notes (`annotate`) are one line, at most 60 characters; a second note on a node replaces its text.
+
+Example ([`scene.diagram.example.json`](scene.diagram.example.json)):
+
+```json
+{
+  "objects": [{ "id": "flow", "primitive": "diagram", "params": {
+    "nodes": [{ "id": "browser", "label": "Browser" }, { "id": "api", "label": "API" }, { "id": "db", "label": "Database" }],
+    "edges": [{ "from": "browser", "to": "api", "label": "GET /items" }, { "from": "api", "to": "db", "hidden": true }]
+  } }],
+  "cues": [
+    { "at": "intro", "do": [{ "object": "flow", "action": "highlight", "params": { "nodes": ["browser"] } }] },
+    { "at": "query", "do": [{ "object": "flow", "action": "trace", "params": { "path": ["browser", "api", "db"] } }] }
+  ]
+}
+```
 
 ### Choosing what to show
 
 - Use `shape` to show a body (cube, cylinder, cone, sphere, torus).
 - Use a `headline` only for one key concept worth highlighting, not as a caption for every step.
+- Use a `diagram` for call flows, request paths and system designs (boxes and arrows); not for
+  data structures (a separate primitive covers those).
 - Never draw figures as ASCII art in a code block; code blocks are for real code.
 - Narration belongs inside the steps: after `present` returns, do not describe what is on screen.
 
-New primitives (diagrams, call flows, data structures) register their params, actions
+New primitives (data structures, images) register their params, actions
 and state in `PRIMITIVES` without changing the scene contract.
 
 ## When a scene ends

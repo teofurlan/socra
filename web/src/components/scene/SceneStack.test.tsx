@@ -21,7 +21,7 @@ describe('SceneStack', () => {
   })
 
   it('shows the step text for a primitive it does not know, without throwing', () => {
-    const unknown = { id: 'd', primitive: 'diagram', params: {}, hidden: false }
+    const unknown = { id: 'd', primitive: 'hologram', params: {}, hidden: false }
     render(<SceneStack walkthrough={scene([unknown], { d: { visible: true } }, 'Arrows between boxes.')} onClose={() => {}} />)
     expect(screen.getByTestId('scene-fallback')).toHaveTextContent('Arrows between boxes.')
   })
@@ -59,7 +59,7 @@ describe('hasScenePanel', () => {
     const shape = { id: 's', primitive: 'shape', params: { shape: 'cube' }, hidden: false }
     expect(hasScenePanel([headline, shape], null)).toBe(false)
     expect(hasScenePanel([headline, code], null)).toBe(true)
-    expect(hasScenePanel([{ id: 'd', primitive: 'diagram', params: {}, hidden: false }], null)).toBe(true)
+    expect(hasScenePanel([{ id: 'd', primitive: 'hologram', params: {}, hidden: false }], null)).toBe(true)
   })
 
   it('follows the step state: hidden objects take no panel', () => {

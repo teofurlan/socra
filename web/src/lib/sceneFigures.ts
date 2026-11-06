@@ -5,6 +5,7 @@
  */
 import { outlinePoints, solidFigurePoints, textFigure } from '@/lib/particleFigures'
 import { visibleShapeViews, type ShapeView } from '@/lib/scene'
+import { visibleDiagramViews } from '@/lib/sceneDiagram'
 import type { SolidPose } from '@/lib/solidShapes'
 import type { FigureBox, FigurePoint } from '@/lib/particleField'
 import type { WalkthroughData } from '@/types/exam'
@@ -153,6 +154,115 @@ function shapeSource(view: ShapeView): FigureSource {
   }
 }
 
+/** How many highlighted nodes the particles outline at once; the rest stay highlighted in the SVG only. */
+const MAX_NODE_OUTLINES = 4
+const PATH_SPACING = 8
+const MAX_PATH_POINTS = 220
+const MIN_PATH_POINTS = 8
+
+function diagramRoot(objectId: string): Element | null {
+  return document.querySelector(`[data-diagram-root][data-scene-object="${objectId}"]`)
+}
+
+/** What of a diagram is on screen: its scrolling viewport, since nodes can sit beyond its edge. */
+function diagramView(root: Element): DOMRect {
+  return (root.closest('[data-diagram-viewport]') ?? root).getBoundingClientRect()
+}
+
+function clip(left: number, top: number, right: number, bottom: number, view: DOMRect): FigureBox | null {
+  const x = Math.max(left, view.left)
+  const y = Math.max(top, view.top)
+  const w = Math.min(right, view.right) - x
+  const h = Math.min(bottom, view.bottom) - y
+  return w < MIN_SIDE || h < MIN_SIDE ? null : { x, y, w, h }
+}
+
+/** A highlighted node's box on screen, padded like the focused code lines. */
+function nodeBox(objectId: string, nodeId: string): FigureBox | null {
+  const root = diagramRoot(objectId)
+  const rect = root?.querySelector(`[data-diagram-node="${nodeId}"] rect`)?.getBoundingClientRect()
+  if (!root || !rect) return null
+  return clip(rect.left - MARGIN, rect.top - MARGIN, rect.right + MARGIN, rect.bottom + MARGIN, diagramView(root))
+}
+
+function tracedLines(objectId: string, path: string[]): SVGGeometryElement[] {
+  const root = diagramRoot(objectId)
+  if (!root) return []
+  return path.slice(1).flatMap((id, i) => {
+    const line = root.querySelector<SVGGeometryElement>(`[data-diagram-edge="${path[i]}>${id}"] path`)
+    return line ? [line] : []
+  })
+}
+
+/** The traced edges on screen as one box (padded, so a straight edge still has an area). */
+function traceBox(objectId: string, path: string[]): FigureBox | null {
+  const root = diagramRoot(objectId)
+  const rects = tracedLines(objectId, path).map((line) => line.getBoundingClientRect())
+  if (!root || rects.length === 0) return null
+  const pad = MARGIN + 1
+  let left = Math.min(...rects.map((r) => r.left)) - pad
+  let top = Math.min(...rects.map((r) => r.top)) - pad
+  let right = Math.max(...rects.map((r) => r.right)) + pad
+  let bottom = Math.max(...rects.map((r) => r.bottom)) + pad
+  // A straight horizontal or vertical edge has no thickness: give the box room so it is not read as out of sight.
+  const room = MIN_SIDE * 2
+  if (right - left < room) { const mid = (left + right) / 2; left = mid - room / 2; right = mid + room / 2 }
+  if (bottom - top < room) { const mid = (top + bottom) / 2; top = mid - room / 2; bottom = mid + room / 2 }
+  return clip(left, top, right, bottom, diagramView(root))
+}
+
+/** Points along each traced edge, from the first to the last, as screen pixels. */
+function tracePixels(lines: SVGGeometryElement[]): { x: number; y: number }[] {
+  const lengths = lines.map((line) => (typeof line.getTotalLength === 'function' ? line.getTotalLength() : 0))
+  const scale = lines.map((line) => line.getScreenCTM?.()?.a ?? 1)
+  const pixels = lengths.map((length, i) => length * scale[i])
+  const total = pixels.reduce((a, b) => a + b, 0)
+  const count = Math.max(MIN_PATH_POINTS, Math.min(MAX_PATH_POINTS, Math.round(total / PATH_SPACING)))
+  const out: { x: number; y: number }[] = []
+  lines.forEach((line, i) => {
+    const share = total > 0 ? pixels[i] / total : 1 / lines.length
+    const here = Math.max(2, Math.round(count * share))
+    const rect = line.getBoundingClientRect()
+    for (let k = 0; k < here; k++) {
+      const t = (k + 0.5) / here
+      if (lengths[i] > 0 && typeof line.getPointAtLength === 'function' && line.getScreenCTM?.()) {
+        const p = line.getPointAtLength(t * lengths[i])
+        const m = line.getScreenCTM()!
+        out.push({ x: m.a * p.x + m.c * p.y + m.e, y: m.b * p.x + m.d * p.y + m.f })
+      } else {
+        out.push({ x: rect.left + rect.width * t, y: rect.top + rect.height * t })
+      }
+    }
+  })
+  return out
+}
+
+/**
+ * The particles point at a diagram the way they outline focused code: a ring around each
+ * highlighted node, and a line along the edges of a traced path. Both are flat pointers.
+ */
+function diagramSources(walkthrough: WalkthroughData, state: NonNullable<ReturnType<typeof liveState>>): FigureSource[] {
+  return visibleDiagramViews(walkthrough.objects, state).flatMap((view): FigureSource[] => {
+    const rings = [...view.highlighted].slice(0, MAX_NODE_OUTLINES).map((nodeId): FigureSource => ({
+      id: `highlight:${view.id}:${nodeId}`,
+      role: 'pointer',
+      box: () => nodeBox(view.id, nodeId),
+      build: outline,
+    }))
+    const lines: FigureSource[] = view.trace.length < 2 ? [] : [{
+      id: `trace:${view.id}:${view.trace.join('>')}`,
+      role: 'pointer',
+      box: () => traceBox(view.id, view.trace),
+      build: (box) =>
+        tracePixels(tracedLines(view.id, view.trace)).map((p) => ({
+          x: Math.min(1, Math.max(0, (p.x - box.x) / box.w)),
+          y: Math.min(1, Math.max(0, (p.y - box.y) / box.h)),
+        })),
+    }]
+    return [...rings, ...lines]
+  })
+}
+
 /**
  * The figures a scene shows right now (the lead first); none once it was stopped or failed (a completed scene holds its last step). A shape and a
  * headline both lead the stage: the shape wins and the headline is not drawn while it is visible.
@@ -172,7 +282,8 @@ export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureS
       build: outline,
     }]
   })
+  const pointers = [...focus, ...diagramSources(walkthrough, state)]
   const shape = sceneShape(walkthrough)
-  if (shape) return [shapeSource(shape), ...focus]
-  return headline ? [headlineSource(headline.id, headline.text), ...focus] : focus
+  if (shape) return [shapeSource(shape), ...pointers]
+  return headline ? [headlineSource(headline.id, headline.text), ...pointers] : pointers
 }
