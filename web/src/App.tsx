@@ -10,7 +10,9 @@ import { SettingsMenu } from '@/components/SettingsMenu'
 import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
-import { sceneKey, visibleCodeViews } from '@/lib/scene'
+import { sceneKey } from '@/lib/scene'
+import { hasScenePanel } from '@/components/scene/registry'
+import { SceneStack } from '@/components/scene/SceneStack'
 import { sceneFigureSources, sceneHeadline } from '@/lib/sceneFigures'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
@@ -71,9 +73,8 @@ export const App: React.FC = () => {
   // While a scene plays, the particles point at what it shows.
   const sceneFigures = useMemo(() => sceneFigureSources(walkthrough), [walkthrough])
   const headline = useMemo(() => sceneHeadline(walkthrough), [walkthrough])
-  const codeViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
   const questionCodeKey = question?.code !== undefined && !state.finished ? `${question.index}:${question.code}` : null
-  const sceneCodeKey = walkthrough && codeViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
+  const sceneCodeKey = walkthrough && hasScenePanel(walkthrough.objects, walkthrough.step?.state ?? null) ? sceneKey(walkthrough.title, walkthrough.objects) : null
   const codeKey = walkthrough ? sceneCodeKey : questionCodeKey
   const showCode = codeKey !== null && codeKey !== closedCode
   const walkthroughRunning = !!walkthrough && walkthrough.status !== 'ended'
@@ -209,20 +210,7 @@ export const App: React.FC = () => {
         <div className="shell-seam" aria-hidden="true" />
         <div className="code-slot" aria-hidden={!showCode} inert={!showCode}>
           {walkthrough ? (
-            <div className="scene-stack">
-              {codeViews.map((view) => (
-                <CodePane
-                  key={view.id}
-                  code={view.code}
-                  name={view.language || 'walkthrough'}
-                  lang={view.language}
-                  focus={view.focus}
-                  sceneObject={view.id}
-                  label={codeViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
-                  onClose={() => setClosedCode(codeKey)}
-                />
-              ))}
-            </div>
+            <SceneStack walkthrough={walkthrough} onClose={() => setClosedCode(codeKey)} />
           ) : question?.code !== undefined && (
             <CodePane code={question.code} name={`question ${question.index}`} label="Question code" onClose={() => setClosedCode(codeKey)} />
           )}

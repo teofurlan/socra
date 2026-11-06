@@ -10,6 +10,7 @@ import type {
 import { EMPTY_VOICE_CATALOG, type VoiceCatalog } from '@/types/voice'
 import { examReducer, initialExamState } from '@/state/examReducer'
 import { getStoredTurnMode, setStoredTurnMode, getStoredVoice, setStoredVoice } from '@/lib/storage'
+import { sceneMetrics } from '@/lib/sceneMetrics'
 import { useExamAudio } from './useExamAudio'
 
 const MOCK_QUESTIONS: { text: string; code?: string; partialAnswer: string; finalAnswer: string }[] = [
@@ -353,7 +354,10 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
               if (step) stopAudio()
               if (data.format === 'wav') {
                 const focus = step
-                  ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
+                  ? () => {
+                    sceneMetrics.audioStart(step.index)
+                    dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
+                  }
                   : undefined
                 playAudio(data.data, done, focus)
               } else {
@@ -370,6 +374,7 @@ export function useExamSocket(options: UseExamSocketOptions = {}) {
                   dispatch({ type: 'clear_notice' })
                 }, 4000)
               }
+              if (data.type === 'walkthrough') sceneMetrics.present()
               dispatch(data)
             }
           } catch (err) {
