@@ -6,6 +6,7 @@
 import { outlinePoints, solidFigurePoints, textFigure } from '@/lib/particleFigures'
 import { visibleShapeViews, type ShapeView } from '@/lib/scene'
 import { visibleDiagramViews } from '@/lib/sceneDiagram'
+import { lastKey, touchedParts, visibleStructureViews } from '@/lib/sceneStructure'
 import type { SolidPose } from '@/lib/solidShapes'
 import type { FigureBox, FigurePoint } from '@/lib/particleField'
 import type { WalkthroughData } from '@/types/exam'
@@ -275,6 +276,37 @@ function diagramSources(walkthrough: WalkthroughData, state: NonNullable<ReturnT
   })
 }
 
+function structureRoot(objectId: string): Element | null {
+  return document.querySelector(`[data-structure-root][data-scene-object="${objectId}"]`)
+}
+
+/** A part of a structure (a cell, a chain entry, a tree node, a bucket row) on screen, padded and clipped to its viewport. */
+function partBox(objectId: string, part: string): FigureBox | null {
+  const root = structureRoot(objectId)
+  const rect = root?.querySelector(`[data-structure-part="${part}"] rect`)?.getBoundingClientRect()
+  if (!root || !rect) return null
+  const view = (root.closest('[data-structure-viewport]') ?? root).getBoundingClientRect()
+  return clip(rect.left - MARGIN, rect.top - MARGIN, rect.right + MARGIN, rect.bottom + MARGIN, view)
+}
+
+/**
+ * The particles outline what the latest operation touched in a structure, as they outline focused
+ * code lines: the cell set, the two cells swapped, the chain entry found, the nodes of a search path.
+ * Flat pointers; a removed element is gone from the drawing and is not outlined.
+ */
+function structureSources(walkthrough: WalkthroughData, state: NonNullable<ReturnType<typeof liveState>>): FigureSource[] {
+  return visibleStructureViews(walkthrough.objects, state).flatMap((view) =>
+    touchedParts(view).map((part): FigureSource => ({
+      id: `touch:${view.id}:${lastKey(view.last)}:${part}`,
+      role: 'pointer',
+      box: () => partBox(view.id, part),
+      // The outline is as big as the part is on screen now: a resize or a zoom builds it again.
+      rebuildKey: (box) => `${Math.round(box.w / 4)}x${Math.round(box.h / 4)}`,
+      build: outline,
+    })),
+  )
+}
+
 /**
  * The figures a scene shows right now (the lead first); none once it was stopped or failed (a completed scene holds its last step). A shape and a
  * headline both lead the stage: the shape wins and the headline is not drawn while it is visible.
@@ -294,7 +326,7 @@ export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureS
       build: outline,
     }]
   })
-  const pointers = [...focus, ...diagramSources(walkthrough, state)]
+  const pointers = [...focus, ...diagramSources(walkthrough, state), ...structureSources(walkthrough, state)]
   const shape = sceneShape(walkthrough)
   if (shape) return [shapeSource(shape), ...pointers]
   return headline ? [headlineSource(headline.id, headline.text), ...pointers] : pointers

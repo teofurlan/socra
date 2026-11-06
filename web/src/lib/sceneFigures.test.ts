@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect } from 'vitest'
 import { sceneFigureSources, sceneHeadline } from './sceneFigures'
 import type { WalkthroughData } from '@/types/exam'
+import type { SceneObject } from '@/types/scene'
 
 const CODE = { id: 'src', primitive: 'code', params: { code: 'one\ntwo\nthree\nfour', language: 'python' }, hidden: false }
 
@@ -372,5 +373,106 @@ describe('diagram pointing', () => {
   it('does not point at a hidden diagram', () => {
     const scene = flowScene({ highlighted: ['a'], visible: false })
     expect(sceneFigureSources(scene)).toEqual([])
+  })
+})
+
+const STACK = { id: 'ds', primitive: 'structure', hidden: false, params: { kind: 'stack', items: [1], initial: { kind: 'stack', items: [1], last: null } } }
+const TABLE = { id: 'ds', primitive: 'structure', hidden: false, params: { kind: 'hashTable', items: [], initial: { kind: 'hashTable', buckets: [[]], last: null } } }
+
+function structureScene(object: SceneObject, state: Record<string, unknown>, over: Partial<WalkthroughData> = {}): WalkthroughData {
+  return {
+    title: 'Structure',
+    objects: [object],
+    total: 1,
+    step: { index: 1, total: 1, id: 's', say: 'x', state: { ds: { visible: true, ...state } } },
+    status: 'playing',
+    reason: null,
+    ...over,
+  }
+}
+
+/** A structure's SVG: a viewport and parts, each with a rect at a given screen rectangle. */
+function mountStructure(parts: Record<string, DOMRect>, view = rect(0, 0, 800, 600)) {
+  const viewport = document.createElement('div')
+  viewport.setAttribute('data-structure-viewport', '')
+  viewport.getBoundingClientRect = () => view
+  const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  root.setAttribute('data-structure-root', '')
+  root.dataset.sceneObject = 'ds'
+  for (const [id, box] of Object.entries(parts)) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.setAttribute('data-structure-part', id)
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+    r.getBoundingClientRect = () => box
+    g.appendChild(r)
+    root.appendChild(g)
+  }
+  viewport.appendChild(root)
+  document.body.appendChild(viewport)
+}
+
+describe('structure pointing', () => {
+  const push = { kind: 'stack', items: [1, 2], last: { op: 'push', index: 1, value: 2 } }
+
+  it('outlines the element the last operation touched as a pointer figure', () => {
+    const sources = sceneFigureSources(structureScene(STACK, push))
+    expect(sources.map((s) => [s.id.startsWith('touch:ds:'), s.id.endsWith(':cell:1'), s.role])).toEqual([[true, true, 'pointer']])
+    expect(sources.every((s) => !s.depth)).toBe(true)
+  })
+
+  it('points at nothing before an operation, after a pop, or for a hidden structure', () => {
+    expect(sceneFigureSources(structureScene(STACK, { kind: 'stack', items: [1], last: null }))).toEqual([])
+    expect(sceneFigureSources(structureScene(STACK, { kind: 'stack', items: [1], last: { op: 'pop', index: 1, value: 2 } }))).toEqual([])
+    expect(sceneFigureSources(structureScene(STACK, { ...push, visible: false }))).toEqual([])
+  })
+
+  it('keeps pointing after the scene completed, but not after it was stopped', () => {
+    expect(sceneFigureSources(structureScene(STACK, push, { status: 'ended', reason: 'completed' }))).toHaveLength(1)
+    expect(sceneFigureSources(structureScene(STACK, push, { status: 'ended', reason: 'stopped' }))).toEqual([])
+  })
+
+  it('boxes the part with a margin, clipped to the structure viewport', () => {
+    mountStructure({ 'cell:1': rect(100, 100, 60, 40) })
+    const [source] = sceneFigureSources(structureScene(STACK, push))
+    expect(source.box()).toEqual({ x: 97, y: 97, w: 66, h: 46 })
+    const points = source.build(source.box()!)
+    expect(points.length).toBeGreaterThan(20)
+    expect(points.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)).toBe(true)
+  })
+
+  it('has no box while the part is not on screen', () => {
+    const [source] = sceneFigureSources(structureScene(STACK, push))
+    expect(source.box()).toBeNull()
+    mountStructure({ 'cell:1': rect(100, 100, 60, 40) }, rect(0, 0, 50, 50))
+    expect(source.box()).toBeNull()
+  })
+
+  it('asks for a rebuild when the part changes size on screen', () => {
+    mountStructure({ 'cell:1': rect(100, 100, 60, 40) })
+    const [source] = sceneFigureSources(structureScene(STACK, push))
+    const small = source.rebuildKey!(source.box()!)
+    document.body.innerHTML = ''
+    mountStructure({ 'cell:1': rect(100, 100, 120, 80) })
+    expect(source.rebuildKey!(source.box()!)).not.toBe(small)
+  })
+
+  it('names the operation in the figure id so a new operation recruits the particles again', () => {
+    const next = { kind: 'stack', items: [1, 2, 3], last: { op: 'push', index: 2, value: 3 } }
+    const [a] = sceneFigureSources(structureScene(STACK, push))
+    const [b] = sceneFigureSources(structureScene(STACK, next))
+    expect(a.id).not.toBe(b.id)
+  })
+
+  it('outlines the chain entry of a hash table insert, and the bucket for a missing key', () => {
+    const insert = { kind: 'hashTable', buckets: [[5, 10]], hash: 'mod', last: { op: 'insert', key: 10, hash: 10, bucket: 0, position: 1, collision: true } }
+    expect(sceneFigureSources(structureScene(TABLE, insert)).map((s) => s.id.split(':').slice(-3).join(':'))).toEqual(['entry:0:1'])
+    const miss = { kind: 'hashTable', buckets: [[5]], hash: 'mod', last: { op: 'lookup', key: 7, hash: 7, bucket: 0, position: null, found: false, probes: 1 } }
+    expect(sceneFigureSources(structureScene(TABLE, miss)).map((s) => s.id.split(':').slice(-2).join(':'))).toEqual(['bucket:0'])
+  })
+
+  it('outlines at most four nodes of a tree path', () => {
+    const tree = { ...STACK, params: { kind: 'tree', items: [], initial: { kind: 'tree', nodes: [], last: null } } }
+    const state = { kind: 'tree', nodes: [], last: { op: 'lookup', key: 9, path: [1, 2, 3, 4, 5, 9], found: true } }
+    expect(sceneFigureSources(structureScene(tree, state))).toHaveLength(4)
   })
 })
