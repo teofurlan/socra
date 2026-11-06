@@ -330,7 +330,7 @@ def test_the_json_schema_describes_headline_params_and_set():
 
 
 # ---------------------------------------------------------------------------
-# 3D Shapes (Zdog primitive)
+# 3D Shapes (assembled by the particles)
 # ---------------------------------------------------------------------------
 
 def shape_scene() -> dict:
