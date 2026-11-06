@@ -1,7 +1,9 @@
 import type { ComponentType } from 'react'
 import { CodeObject } from '@/components/scene/CodeObject'
 import { DiagramObject } from '@/components/scene/DiagramObject'
+import { StructureObject } from '@/components/scene/StructureObject'
 import { visibleDiagramViews } from '@/lib/sceneDiagram'
+import { visibleStructureViews } from '@/lib/sceneStructure'
 import { visibleCodeViews } from '@/lib/scene'
 import type { ObjectState, SceneObject, SceneState } from '@/types/scene'
 
@@ -44,6 +46,10 @@ export const PRIMITIVE_RENDERERS: PrimitiveRenderers = {
   diagram: {
     visible: (object, state) => visibleDiagramViews([object], state ? { [object.id]: state } : null).length > 0,
     Component: DiagramObject,
+  },
+  structure: {
+    visible: (object, state) => visibleStructureViews([object], state ? { [object.id]: state } : null).length > 0,
+    Component: StructureObject,
   },
 }
 
