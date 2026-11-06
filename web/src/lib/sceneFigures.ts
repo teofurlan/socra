@@ -11,6 +11,8 @@ export interface FigureSource {
   /** Changes whenever what the figure shows changes, so its particles are recruited again. */
   id: string
   role: 'lead' | 'pointer'
+  /** Opt in to the 3D projection (see ``Figure.depth``); headlines and outlines stay flat. */
+  depth?: boolean
   /** Where it is on screen now, or ``null`` while it cannot be seen. */
   box: () => FigureBox | null
   build: (box: FigureBox) => FigurePoint[]
@@ -54,7 +56,12 @@ function outline(box: FigureBox): FigurePoint[] {
 
 /** Same family as the page text (--sans in index.css), so the headline matches the UI. */
 const HEADLINE_FONT = '"Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'
-const HEADLINE_POINTS = 900
+/**
+ * The most points a headline asks for: the largest figure budget a screen offers (0.7 of the
+ * 1800-particle ceiling, reached at 1920x1080 and up). Smaller screens recruit fewer, spread
+ * evenly over the points, and ParticleField enlarges the dots there (headlineDotScale).
+ */
+const HEADLINE_POINTS = 1260
 /** How much of the voice stage the headline may fill. */
 const HEADLINE_WIDTH = 0.9
 const HEADLINE_HEIGHT = 0.7

@@ -125,6 +125,16 @@ describe('App Integration', () => {
     expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-shape', 'wave')
   })
 
+  it.each(['particle-lines', 'particle-letters', 'particle-grid'])('loads with the retired look %s still stored and offers no look', async (look) => {
+    window.localStorage.setItem('socra_visualizer', look)
+    const user = userEvent.setup()
+    render(<App />)
+    expect(screen.getByTestId('particle-visualizer')).toBeInTheDocument()
+    await user.click(screen.getByTestId('settings-button'))
+    expect(screen.queryByRole('radiogroup', { name: 'Visualizer' })).toBeNull()
+    expect(screen.getByRole('radiogroup', { name: 'Shape' })).toBeInTheDocument()
+  })
+
   it('updates state, question, and transcript from WebSocket messages', async () => {
     render(<App />)
 

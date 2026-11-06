@@ -1,27 +1,22 @@
 import React, { useEffect, useRef } from 'react'
 import {
   ParticleField,
-  lettersFrom,
   particleCount,
   simulatedVoice,
   type FieldShape,
   type Figure,
   type FigurePoint,
   type FieldState,
-  type ParticleStyle,
 } from '@/lib/particleField'
 import type { FigureSource } from '@/lib/sceneFigures'
 
 export interface ParticleVisualizerProps {
   protocolState: FieldState
-  style: ParticleStyle
   /** Sphere or sound wave; switching it moves the particles without rebuilding them. */
   shape?: FieldShape
   colors: [string, string]
   getOutputVolume?: () => number
   getInputVolume?: () => number
-  /** Text the "letters" look is made of, usually the current question. */
-  letters?: string
   /** The page ground is light: paint particles instead of adding light. */
   lightBackground?: boolean
   /** While idle, keep the particles gathered in their shape, small and slow. */
@@ -40,12 +35,10 @@ const NO_FIGURES: FigureSource[] = []
  */
 export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
   protocolState,
-  style,
   shape = 'sphere',
   colors,
   getOutputVolume,
   getInputVolume,
-  letters,
   lightBackground = false,
   resting = false,
   figures = NO_FIGURES,
@@ -75,9 +68,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
 
     const field = new ParticleField({
       count: particleCount(window.innerWidth, window.innerHeight),
-      style,
       shape,
-      letters: lettersFrom(letters),
     })
     fieldRef.current = field
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -110,7 +101,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
           points = source.build(box)
           built.set(source.id, points)
         }
-        out.push({ id: source.id, points, box, role: source.role })
+        out.push({ id: source.id, points, box, role: source.role, depth: source.depth })
       }
       for (const id of built.keys()) if (!ids.has(id)) built.delete(id)
       return out
@@ -156,20 +147,16 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
       window.removeEventListener('resize', resize)
       fieldRef.current = null
     }
-    // The letters and the shape are applied by the effects below without rebuilding the field.
+    // The shape is applied by the effect below without rebuilding the field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [style])
-
-  useEffect(() => {
-    fieldRef.current?.setLetters(lettersFrom(letters))
-  }, [letters])
+  }, [])
 
   useEffect(() => {
     fieldRef.current?.setShape(shape)
   }, [shape])
 
   return (
-    <div ref={slotRef} data-testid="particle-visualizer" data-style={style} data-shape={shape} data-resting={resting} data-figures={figures.map((f) => f.id).join(' ')} className={className}>
+    <div ref={slotRef} data-testid="particle-visualizer" data-shape={shape} data-resting={resting} data-figures={figures.map((f) => f.id).join(' ')} className={className}>
       <canvas
         ref={canvasRef}
         data-layer="back"

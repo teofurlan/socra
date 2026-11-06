@@ -10,8 +10,6 @@ function renderMenu(overrides: Partial<SettingsMenuProps> = {}) {
     onSilenceChange: vi.fn(),
     paletteId: 'state',
     onPaletteChange: vi.fn(),
-    visualizer: 'particle-lines',
-    onVisualizerChange: vi.fn(),
     shape: 'sphere',
     onShapeChange: vi.fn(),
     themePref: 'system',
@@ -100,21 +98,16 @@ describe('SettingsMenu — theme', () => {
   })
 })
 
-describe('SettingsMenu — visualizer', () => {
-  it('offers the three particle looks, marking the current one', () => {
-    renderMenu({ visualizer: 'particle-grid' })
-    const group = screen.getByRole('radiogroup', { name: 'Visualizer' })
-    const options = Array.from(group.querySelectorAll('[role="radio"]'))
-    expect(options.map((o) => o.textContent)).toEqual(['Lines', 'Letters', 'Grid'])
-    expect(screen.getByTestId('visualizer-particle-grid')).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByTestId('visualizer-particle-lines')).toHaveAttribute('aria-checked', 'false')
-    expect(screen.queryByTestId('visualizer-orb')).toBeNull()
-  })
-
-  it('reports the chosen visualizer', () => {
-    const props = renderMenu()
-    fireEvent.click(screen.getByTestId('visualizer-particle-letters'))
-    expect(props.onVisualizerChange).toHaveBeenCalledWith('particle-letters')
+describe('SettingsMenu — no look choice', () => {
+  it('offers no visualizer look, keeping the shape and the particle colours', () => {
+    renderMenu()
+    expect(screen.queryByRole('radiogroup', { name: 'Visualizer' })).toBeNull()
+    expect(screen.queryByText('Visualizer')).toBeNull()
+    for (const id of ['particle-lines', 'particle-letters', 'particle-grid']) {
+      expect(screen.queryByTestId(`visualizer-${id}`)).toBeNull()
+    }
+    expect(screen.getByRole('radiogroup', { name: 'Shape' })).toBeInTheDocument()
+    expect(screen.getByText('Particle colors')).toBeInTheDocument()
   })
 })
 

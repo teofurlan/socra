@@ -8,7 +8,6 @@
  */
 
 export type FieldState = 'idle' | 'speaking' | 'listening' | 'thinking'
-export type ParticleStyle = 'lines' | 'letters' | 'grid'
 export type FieldShape = 'sphere' | 'wave'
 
 export interface FieldFrame {
@@ -32,7 +31,7 @@ export interface FieldFrame {
   figures?: Figure[]
 }
 
-/** A point of a figure, normalised to 0..1 of its box; ``a`` is the angle a line takes there. */
+/** A point of a figure, normalised to 0..1 of its box; ``a`` is the stroke angle there, unused by the dot look. */
 export interface FigurePoint {
   x: number
   y: number
@@ -58,6 +57,12 @@ export interface Figure {
   points: FigurePoint[]
   box: FigureBox
   role: 'lead' | 'pointer'
+  /**
+   * Opt-in 3D for solid figures (spheres, cylinders, ...): points get a depth through a
+   * thickness, the figure turns slowly and is drawn in perspective, nearer dots larger and
+   * brighter. Off by default: headlines and outlines are flat 2D, so text stays easy to read.
+   */
+  depth?: boolean
 }
 
 /** At most this share of the particles is recruited by figures, all together. */
@@ -85,10 +90,8 @@ export interface Particle {
   rate: number
   ph: number
   spd: number
-  letter: string
   // Render attributes, refreshed by step().
   depth: number
-  ang: number
   alpha: number
   size: number
   /** Where in the two-colour gradient it is painted, 0..1. */
@@ -99,7 +102,13 @@ export interface Particle {
   fg: number
   fx: number
   fy: number
-  fa: number | undefined
+  /**
+   * Depth through a depth figure's thickness, -1 (front face) .. 1 (back), fixed per recruit; and
+   * how near it reads this frame (0 back .. 1 front) with the perspective scale it is drawn at.
+   */
+  fz: number
+  near: number
+  persp: number
   /** Whether its current figure is a pointer, so it is painted over the content; set by step(). */
   pointer: boolean
   /** Last screen point of its figure, where it lets go from once the figure is gone. */
@@ -117,11 +126,29 @@ const STRANDS = [
   { amp: 0.46, f: 1.75, s: -2.6, ph: 4.4, thick: 0.6, alpha: 0.6, hue: 0.7 },
   { amp: 0.32, f: 3.6, s: 1.6, ph: 5.2, thick: 0.5, alpha: 0.5, hue: 0.5 },
 ]
-const FALLBACK_LETTERS = 'abcdefghijklmnopqrstuvwxyz0123456789?'.split('')
-const MONO = 'ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace'
 const BUCKETS = 10
-const CELL_W = 7.4
-const CELL_H = 12
+/** Figure depth (``Figure.depth``): the share of its particles on the front face, and the thickness as a share of the box height. */
+const FRONT_SHARE = 0.6
+const THICKNESS = 0.22
+/** The figure turns slowly so the depth reads: yaw and pitch amplitudes (rad) and speeds, and the perspective focal length as a share of the box width. */
+const YAW = 0.28
+const PITCH = 0.12
+const FOCAL = 1.4
+/** Under reduced motion the turn holds still at this small yaw, so the depth still reads. */
+const STILL_YAW = 0.16
+const GOLDEN = 0.6180339887498949
+/**
+ * Headline dot size follows density. Letters read filled when the dots are about one spacing
+ * wide, and spacing shrinks with the square root of the dot count, so a headline holding fewer
+ * than HEADLINE_FULL particles draws its dots sqrt(HEADLINE_FULL / count) times larger, at most
+ * HEADLINE_FILL_MAX. 1000 is about what a 1440x900 screen recruits (1007), so desktop keeps
+ * the normal size; a 360x640 phone recruits 280 and gets the 1.5x cap.
+ */
+const HEADLINE_FULL = 1000
+const HEADLINE_FILL_MAX = 1.5
+export function headlineDotScale(recruited: number): number {
+  return recruited <= 0 ? 1 : clamp(Math.sqrt(HEADLINE_FULL / recruited), 1, HEADLINE_FILL_MAX)
+}
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v)
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
@@ -142,12 +169,6 @@ export function fibonacciSphere(n: number): { x: number; y: number; z: number }[
   })
 }
 
-/** The characters the "letters" look draws: the question itself, or a plain alphabet. */
-export function lettersFrom(text: string | undefined): string[] {
-  const chars = Array.from(text ?? '').filter((c) => c.trim() !== '')
-  return chars.length > 0 ? chars : FALLBACK_LETTERS
-}
-
 /** Enough particles to fill the screen without drowning it, scaled by area. */
 export function particleCount(width: number, height: number): number {
   return Math.round(clamp((width * height) / 900, 400, 1800))
@@ -162,17 +183,13 @@ export function simulatedVoice(t: number): number {
 
 export interface ParticleFieldOptions {
   count: number
-  style: ParticleStyle
   shape?: FieldShape
-  letters?: string[]
   random?: () => number
 }
 
 export class ParticleField {
   particles: Particle[] = []
-  style: ParticleStyle
   shape: FieldShape
-  private letters: string[]
   private random: () => number
   private width = 1
   private height = 1
@@ -189,10 +206,8 @@ export class ParticleField {
   /** Additive light reads on a dark ground; a light ground needs plain paint. */
   private additive = 'lighter' as GlobalCompositeOperation
 
-  constructor({ count, style, shape = 'sphere', letters = FALLBACK_LETTERS, random = Math.random }: ParticleFieldOptions) {
-    this.style = style
+  constructor({ count, shape = 'sphere', random = Math.random }: ParticleFieldOptions) {
     this.shape = shape
-    this.letters = letters
     this.random = random
     this.setCount(count)
   }
@@ -240,9 +255,7 @@ export class ParticleField {
         rate: 0.8 + rnd() * 2.6,
         ph: rnd() * TAU,
         spd: 0.4 + rnd() * 0.6,
-        letter: this.letters[i % this.letters.length],
         depth: 0.5,
-        ang: 0,
         alpha: 0,
         size: 1,
         tint: hue,
@@ -250,7 +263,9 @@ export class ParticleField {
         fg: 0,
         fx: 0,
         fy: 0,
-        fa: undefined,
+        fz: -1,
+        near: 1,
+        persp: 1,
         pointer: false,
         gx: 0,
         gy: 0,
@@ -313,7 +328,10 @@ export class ParticleField {
           const p = this.particles[i]
           p.fx = q.x
           p.fy = q.y
-          p.fa = q.a
+          // Depth through a solid figure: golden-ratio spacing by rank, so the share on the front
+          // face is the same for any figure and every run.
+          const u = ((k + 0.5) * GOLDEN) % 1
+          p.fz = u < FRONT_SHARE ? -1 : -1 + (2 * (u - FRONT_SHARE)) / (1 - FRONT_SHARE)
         })
       }
       membersOf[n] = members
@@ -323,13 +341,6 @@ export class ParticleField {
     for (const p of this.particles) p.figure = -1
     next.forEach((r, n) => r.members.forEach((i) => (this.particles[i].figure = n)))
     this.recruits = next
-  }
-
-  setLetters(letters: string[]) {
-    this.letters = letters
-    this.particles.forEach((p, i) => {
-      p.letter = letters[i % letters.length]
-    })
   }
 
   /** The particles keep their places and glide into the new formation. */
@@ -397,7 +408,7 @@ export class ParticleField {
         p.y += wy * H * (1 - e)
       }
 
-      let fx: number, fy: number, fa: number, depth: number
+      let fx: number, fy: number, depth: number
       if (wave) {
         // Formation: a thick strand of a sound wave whose height follows the voice. It keeps a
         // calm resting swell, so the strands never collapse into one line between words.
@@ -406,11 +417,10 @@ export class ParticleField {
         const base = Math.max(0, 1 - p.u * p.u)
         const env = Math.pow(base, 1.6)
         const arg = p.u * c.f * Math.PI + t * c.s * motion * calm + c.ph
-        const sn = Math.sin(arg), cs = Math.cos(arg)
+        const sn = Math.sin(arg)
         const thick = R * (0.05 + 0.15 * vol * c.thick) * (0.35 + 0.65 * env)
         fx = cx + p.u * halfW
         fy = cy + sn * A * env + p.v * thick
-        fa = Math.atan2(A * (cs * c.f * Math.PI * env + sn * -3.2 * p.u * Math.pow(base, 0.6)), halfW)
         depth = c.alpha
       } else {
         // Formation: a rotating, tilted sphere whose surface ripples with the voice.
@@ -422,7 +432,6 @@ export class ParticleField {
         const s = 1 / (1 - z2 * 0.28)
         fx = cx + x1 * R * s
         fy = cy + y2 * R * s
-        fa = Math.atan2(x1 * st, z1)
         depth = clamp((z2 + 1) / 2, 0, 1)
       }
 
@@ -437,8 +446,30 @@ export class ParticleField {
       let gx = 0, gy = 0
       if (fig) {
         const breath = (1.2 + 2.6 * vol) * motion
-        gx = fig.box.x + p.fx * fig.box.w + Math.sin(t * 2.3 + p.ph) * breath
-        gy = fig.box.y + p.fy * fig.box.h + Math.cos(t * 1.9 + p.ph * 1.3) * breath
+        let ox = (p.fx - 0.5) * fig.box.w, oy = (p.fy - 0.5) * fig.box.h
+        if (fig.depth) {
+          // A solid figure is a slab: its points sit at their depth through the thickness and the
+          // whole figure turns a little, so the targets are the projected 3D points.
+          const yaw = f.reducedMotion ? STILL_YAW : YAW * Math.sin(t * 0.55)
+          const pitch = f.reducedMotion ? 0 : PITCH * Math.sin(t * 0.37 + 1)
+          const oz = p.fz * THICKNESS * fig.box.h
+          const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch)
+          const x1 = ox * cyw + oz * syw, z1 = -ox * syw + oz * cyw
+          const y2 = oy * cp - z1 * sp, z2 = oy * sp + z1 * cp
+          const focal = FOCAL * fig.box.w
+          p.persp = focal / Math.max(focal * 0.2, focal + z2)
+          // Nearness follows the turned depth, scaled by the farthest a point can reach, so the
+          // side turning toward the viewer grows and brightens without saturating.
+          const reach = Math.hypot(fig.box.w / 2, THICKNESS * fig.box.h)
+          p.near = clamp(0.5 - z2 / (2 * reach), 0, 1)
+          ox = x1 * p.persp
+          oy = y2 * p.persp
+        } else {
+          p.persp = 1
+          p.near = 1
+        }
+        gx = fig.box.x + fig.box.w / 2 + ox + Math.sin(t * 2.3 + p.ph) * breath
+        gy = fig.box.y + fig.box.h / 2 + oy + Math.cos(t * 1.9 + p.ph * 1.3) * breath
         p.gx = gx
         p.gy = gy
       } else if (p.fg > 0) {
@@ -462,19 +493,7 @@ export class ParticleField {
       p.x += p.vx * dt
       p.y += p.vy * dt
 
-      // Lines point along their drift or flight while loose, along the spin or the strand once
-      // gathered (blended on doubled angles, since a line has no head or tail).
       const speed = Math.hypot(p.vx, p.vy), w = clamp(speed / 140, 0, 1)
-      const va = Math.atan2(p.vy, p.vx)
-      let sx = lerp(Math.cos(2 * da), Math.cos(2 * va), w)
-      let sy = lerp(Math.sin(2 * da), Math.sin(2 * va), w)
-      sx = lerp(sx, Math.cos(2 * fa), e)
-      sy = lerp(sy, Math.sin(2 * fa), e)
-      // On a figure, lines follow the stroke they sit on, or lie flat when it has none.
-      const pa = p.fa ?? 0
-      sx = lerp(sx, Math.cos(2 * pa), ef)
-      sy = lerp(sy, Math.sin(2 * pa), ef)
-      p.ang = Math.atan2(sy, sx) / 2
 
       const twinkle = 0.7 + 0.3 * Math.sin(t * (0.8 + p.spd) + p.ph)
       p.depth = lerp(0.5, depth, e)
@@ -486,9 +505,14 @@ export class ParticleField {
       if (resting) p.tint *= 0.3
       if (ef > 0) {
         // A figure is drawn bright and even, so it reads as one shape; it swells with the voice.
-        p.depth = lerp(p.depth, 1, ef)
-        p.alpha = lerp(p.alpha, 0.62 + 0.3 * twinkle * (0.5 + vol), ef)
-        p.size = lerp(p.size, 5 + 5 * vol, ef)
+        // A depth figure's nearer dots are larger and brighter; the far side keeps a higher floor
+        // on a light ground, where it would wash out. A flat headline's dots grow where few
+        // particles are recruited (headlineDotScale).
+        const fill = fig && fig.role === 'lead' ? headlineDotScale(this.recruits[p.figure]?.members.length ?? 0) : 1
+        const far = this.additive === 'lighter' ? 0.4 : 0.7
+        p.depth = lerp(p.depth, p.near, ef)
+        p.alpha = lerp(p.alpha, (0.62 + 0.3 * twinkle * (0.5 + vol)) * (far + (1 - far) * p.near), ef)
+        p.size = lerp(p.size, (5 + 5 * vol) * (0.6 + 0.9 * p.near) * p.persp * fill, ef)
       }
     }
   }
@@ -512,46 +536,15 @@ export class ParticleField {
       colors.push(`rgb(${lerp(a[0], c[0], m) | 0},${lerp(a[1], c[1], m) | 0},${lerp(a[2], c[2], m) | 0})`)
     }
 
-    if (this.style === 'lines') {
-      ctx.globalCompositeOperation = this.additive
-      ctx.lineCap = 'round'
-      for (const p of this.particles) {
-        if (!shown(p)) continue
-        const hx = (Math.cos(p.ang) * p.size) / 2, hy = (Math.sin(p.ang) * p.size) / 2
-        ctx.globalAlpha = p.alpha
-        ctx.strokeStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]
-        ctx.lineWidth = 1 + 0.5 * p.depth
-        ctx.beginPath()
-        ctx.moveTo(p.x - hx, p.y - hy)
-        ctx.lineTo(p.x + hx, p.y + hy)
-        ctx.stroke()
-      }
-    } else if (this.style === 'grid') {
-      // Letters snap to a terminal grid, like text art.
-      ctx.font = `400 12px ${MONO}`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      for (const p of this.particles) {
-        if (!shown(p)) continue
-        ctx.globalAlpha = p.alpha
-        ctx.fillStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]
-        ctx.fillText(p.letter, Math.round(p.x / CELL_W) * CELL_W, Math.round(p.y / CELL_H) * CELL_H)
-      }
-    } else {
-      // Free letters float where the particle is and grow with it, nearer ones larger.
-      ctx.globalCompositeOperation = this.additive
-      ctx.font = `400 12px ${MONO}`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      for (const p of this.particles) {
-        if (!shown(p)) continue
-        const s = clamp(p.size / 8, 0.6, 2) * dpr
-        ctx.globalAlpha = p.alpha
-        ctx.fillStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]
-        ctx.setTransform(s, 0, 0, s, p.x * dpr, p.y * dpr)
-        ctx.fillText(p.letter, 0, 0)
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // Round dots, nearer and brighter ones larger; light adds up on a dark ground only.
+    ctx.globalCompositeOperation = this.additive
+    for (const p of this.particles) {
+      if (!shown(p)) continue
+      ctx.globalAlpha = p.alpha
+      ctx.fillStyle = colors[Math.min(BUCKETS - 1, (p.tint * BUCKETS) | 0)]
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 0.6 + p.size * 0.16, 0, TAU)
+      ctx.fill()
     }
     ctx.globalAlpha = 1
     ctx.globalCompositeOperation = 'source-over'

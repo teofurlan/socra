@@ -30,7 +30,7 @@ Speaking and listening replace typing for a coding agent, on the user's own mach
 - Windows is the primary environment.
 - UI copy is in English.
 - States the page must always make legible: idle, listening, thinking, speaking, plus connection state.
-- Visualizer looks: Lines (default), Letters, and Letters on a grid. The ElevenLabs shader orb is retired.
+- Visualizer: one look, round dots placed freely in 3D; headlines gain extruded depth. There is no look setting (Lines, Letters and Grid are retired), only the Shape (Sphere, Sound wave) and particle colours. The ElevenLabs shader orb is retired.
 - Exam mode must keep working unchanged in behavior while its look changes.
 
 ## Brand Commitments

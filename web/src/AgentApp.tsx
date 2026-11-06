@@ -32,7 +32,6 @@ import {
   getStoredSilenceTimeout,
   getStoredTurnMode,
   getStoredShape,
-  getStoredVisualizer,
   setStoredAgentFolder,
   setStoredAgentSelection,
   setStoredMicDeviceId,
@@ -40,9 +39,8 @@ import {
   setStoredSilenceTimeout,
   setStoredTurnMode,
   setStoredShape,
-  setStoredVisualizer,
 } from '@/lib/storage'
-import type { ShapeId, VisualizerId } from '@/components/visualizers'
+import type { ShapeId } from '@/components/visualizers'
 import type { ProtocolState, TurnMode } from '@/types/exam'
 import type { AgentMode, AgentSelection } from '@/types/agent'
 
@@ -70,7 +68,6 @@ export const AgentApp: React.FC = () => {
   const [silenceTimeoutMs, setSilenceTimeoutMs] = useState<number>(getStoredSilenceTimeout)
   const [paletteId, setPaletteId] = useState<string>(getStoredOrbPalette)
   // Shared with the exam page: one preference for the whole app.
-  const [visualizer, setVisualizer] = useState<VisualizerId>(getStoredVisualizer)
   const [shape, setShape] = useState<ShapeId>(getStoredShape)
   const [micDeviceId, setMicDeviceId] = useState<string>(getStoredMicDeviceId)
   // The timeline entry whose code the user closed; newer code opens the pane again.
@@ -217,8 +214,6 @@ export const AgentApp: React.FC = () => {
   } as const
   const lastEntry = state.timeline.at(-1)
   const setupError = lastEntry?.kind === 'error' ? lastEntry.text : null
-  // The letter looks spell the latest reply, or the latest turn before any reply.
-  const lettersText = [...state.timeline].reverse().find((entry) => entry.kind === 'reply' || entry.kind === 'user')?.text
 
   // The newest reply that carries code feeds the code pane.
   const code = useMemo(() => {
@@ -252,11 +247,6 @@ export const AgentApp: React.FC = () => {
       onPaletteChange={(id) => {
         setPaletteId(id)
         setStoredOrbPalette(id)
-      }}
-      visualizer={visualizer}
-      onVisualizerChange={(id) => {
-        setVisualizer(id)
-        setStoredVisualizer(id)
       }}
       shape={shape}
       onShapeChange={(id) => {
@@ -322,9 +312,7 @@ export const AgentApp: React.FC = () => {
                 getOutputVolume={socket.getOutputVolume}
                 getInputVolume={getInputVolume}
                 paletteId={paletteId}
-                visualizer={visualizer}
                 shape={shape}
-                questionText={lettersText}
                 theme={theme}
                 figures={sceneFigures}
               />
