@@ -334,6 +334,30 @@ def test_bad_initial_contents_are_rejected(params, fragment):
         initial_state(params)
 
 
+@pytest.mark.parametrize("op", ["swap", "compare"])
+def test_swap_and_compare_need_two_different_indexes_at_parse_time(op):
+    assert parse_args({"kind": "array"}, op, {"indexes": [1, 1]})[1] == [("indexes", "indexes must be two different whole numbers")]
+    assert parse_args({"kind": "array"}, op, {"indexes": [1, 2]})[1] == []
+
+
+def test_compare_of_one_cell_with_itself_is_rejected_by_the_reducer_too():
+    with pytest.raises(StructureError, match="two different indexes"):
+        reduce(make("array", [5, 3]), "compare", {"indexes": [1, 1]})
+
+
+@pytest.mark.parametrize(("key", "bucket"), [(-1, 4), (-5, 0), (-6, 4), (-9999, 1), (0, 0)])
+def test_mod_bucket_is_always_in_range_and_follows_floor_modulo(key, bucket):
+    state = reduce(make("hashTable", buckets=5, hash="mod"), "insert", {"key": key})
+    assert state["last"]["bucket"] == bucket == key % 5
+    assert key in state["buckets"][bucket]
+
+
+@pytest.mark.parametrize("items", [["a", 1], [1, "a"], ["a", "b"]])
+def test_tree_rejects_text_keys_mixed_or_not_with_one_clear_error(items):
+    with pytest.raises(StructureError, match="tree keys must be whole numbers"):
+        initial_state({"kind": "tree", "items": items})
+
+
 def test_parse_args_reports_each_problem_with_its_field():
     assert parse_args({"kind": "array"}, "set", {"index": "a", "value": 1}) == ({}, [("index", "index must be a whole number")])
     args, problems = parse_args({"kind": "array"}, "swap", {"indexes": [1]})

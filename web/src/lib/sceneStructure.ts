@@ -127,7 +127,8 @@ export function lastKey(last: LastOp | null): string {
   return last ? JSON.stringify(last) : ''
 }
 
-const show = (value: Item | undefined) => (typeof value === 'string' ? `"${value}"` : String(value))
+/** An item as text; `?` for a cell the array does not have, so a stray index never prints "undefined". */
+const show = (value: Item | undefined) => (value === undefined ? '?' : typeof value === 'string' ? `"${value}"` : String(value))
 
 /** How the hash turned a key into a bucket, in words. */
 export function hashLine(view: StructureView, last: LastOp): string {

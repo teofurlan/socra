@@ -251,8 +251,8 @@ class StructureTest(unittest.TestCase):
                     for theme in ("dark", "light"):
                         for width, height in SIZES:
                             context = browser.new_context(viewport={"width": width, "height": height})
-                            context.add_init_script(SOCKET + f"localStorage.setItem('socra_theme', '{theme}');")
                             try:
+                                context.add_init_script(SOCKET + f"localStorage.setItem('socra_theme', '{theme}');")
                                 for kind in KINDS:
                                     with self.subTest(mode=mode, theme=theme, size=(width, height), kind=kind):
                                         page = context.new_page()
@@ -317,9 +317,9 @@ class StructureTest(unittest.TestCase):
                 for kind, spec in KINDS.items():
                     with self.subTest(kind=kind):
                         context = browser.new_context(viewport={"width": 360, "height": 640})
-                        context.add_init_script(SOCKET)
-                        page = context.new_page()
                         try:
+                            context.add_init_script(SOCKET)
+                            page = context.new_page()
                             self.prepare(page, "agent")
                             self.send(page, scene_for(kind))
                             # Before any step speaks, the structure is drawn from the initial state in its params.
@@ -344,9 +344,9 @@ class StructureTest(unittest.TestCase):
                 for kind in ("hashTable", "tree", "stack"):
                     with self.subTest(kind=kind):
                         context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
-                        context.add_init_script(SOCKET)
-                        page = context.new_page()
                         try:
+                            context.add_init_script(SOCKET)
+                            page = context.new_page()
                             spec = KINDS[kind]
                             self.prepare(page, "agent")
                             self.send(page, scene_for(kind))
@@ -380,9 +380,9 @@ class StructureTest(unittest.TestCase):
         with sync_playwright() as playwright:
             with playwright.chromium.launch(channel="chrome", args=["--autoplay-policy=no-user-gesture-required"]) as browser:
                 context = browser.new_context(viewport={"width": 360, "height": 640})
-                context.add_init_script(SOCKET)
-                page = context.new_page()
                 try:
+                    context.add_init_script(SOCKET)
+                    page = context.new_page()
                     self.prepare(page, "agent")
                     self.send(page, scene)
                     self.play(page, step(1, "A long chain.", state, 1), wav)

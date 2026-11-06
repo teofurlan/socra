@@ -185,6 +185,24 @@ def test_impossible_operations_are_rejected_with_the_actions_path(kind, params, 
     assert fragment in errors[0]["message"] and "step 's2'" in errors[0]["message"]
 
 
+def test_array_set_replaces_a_cell_per_step_and_going_back_restores_it():
+    raw = scene_with("array", {"items": [4, 7, 1]}, [("s1", [{"action": "set", "params": {"index": 1, "value": 9}}])])
+    scene, errors = parse_scene(raw)
+    assert errors == []
+    assert ds_state(scene, 0)["items"] == [4, 7, 1]
+    assert ds_state(scene, 1)["items"] == [4, 9, 1]
+    assert ds_state(scene, 1)["last"] == {"op": "set", "index": 1, "value": 9, "previous": 7}
+    assert ds_state(scene, 0)["items"] == [4, 7, 1]
+
+
+def test_array_set_outside_the_array_is_rejected_with_the_actions_path():
+    raw = scene_with("array", {"items": [4, 7]}, [("s2", [{"action": "highlight", "params": {"indexes": [0]}}, {"action": "set", "params": {"index": 2, "value": 9}}])])
+    scene, errors = parse_scene(raw)
+    assert scene is None
+    assert paths(errors) == ["cues[0].do[1]"]
+    assert "index 2 is outside the array" in errors[0]["message"] and "step 's2'" in errors[0]["message"]
+
+
 def test_looking_up_a_missing_key_is_a_result_not_an_error():
     for kind, items, key in (("hashTable", [1], 6), ("tree", [5], 9)):
         raw = scene_with(kind, {"items": items}, [("s0", [{"action": "lookup", "params": {"key": key}}])])

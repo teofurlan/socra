@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StructureView, TreeNode } from '@/lib/sceneStructure'
-import { MIN_SCALE, cellWidth, fitScale, hashLayout, layoutOf, rowLayout, stackLayout, treeLayout } from '@/lib/structureLayout'
+import { EMPTY_SLOT, MIN_SCALE, PAD, cellWidth, fitScale, hashLayout, layoutOf, rowLayout, stackLayout, treeLayout } from '@/lib/structureLayout'
 
 const node = (key: number, parent: number | null, depth: number, slot: number): TreeNode => ({ key, parent, depth, slot })
 
@@ -65,6 +65,13 @@ describe('treeLayout', () => {
     expect(at[8].y).toBeLessThan(at[3].y)
     expect(at[3].y).toBe(at[10].y)
     expect(layout.edges.map((e) => `${e.from}>${e.to}`).sort()).toEqual(['8>10', '8>3'])
+  })
+
+  it('keeps an empty tree wide enough for its empty slot, so the drawing does not clip it', () => {
+    const layout = treeLayout([])
+    expect(layout.width).toBeGreaterThanOrEqual(PAD * 2 + EMPTY_SLOT.w)
+    expect(layout.height).toBeGreaterThanOrEqual(PAD * 2 + EMPTY_SLOT.h)
+    expect(Number.isFinite(layout.width) && Number.isFinite(layout.height)).toBe(true)
   })
 
   it('draws no edge for a node whose parent is unknown', () => {

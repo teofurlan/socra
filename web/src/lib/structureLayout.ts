@@ -130,6 +130,8 @@ export interface TreeLayout extends Drawing {
   edges: { from: number; to: number; x1: number; y1: number; x2: number; y2: number }[]
 }
 
+/** The "empty" slot drawn for a tree with no node. */
+export const EMPTY_SLOT = { w: 70, h: 36 }
 const LEVEL_H = 58
 const NODE_H = 36
 
@@ -151,8 +153,8 @@ export function treeLayout(nodes: TreeNode[]): TreeLayout {
   return {
     nodes: placed,
     edges,
-    width: PAD * 2 + Math.max(1, nodes.length) * step - 6,
-    height: PAD * 2 + depth * LEVEL_H + NODE_H,
+    width: nodes.length === 0 ? PAD * 2 + EMPTY_SLOT.w : PAD * 2 + nodes.length * step - 6,
+    height: PAD * 2 + depth * LEVEL_H + Math.max(NODE_H, nodes.length === 0 ? EMPTY_SLOT.h : 0),
   }
 }
 

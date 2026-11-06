@@ -23,6 +23,21 @@ const caption = () => document.querySelector('[data-structure-caption]')!.textCo
 
 afterEach(() => vi.unstubAllGlobals())
 
+/** A ResizeObserver that reports one fixed width when it starts watching. */
+function observerOf(width: number) {
+  return class {
+    callback: ResizeObserverCallback
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback
+    }
+    observe(target: Element) {
+      this.callback([{ target, contentRect: { width, height: 480 } } as ResizeObserverEntry], this as unknown as ResizeObserver)
+    }
+    disconnect() {}
+    unobserve() {}
+  }
+}
+
 function reduceMotion(reduce: boolean) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} }))
 }
@@ -84,6 +99,45 @@ describe('array', () => {
     draw(structure('array', { items: Array.from({ length: 10 }, (_, i) => i) }), null)
     const ys = new Set([...document.querySelectorAll('[data-structure-part] rect')].map((r) => r.getAttribute('y')))
     expect(ys.size).toBeGreaterThan(1)
+    expect(parseFloat(root().getAttribute('width')!)).toBeLessThanOrEqual(200)
+  })
+})
+
+describe('queue wrapping', () => {
+  it('wraps a long queue into rows in a narrow panel and keeps both end labels', () => {
+    vi.stubGlobal('ResizeObserver', observerOf(200))
+    draw(structure('queue', { items: Array.from({ length: 10 }, (_, i) => i) }), null)
+    const ys = new Set([...document.querySelectorAll('[data-structure-part] rect')].map((r) => r.getAttribute('y')))
+    expect(ys.size).toBeGreaterThan(1)
+    expect(parseFloat(root().getAttribute('width')!)).toBeLessThanOrEqual(200)
+    expect(parts()).toHaveLength(10)
+    expect(screen.getByText('front')).toBeInTheDocument()
+    expect(screen.getByText('back')).toBeInTheDocument()
+  })
+})
+
+describe('measuring the viewport', () => {
+  it('starts observing the viewport that appears after the structure first drew nothing', () => {
+    const observed: Element[] = []
+    class Watch {
+      callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+      }
+      observe(target: Element) {
+        observed.push(target)
+        this.callback([{ target, contentRect: { width: 200, height: 480 } } as ResizeObserverEntry], this as unknown as ResizeObserver)
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    vi.stubGlobal('ResizeObserver', Watch)
+    const array = structure('array', { items: Array.from({ length: 10 }, (_, i) => i) })
+    const { again } = draw({ ...array, params: { kind: 'array' } }, null) // no initial state: nothing drawn yet
+    expect(observed).toHaveLength(0)
+    again({ items: Array.from({ length: 10 }, (_, i) => i), last: null })
+    expect(observed).toHaveLength(1)
+    expect(observed[0]).toBe(document.querySelector('[data-structure-viewport]'))
     expect(parseFloat(root().getAttribute('width')!)).toBeLessThanOrEqual(200)
   })
 })

@@ -281,9 +281,11 @@ function structureRoot(objectId: string): Element | null {
 }
 
 /** A part of a structure (a cell, a chain entry, a tree node, a bucket row) on screen, padded and clipped to its viewport. */
-function partBox(objectId: string, part: string): FigureBox | null {
+export function partBox(objectId: string, part: string): FigureBox | null {
   const root = structureRoot(objectId)
-  const rect = root?.querySelector(`[data-structure-part="${part}"] rect`)?.getBoundingClientRect()
+  // Compared as text, not put in a selector: an id with quotes or brackets must neither throw nor match another part.
+  const found = [...(root?.querySelectorAll('[data-structure-part]') ?? [])].find((el) => el.getAttribute('data-structure-part') === part)
+  const rect = found?.querySelector('rect')?.getBoundingClientRect()
   if (!root || !rect) return null
   const view = (root.closest('[data-structure-viewport]') ?? root).getBoundingClientRect()
   return clip(rect.left - MARGIN, rect.top - MARGIN, rect.right + MARGIN, rect.bottom + MARGIN, view)

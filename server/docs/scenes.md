@@ -112,7 +112,7 @@ picture can never contradict the logic being explained. Each kind has one pure, 
 
 | Kind | Operations (`params`) | `last` carries |
 | --- | --- | --- |
-| `array` | `set` `{index, value}`; `swap` `{indexes: [i, j]}`; `compare` `{indexes: [i, j]}`; `highlight` `{indexes: [...]}` | the indexes, the replaced value, the order of a compare (`less`, `equal`, `greater`) |
+| `array` | `set` `{index, value}`; `swap` `{indexes: [i, j]}`; `compare` `{indexes: [i, j]}` (`i` and `j` must differ); `highlight` `{indexes: [...]}` | the indexes, the replaced value, the order of a compare (`less`, `equal`, `greater`) |
 | `stack` | `push` `{value}`; `pop`; `peek` | the index and the value pushed, popped or seen |
 | `queue` | `enqueue` `{value}`; `dequeue`; `peek` | the index and the value (front is index 0) |
 | `hashTable` | `insert` `{key}`; `lookup` `{key}`; `remove` `{key}` | the hash, the `bucket`, the `position` in its chain, `collision` (insert), `found` and `probes` (lookup) |

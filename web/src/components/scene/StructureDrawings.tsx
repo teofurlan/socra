@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { lastKey, pathKeys, touchedParts, type Item, type StructureView } from '@/lib/sceneStructure'
-import { FONT, PAD, SMALL_FONT, slotRect, type HashLayout, type Rect, type RowLayout, type StackLayout, type TreeLayout } from '@/lib/structureLayout'
+import { EMPTY_SLOT, FONT, PAD, SMALL_FONT, slotRect, type HashLayout, type Rect, type RowLayout, type StackLayout, type TreeLayout } from '@/lib/structureLayout'
 
 /** One hop of a lookup or a tree walk lights its element this long after the one before, in seconds. */
 const PROBE_S = 0.35
@@ -252,7 +252,7 @@ export function TreeDrawing({ view, layout, reduced }: DrawProps<TreeLayout>) {
             </g>
           </Part>
         ))}
-        {layout.nodes.length === 0 && <Empty r={{ x: PAD, y: PAD, w: 70, h: 36 }} label="empty" />}
+        {layout.nodes.length === 0 && <Empty r={{ x: PAD, y: PAD, ...EMPTY_SLOT }} label="empty" />}
       </>
   )
 }

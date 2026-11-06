@@ -67,6 +67,12 @@ describe('captionOf', () => {
     expect(captionOf(view('array', { items: [5, 3], last: { op: 'highlight', indexes: [0, 1] } }))).toBe('highlight [0] [1]')
   })
 
+  it('does not print "undefined" for a compare of indexes outside the array', () => {
+    const caption = captionOf(view('array', { items: [5, 3], last: { op: 'compare', indexes: [0, 7], result: 'greater' } }))
+    expect(caption).toBe('compare [0] > [7]: 5 > ?')
+    expect(captionOf(view('array', { items: [], last: { op: 'compare', indexes: [1, 2], result: 'less' } }))).not.toContain('undefined')
+  })
+
   it('words stack and queue operations', () => {
     expect(captionOf(view('stack', { items: [1], last: { op: 'push', index: 0, value: 'a' } }))).toBe('push "a"')
     expect(captionOf(view('stack', { items: [], last: { op: 'pop', index: 0, value: 7 } }))).toBe('pop → 7')

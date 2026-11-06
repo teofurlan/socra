@@ -177,6 +177,8 @@ def _reduce_array(state: State, op: str, args: Args) -> State:
         items[i], items[j] = items[j], items[i]
         return state | {"items": items, "last": {"op": "swap", "indexes": indexes}}
     if op == "compare":
+        if indexes[0] == indexes[1]:
+            raise StructureError("compare needs two different indexes")
         return state | {"last": {"op": "compare", "indexes": indexes, "result": _order(items[indexes[0]], items[indexes[1]])}}
     return state | {"last": {"op": "highlight", "indexes": indexes}}  # highlight
 
@@ -376,6 +378,8 @@ def parse_args(params: dict, op: str, raw: Any) -> tuple[Args, Problems]:
         valid = isinstance(indexes, list) and all(_is_int(i) for i in indexes)
         if exact and not (valid and len(indexes) == 2):
             problems.append(("indexes", "indexes must be two whole numbers"))
+        elif exact and indexes[0] == indexes[1]:
+            problems.append(("indexes", "indexes must be two different whole numbers"))
         elif not exact and not (valid and 1 <= len(indexes) <= MAX_ITEMS["array"]):
             problems.append(("indexes", f"indexes must list 1 to {MAX_ITEMS['array']} whole numbers"))
         elif len(set(indexes)) != len(indexes) and not exact:
