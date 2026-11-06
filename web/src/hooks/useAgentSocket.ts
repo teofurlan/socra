@@ -6,6 +6,7 @@ import type { WalkthroughAction } from '@/types/exam'
 import { EMPTY_VOICE_CATALOG, type VoiceCatalog } from '@/types/voice'
 import { agentReducer, initialAgentState } from '@/state/agentReducer'
 import { getStoredVoice, setStoredVoice } from '@/lib/storage'
+import { sceneMetrics } from '@/lib/sceneMetrics'
 import { useExamAudio } from './useExamAudio'
 
 const NOTICE_MS = 4000
@@ -135,7 +136,10 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
         const text = step ? undefined : message.text
         const clipId = text ? (clipIdRef.current += 1) : 0
         const onStart = step
-          ? () => dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
+          ? () => {
+            sceneMetrics.audioStart(step.index)
+            dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
+          }
           : text
             ? () => dispatch({ type: 'speech_started', id: clipId, text })
             : undefined
@@ -152,6 +156,7 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
         if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
         noticeTimerRef.current = setTimeout(() => dispatch({ type: 'clear_notice' }), NOTICE_MS)
       }
+      if (message.type === 'walkthrough') sceneMetrics.present()
       dispatch(message)
     }
 

@@ -14,7 +14,9 @@ import { PermissionPromptCard } from '@/components/PermissionPromptCard'
 import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
-import { sceneKey, visibleCodeViews } from '@/lib/scene'
+import { sceneKey } from '@/lib/scene'
+import { hasScenePanel } from '@/components/scene/registry'
+import { SceneStack } from '@/components/scene/SceneStack'
 import { sceneFigureSources, sceneHeadline } from '@/lib/sceneFigures'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -228,8 +230,7 @@ export const AgentApp: React.FC = () => {
     return null
   }, [state.timeline])
   // A scene owns the code pane while it is on screen; otherwise the newest reply code does.
-  const sceneViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
-  const sceneCodeKey = walkthrough && sceneViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
+  const sceneCodeKey = walkthrough && hasScenePanel(walkthrough.objects, walkthrough.step?.state ?? null) ? sceneKey(walkthrough.title, walkthrough.objects) : null
   const showCode = walkthrough
     ? sceneCodeKey !== null && sceneCodeKey !== closedSceneKey
     : code !== null && code.id !== closedCodeId
@@ -390,20 +391,7 @@ export const AgentApp: React.FC = () => {
         <div className="shell-seam" aria-hidden="true" />
         <div className="code-slot" aria-hidden={!showCode} inert={!showCode}>
           {walkthrough ? (
-            <div className="scene-stack">
-              {sceneViews.map((view) => (
-                <CodePane
-                  key={view.id}
-                  code={view.code}
-                  name={view.language || 'scene'}
-                  lang={view.language}
-                  focus={view.focus}
-                  sceneObject={view.id}
-                  label={sceneViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
-                  onClose={() => setClosedSceneKey(sceneCodeKey)}
-                />
-              ))}
-            </div>
+            <SceneStack walkthrough={walkthrough} codeName="scene" onClose={() => setClosedSceneKey(sceneCodeKey)} />
           ) : code && <CodePane code={code.text} name={code.name} lang={code.lang} label="Code" onClose={() => setClosedCodeId(code.id)} />}
         </div>
       </div>
