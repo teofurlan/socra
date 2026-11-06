@@ -150,6 +150,8 @@ const STRANDS = [
   { amp: 0.46, f: 1.75, s: -2.6, ph: 4.4, thick: 0.6, alpha: 0.6, hue: 0.7 },
   { amp: 0.32, f: 3.6, s: 1.6, ph: 5.2, thick: 0.5, alpha: 0.5, hue: 0.5 },
 ]
+/** The loose flow wraps over this span (-0.04..1.04 of the screen); the flow field repeats with it. */
+const FLOW = (TAU / 1.08)
 const BUCKETS = 10
 /** Figure depth (``Figure.depth``): the share of its particles on the front face, and the thickness as a share of the box height. */
 const FRONT_SHARE = 0.6
@@ -431,7 +433,9 @@ export class ParticleField {
 
     for (const p of this.particles) {
       // Loose home: a slow flow field over the whole screen, wrapping at the edges.
-      const da = p.ph + Math.sin(t * 0.11 + p.hy * 3.3) * 1.6 + Math.cos(t * 0.07 + p.hx * 2.7)
+      // The flow repeats over the wrap (period WRAP), so a particle leaving one edge meets the same
+      // direction coming in at the other and is not wrapped back at once, frame after frame.
+      const da = p.ph + Math.sin(t * 0.11 + p.hy * FLOW) * 1.6 + Math.cos(t * 0.07 + p.hx * FLOW)
       p.hx += Math.cos(da) * 0.006 * dt * p.spd * motion * (H / W)
       p.hy += Math.sin(da) * 0.006 * dt * p.spd * motion
       let wx = 0, wy = 0
@@ -440,9 +444,13 @@ export class ParticleField {
 
       p.g += (G - p.g) * (1 - Math.exp(-dt * p.rate))
       const e = smooth(clamp(p.g, 0, 1))
+      // The loose home is only part of the target while a particle is loose: weighted by what is
+      // left of it once the formation and then the figure have taken their share (see tx below).
+      // Moving the particle by more than that flings a recruit, which then flies back to its figure.
       if (wx || wy) {
-        p.x += wx * W * (1 - e)
-        p.y += wy * H * (1 - e)
+        const loose = (1 - e) * (1 - smooth(clamp(p.fg, 0, 1)))
+        p.x += wx * W * loose
+        p.y += wy * H * loose
       }
 
       let fx: number, fy: number, depth: number

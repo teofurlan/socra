@@ -705,4 +705,44 @@ describe('ParticleField figures', () => {
     }
     expect(figureError(field, GRID)).toBeLessThan(12)
   })
+
+  describe('a held figure (#109, S17)', () => {
+    // The loose flow wraps at the screen edges; the seam must not fling particles, and above all
+    // not particles that settled on the figure.
+    const SQUARE = { x: 250, y: 150, w: 300, h: 300 }
+    const points = solidFigurePoints('torus', false, 1260)
+    const figure: Figure = { id: 'shape:torus', points, box: SQUARE, role: 'lead', depth: true, pose: { rx: 0, ry: 0, rz: 0 } }
+
+    it('keeps every recruit on its figure, and the loose ones from blinking across the screen', () => {
+      const field = new ParticleField({ count: 1000, random: seeded(7) })
+      field.resize(BASE.width, BASE.height)
+      let time = 0
+      const step = () => {
+        time += BASE.dt
+        field.step({ ...BASE, state: 'idle', volume: 0, time, figures: [figure] })
+      }
+      for (let i = 0; i < 6 * 60; i++) step()
+      const members = field.particles.map((p) => p.figure)
+      expect(members.filter((m) => m >= 0).length).toBeGreaterThan(500)
+
+      const jumps = new Array(field.particles.length).fill(0)
+      let farthest = 0
+      let before = field.particles.map((p) => [p.x, p.y])
+      for (let i = 0; i < 40 * 60; i++) {
+        step()
+        field.particles.forEach((p, k) => {
+          // A particle that moves a fifth of the screen in one frame has been flung, not driven.
+          if (Math.hypot(p.x - before[k][0], p.y - before[k][1]) > BASE.width / 5) jumps[k]++
+          if (p.figure >= 0) farthest = Math.max(farthest, Math.hypot(p.x - p.gx, p.y - p.gy))
+        })
+        before = field.particles.map((p) => [p.x, p.y])
+      }
+      // Membership is decided once and kept.
+      expect(field.particles.map((p) => p.figure)).toEqual(members)
+      // Settled recruits stay at their points (breathing and turning move them by a few pixels).
+      expect(farthest).toBeLessThan(40)
+      // A loose particle wraps a few times in that time at most (it was every frame at the seam).
+      expect(Math.max(...jumps)).toBeLessThanOrEqual(5)
+    })
+  })
 })

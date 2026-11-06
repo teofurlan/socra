@@ -401,6 +401,14 @@ class ParticlePresentationTest(unittest.TestCase):
         page.screenshot(path=str(SHOTS / f"{tag}-5-ended.png"))
         self.assertIn("shape:body:cube", held["figures"], f"{tag}: the shape vanished when the scene ended")
         self.assertGreater(held["lit"], 400, f"{tag}: the held shape is barely lit {held}")
+        # Held still, the picture is steady: nothing flung back and forth between the shape and
+        # where it came from, so the lit count and the box it spans hardly change between frames.
+        for _ in range(3):
+            self.settle(page, 300)
+            later = page.evaluate(SHAPE_PIXELS)
+            self.assertLess(abs(later["lit"] - held["lit"]), held["lit"] * 0.15, f"{tag}: lit pixels flicker {held['lit']} -> {later['lit']}")
+            self.assertLess(abs(later["w"] - held["w"]), 0.08, f"{tag}: shape width jumps {held['w']} -> {later['w']}")
+            self.assertLess(abs(later["h"] - held["h"]), 0.08, f"{tag}: shape height jumps {held['h']} -> {later['h']}")
         page.evaluate(
             """() => window.testSockets.find(s => s.onmessage)
               .receive({type: 'transcript', text: 'why?', final: true})"""
