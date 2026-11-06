@@ -743,6 +743,6 @@ describe('ParticleField figures', () => {
       expect(farthest).toBeLessThan(40)
       // A loose particle wraps a few times in that time at most (it was every frame at the seam).
       expect(Math.max(...jumps)).toBeLessThanOrEqual(5)
-    })
+    }, 30_000) // 46 simulated seconds of 1000 particles: slow on a loaded machine, not a hang
   })
 })

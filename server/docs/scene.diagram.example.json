@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "title": "How a request reaches the database",
+  "objects": [
+    {
+      "id": "flow",
+      "primitive": "diagram",
+      "params": {
+        "direction": "LR",
+        "nodes": [
+          { "id": "browser", "label": "Browser", "group": "client" },
+          { "id": "api", "label": "API", "group": "server" },
+          { "id": "cache", "label": "Cache", "group": "server" },
+          { "id": "db", "label": "Database", "group": "storage" }
+        ],
+        "edges": [
+          { "from": "browser", "to": "api", "label": "GET /items" },
+          { "from": "api", "to": "cache", "label": "lookup" },
+          { "from": "api", "to": "db", "label": "on a miss", "hidden": true },
+          { "from": "db", "to": "api", "label": "rows", "hidden": true }
+        ]
+      }
+    }
+  ],
+  "steps": [
+    { "id": "intro", "say": "A request starts in the browser and reaches the API." },
+    { "id": "cache", "say": "The API first asks the cache." },
+    { "id": "miss", "say": "On a miss it goes to the database and the rows come back." },
+    { "id": "done", "say": "That is the whole path of one request." }
+  ],
+  "cues": [
+    { "at": "intro", "do": [{ "object": "flow", "action": "highlight", "params": { "nodes": ["browser", "api"] } }] },
+    {
+      "at": "cache",
+      "do": [
+        { "object": "flow", "action": "highlight", "params": { "nodes": ["cache"] } },
+        { "object": "flow", "action": "annotate", "params": { "node": "cache", "text": "checked first" } }
+      ]
+    },
+    {
+      "at": "miss",
+      "do": [
+        { "object": "flow", "action": "reveal", "params": { "from": "api", "to": "db" } },
+        { "object": "flow", "action": "trace", "params": { "path": ["browser", "api", "db", "api"] } }
+      ]
+    },
+    { "at": "done", "do": [{ "object": "flow", "action": "clear" }] }
+  ]
+}

@@ -38,6 +38,14 @@ SCENE_GUIDE = (
     "over a headline, so the headline is not drawn while it is visible. Use a headline only for one "
     "key concept worth highlighting, not as a caption for every step. Never draw figures as ASCII art "
     "in a code block; code blocks are for real code. "
+    'primitive "diagram": params {"nodes": [{"id", "label", "group"?}], "edges": [{"from", "to", "label"?, '
+    '"hidden"?}], "direction"?: "LR" (default) or "TB"}, boxes and arrows laid out by the page: you '
+    "never provide coordinates. Use a diagram for call flows, request paths and system designs, with "
+    "at most 25 nodes (3 to 15 read best); not for data structures. Edges are directed and join two "
+    'different nodes. A diagram supports highlight {"nodes": [ids]} and dim {"nodes": [ids]} (each '
+    'replaces the previous set), reveal {"from", "to"} to draw an edge declared hidden, trace '
+    '{"path": [node ids]} to animate along existing edges in order (each pair must be an edge, in its '
+    'direction), annotate {"node", "text"} and clear (drops highlight, dim, trace and notes). '
     "Narration belongs inside the steps: after present returns, do not describe what is on screen "
     "(the last step stays up until the user speaks). "
     'steps [{"id", "say"}] are spoken in order, each on its own; '
@@ -291,7 +299,262 @@ SHAPE = Primitive(
     },
 )
 
-PRIMITIVES: dict[str, Primitive] = {CODE.name: CODE, HEADLINE.name: HEADLINE, SHAPE.name: SHAPE}
+MAX_DIAGRAM_NODES = 25
+MAX_DIAGRAM_EDGES = 60
+MAX_NODE_LABEL_CHARS = 40
+MAX_NODE_GROUP_CHARS = 24
+MAX_EDGE_LABEL_CHARS = 30
+MAX_NOTE_CHARS = 60
+MAX_TRACE_NODES = 30
+DIAGRAM_DIRECTIONS = ("TB", "LR")
+DEFAULT_DIAGRAM_DIRECTION = "LR"
+
+
+def _one_line_text(raw: Any, field: str, name: str, limit: int) -> tuple[str, Errors]:
+    if not _is_text(raw):
+        return "", [_error(field, f"{name} must be a non-empty string")]
+    text = raw.strip()
+    if "\n" in text or "\r" in text:
+        return text, [_error(field, f"{name} must fit on one line")]
+    if len(text) > limit:
+        return text, [_error(field, f"{name} holds at most {limit} characters, got {len(text)}")]
+    return text, []
+
+
+def _optional_one_line(raw: dict, key: str, field: str, limit: int) -> tuple[str, Errors]:
+    value = raw.get(key, "")
+    if not isinstance(value, str):
+        return "", [_error(field, f"{key} must be a string")]
+    if not value.strip():
+        return "", []
+    return _one_line_text(value, field, key, limit)
+
+
+def _parse_diagram_nodes(raw: Any, path: str) -> tuple[list[dict], Errors]:
+    field = f"{path}.nodes"
+    if not isinstance(raw, list) or not raw:
+        return [], [_error(field, "nodes must be a non-empty list")]
+    if len(raw) > MAX_DIAGRAM_NODES:
+        return [], [_error(field, f"nodes must have at most {MAX_DIAGRAM_NODES} items, got {len(raw)}")]
+    nodes: list[dict] = []
+    seen: set[str] = set()
+    errors: Errors = []
+    for i, item in enumerate(raw):
+        item_path = f"{field}[{i}]"
+        if not isinstance(item, dict):
+            errors.append(_error(item_path, "a node must be an object with id, label and optional group"))
+            continue
+        errors += _unknown_fields(item, {"id", "label", "group"}, item_path)
+        node_id, problems = _parse_id(item, item_path, seen, "node")
+        errors += problems
+        label, problems = _one_line_text(item.get("label"), f"{item_path}.label", "label", MAX_NODE_LABEL_CHARS)
+        errors += problems
+        group, problems = _optional_one_line(item, "group", f"{item_path}.group", MAX_NODE_GROUP_CHARS)
+        errors += problems
+        if node_id:
+            nodes.append({"id": node_id, "label": label, "group": group})
+    return nodes, errors
+
+
+def _parse_diagram_edges(raw: Any, node_ids: set[str], path: str) -> tuple[list[dict], Errors]:
+    field = f"{path}.edges"
+    if raw is None:
+        return [], []
+    if not isinstance(raw, list):
+        return [], [_error(field, "edges must be a list")]
+    if len(raw) > MAX_DIAGRAM_EDGES:
+        return [], [_error(field, f"edges must have at most {MAX_DIAGRAM_EDGES} items, got {len(raw)}")]
+    edges: list[dict] = []
+    pairs: set[tuple[str, str]] = set()
+    errors: Errors = []
+    for i, item in enumerate(raw):
+        item_path = f"{field}[{i}]"
+        if not isinstance(item, dict):
+            errors.append(_error(item_path, "an edge must be an object with from, to and optional label"))
+            continue
+        errors += _unknown_fields(item, {"from", "to", "label", "hidden"}, item_path)
+        ends = []
+        for end in ("from", "to"):
+            value = item.get(end)
+            if not isinstance(value, str) or value not in node_ids:
+                errors.append(_error(f"{item_path}.{end}", f"unknown node {value!r}"))
+            else:
+                ends.append(value)
+        label, problems = _optional_one_line(item, "label", f"{item_path}.label", MAX_EDGE_LABEL_CHARS)
+        errors += problems
+        hidden = item.get("hidden", False)
+        if not isinstance(hidden, bool):
+            errors.append(_error(f"{item_path}.hidden", "hidden must be true or false"))
+        if len(ends) == 2:
+            pair = (ends[0], ends[1])
+            if pair[0] == pair[1]:
+                errors.append(_error(item_path, f"an edge cannot connect a node to itself ({pair[0]!r})"))
+            elif pair in pairs:
+                errors.append(_error(item_path, f"duplicate edge {pair[0]} -> {pair[1]}"))
+            else:
+                pairs.add(pair)
+                edges.append({"from": pair[0], "to": pair[1], "label": label, "hidden": hidden is True})
+    return edges, errors
+
+
+def _parse_diagram_params(raw: Any, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "params must be an object with nodes, edges and optional direction")]
+    errors = _unknown_fields(raw, {"nodes", "edges", "direction"}, path)
+    nodes, problems = _parse_diagram_nodes(raw.get("nodes"), path)
+    errors += problems
+    edges, problems = _parse_diagram_edges(raw.get("edges"), {n["id"] for n in nodes}, path)
+    errors += problems
+    direction = raw.get("direction", DEFAULT_DIAGRAM_DIRECTION)
+    if direction not in DIAGRAM_DIRECTIONS:
+        errors.append(_error(f"{path}.direction", f"direction must be one of {', '.join(DIAGRAM_DIRECTIONS)}"))
+        direction = DEFAULT_DIAGRAM_DIRECTION
+    return {"nodes": nodes, "edges": edges, "direction": direction}, errors
+
+
+def _node_ids_of(params: dict) -> set[str]:
+    return {node["id"] for node in params["nodes"]}
+
+
+def _edge_pairs_of(params: dict) -> set[tuple[str, str]]:
+    return {(edge["from"], edge["to"]) for edge in params["edges"]}
+
+
+def _parse_node_list(raw: Any, name: str, node_ids: set[str], path: str, *, minimum: int = 1) -> tuple[list[str], Errors]:
+    field = f"{path}.{name}"
+    if not isinstance(raw, list):
+        raw = []
+    if len(raw) < minimum:
+        message = f"{name} must be a non-empty list of node ids" if minimum == 1 else f"{name} must list at least two node ids"
+        return [], [_error(field, message)]
+    if len(raw) > MAX_TRACE_NODES:
+        return [], [_error(field, f"{name} must have at most {MAX_TRACE_NODES} items, got {len(raw)}")]
+    errors: Errors = []
+    ids: list[str] = []
+    for i, value in enumerate(raw):
+        if not isinstance(value, str) or value not in node_ids:
+            errors.append(_error(f"{field}[{i}]", f"unknown node {value!r}"))
+        else:
+            ids.append(value)
+    return ids, errors
+
+
+def _node_set_parser(action: str) -> Callable[[Any, dict, str], tuple[dict, Errors]]:
+    def parse(raw: Any, object_params: dict, path: str) -> tuple[dict, Errors]:
+        if not isinstance(raw, dict):
+            return {}, [_error(path, f"{action} needs params.nodes, a list of node ids")]
+        errors = _unknown_fields(raw, {"nodes"}, path)
+        ids, problems = _parse_node_list(raw.get("nodes"), "nodes", _node_ids_of(object_params), path)
+        return {"nodes": list(dict.fromkeys(ids))}, errors + problems
+    return parse
+
+
+def _parse_edge_ref(raw: Any, object_params: dict, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "reveal needs params.from and params.to, the node ids of an edge")]
+    errors = _unknown_fields(raw, {"from", "to"}, path)
+    ids = _node_ids_of(object_params)
+    ends = []
+    for end in ("from", "to"):
+        value = raw.get(end)
+        if not isinstance(value, str) or value not in ids:
+            errors.append(_error(f"{path}.{end}", f"unknown node {value!r}"))
+        else:
+            ends.append(value)
+    if len(ends) == 2 and (ends[0], ends[1]) not in _edge_pairs_of(object_params):
+        errors.append(_error(path, f"no edge {ends[0]} -> {ends[1]} in this diagram"))
+    return {"from": raw.get("from"), "to": raw.get("to")}, errors
+
+
+def _parse_trace(raw: Any, object_params: dict, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "trace needs params.path, a list of node ids to follow along edges")]
+    errors = _unknown_fields(raw, {"path"}, path)
+    nodes, problems = _parse_node_list(raw.get("path"), "path", _node_ids_of(object_params), path, minimum=2)
+    errors += problems
+    if not problems:
+        pairs = _edge_pairs_of(object_params)
+        for a, b in zip(nodes, nodes[1:]):
+            if (a, b) not in pairs:
+                errors.append(_error(f"{path}.path", f"no edge {a} -> {b} in this diagram; a path follows edges in their direction"))
+                break
+    return {"path": nodes}, errors
+
+
+def _parse_annotate(raw: Any, object_params: dict, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "annotate needs params.node and params.text")]
+    errors = _unknown_fields(raw, {"node", "text"}, path)
+    node = raw.get("node")
+    if not isinstance(node, str) or node not in _node_ids_of(object_params):
+        errors.append(_error(f"{path}.node", f"unknown node {node!r}"))
+    text, problems = _one_line_text(raw.get("text"), f"{path}.text", "text", MAX_NOTE_CHARS)
+    return {"node": node, "text": text}, errors + problems
+
+
+def _diagram_initial(params: dict) -> State:
+    return {
+        "highlighted": [],
+        "dimmed": [],
+        "revealed": [{"from": e["from"], "to": e["to"]} for e in params["edges"] if not e["hidden"]],
+        "trace": [],
+        "notes": {},
+    }
+
+
+def _with_edges(revealed: list[dict], pairs: list[tuple[str, str]]) -> list[dict]:
+    known = {(e["from"], e["to"]) for e in revealed}
+    return revealed + [{"from": a, "to": b} for a, b in dict.fromkeys(pairs) if (a, b) not in known]
+
+
+def _apply_highlight(state: State, params: dict) -> State:
+    return state | {
+        "highlighted": list(params["nodes"]),
+        "dimmed": [n for n in state["dimmed"] if n not in params["nodes"]],
+    }
+
+
+def _apply_dim(state: State, params: dict) -> State:
+    return state | {
+        "dimmed": list(params["nodes"]),
+        "highlighted": [n for n in state["highlighted"] if n not in params["nodes"]],
+    }
+
+
+def _apply_trace(state: State, params: dict) -> State:
+    path = params["path"]
+    return state | {"trace": list(path), "revealed": _with_edges(state["revealed"], list(zip(path, path[1:])))}
+
+
+# Boxes and arrows laid out by the page; the model never gives coordinates.
+DIAGRAM = Primitive(
+    name="diagram",
+    parse_params=_parse_diagram_params,
+    initial_state=_diagram_initial,
+    actions={
+        # highlight and dim each replace their previous set; a node is never both.
+        "highlight": ActionSpec(_node_set_parser("highlight"), _apply_highlight),
+        "dim": ActionSpec(_node_set_parser("dim"), _apply_dim),
+        "reveal": ActionSpec(
+            _parse_edge_ref,
+            lambda state, params: state | {"revealed": _with_edges(state["revealed"], [(params["from"], params["to"])])},
+        ),
+        # Follows existing edges in their direction; the traced edges are revealed too.
+        "trace": ActionSpec(_parse_trace, _apply_trace),
+        "annotate": ActionSpec(
+            _parse_annotate,
+            lambda state, params: state | {"notes": state["notes"] | {params["node"]: params["text"]}},
+        ),
+        "clear": ActionSpec(
+            _no_params("clear"),
+            lambda state, _params: state | {"highlighted": [], "dimmed": [], "trace": [], "notes": {}},
+        ),
+    },
+)
+
+PRIMITIVES: dict[str, Primitive] = {
+    CODE.name: CODE, HEADLINE.name: HEADLINE, SHAPE.name: SHAPE, DIAGRAM.name: DIAGRAM,
+}
 
 
 def _actions_of(primitive: Primitive) -> dict[str, ActionSpec]:

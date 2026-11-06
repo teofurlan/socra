@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react'
 import { CodeObject } from '@/components/scene/CodeObject'
+import { DiagramObject } from '@/components/scene/DiagramObject'
+import { visibleDiagramViews } from '@/lib/sceneDiagram'
 import { visibleCodeViews } from '@/lib/scene'
 import type { ObjectState, SceneObject, SceneState } from '@/types/scene'
 
@@ -30,7 +32,7 @@ export type PrimitiveRenderers = Record<string, PrimitiveRenderer>
 const isShown = (object: SceneObject, state: ObjectState | null) => (state ? state.visible : !object.hidden)
 
 /**
- * Primitives that draw in the content panel. Add one entry per primitive (a diagram, a data
+ * Primitives that draw in the content panel. Add one entry per primitive (code, a diagram, a data
  * structure) and it appears without touching the pages. `headline` and `shape` are drawn by
  * the particles alone (see sceneFigures.ts), so they take no panel.
  */
@@ -38,6 +40,10 @@ export const PRIMITIVE_RENDERERS: PrimitiveRenderers = {
   code: {
     visible: (object, state) => isShown(object, state) && visibleCodeViews([object], state ? { [object.id]: state } : null).length > 0,
     Component: CodeObject,
+  },
+  diagram: {
+    visible: (object, state) => visibleDiagramViews([object], state ? { [object.id]: state } : null).length > 0,
+    Component: DiagramObject,
   },
 }
 

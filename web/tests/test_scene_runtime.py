@@ -66,7 +66,7 @@ SCENE = {
 UNKNOWN_SCENE = {
     "type": "walkthrough",
     "title": "Graph",
-    "objects": [{"id": "g", "primitive": "diagram", "params": {}, "hidden": False}],
+    "objects": [{"id": "g", "primitive": "hologram", "params": {}, "hidden": False}],
     "total": 1,
 }
 FOCUS_JS = """() => ({

@@ -229,3 +229,148 @@ describe('shape figure', () => {
     expect(points.every((q) => q.nx !== undefined && q.z !== undefined)).toBe(true)
   })
 })
+
+const FLOW = {
+  id: 'flow',
+  primitive: 'diagram',
+  hidden: false,
+  params: {
+    nodes: [{ id: 'a', label: 'A', group: '' }, { id: 'b', label: 'B', group: '' }, { id: 'c', label: 'C', group: '' }],
+    edges: [{ from: 'a', to: 'b', label: '', hidden: false }, { from: 'b', to: 'c', label: '', hidden: false }],
+  },
+}
+
+function flowScene(state: Record<string, unknown>, over: Partial<WalkthroughData> = {}): WalkthroughData {
+  return {
+    title: 'Flow',
+    objects: [FLOW],
+    total: 1,
+    step: { index: 1, total: 1, id: 's', say: 'x', state: { flow: { visible: true, highlighted: [], dimmed: [], revealed: [], trace: [], notes: {}, ...state } } },
+    status: 'playing',
+    reason: null,
+    ...over,
+  }
+}
+
+/** A diagram's SVG: a viewport, node boxes and edge paths with given screen rectangles. */
+function mountFlow(nodes: Record<string, DOMRect>, edges: Record<string, DOMRect>, view = rect(0, 0, 800, 600)) {
+  const viewport = document.createElement('div')
+  viewport.setAttribute('data-diagram-viewport', '')
+  viewport.getBoundingClientRect = () => view
+  const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  root.setAttribute('data-diagram-root', '')
+  root.dataset.sceneObject = 'flow'
+  for (const [id, box] of Object.entries(nodes)) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.setAttribute('data-diagram-node', id)
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+    r.getBoundingClientRect = () => box
+    g.appendChild(r)
+    root.appendChild(g)
+  }
+  for (const [key, box] of Object.entries(edges)) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.setAttribute('data-diagram-edge', key)
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    p.getBoundingClientRect = () => box
+    g.appendChild(p)
+    root.appendChild(g)
+  }
+  viewport.appendChild(root)
+  document.body.appendChild(viewport)
+}
+
+describe('diagram pointing', () => {
+  it('outlines each highlighted node as a pointer figure, and nothing without a highlight', () => {
+    expect(sceneFigureSources(flowScene({}))).toEqual([])
+    const sources = sceneFigureSources(flowScene({ highlighted: ['b', 'c'] }))
+    expect(sources.map((s) => [s.id, s.role])).toEqual([['highlight:flow:b', 'pointer'], ['highlight:flow:c', 'pointer']])
+    expect(sources.every((s) => !s.depth)).toBe(true)
+  })
+
+  it('boxes a highlighted node with a margin, clipped to the diagram viewport', () => {
+    mountFlow({ b: rect(100, 100, 90, 40), c: rect(780, 100, 90, 40) }, {})
+    const [b, c] = sceneFigureSources(flowScene({ highlighted: ['b', 'c'] }))
+    expect(b.box()).toEqual({ x: 97, y: 97, w: 96, h: 46 })
+    expect(c.box()).toEqual({ x: 777, y: 97, w: 23, h: 46 })
+    const outlined = b.build(b.box()!)
+    expect(outlined.length).toBeGreaterThan(20)
+    expect(outlined.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)).toBe(true)
+  })
+
+  it('has no box while the node is not on screen', () => {
+    const [source] = sceneFigureSources(flowScene({ highlighted: ['b'] }))
+    expect(source.box()).toBeNull()
+    mountFlow({ b: rect(100, 100, 90, 40) }, {}, rect(0, 0, 50, 50))
+    expect(source.box()).toBeNull()
+  })
+
+  it('outlines at most four highlighted nodes', () => {
+    const many = { ...FLOW, params: { ...FLOW.params, nodes: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, label: id, group: '' })), edges: [] } }
+    const scene = flowScene({ highlighted: ['a', 'b', 'c', 'd', 'e', 'f'] }, { objects: [many] })
+    expect(sceneFigureSources(scene)).toHaveLength(4)
+  })
+
+  it('follows the traced edges with one pointer figure whose box spans them', () => {
+    mountFlow({}, { 'a>b': rect(100, 200, 80, 2), 'b>c': rect(180, 200, 80, 60) })
+    const sources = sceneFigureSources(flowScene({ trace: ['a', 'b', 'c'] }))
+    expect(sources.map((s) => [s.id, s.role])).toEqual([['trace:flow:a>b>c', 'pointer']])
+    const box = sources[0].box()!
+    expect(box).toEqual({ x: 96, y: 196, w: 168, h: 68 })
+    const points = sources[0].build(box)
+    expect(points.length).toBeGreaterThanOrEqual(8)
+    expect(points.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)).toBe(true)
+    // First edge's points come first: they sit left of the second edge's.
+    expect(points[0].x).toBeLessThan(points[points.length - 1].x)
+  })
+
+  it('drops trace points outside the clipped viewport instead of piling them on its border', () => {
+    mountFlow({}, { 'a>b': rect(100, 200, 200, 2) }, rect(0, 0, 160, 600))
+    const [source] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    const box = source.box()!
+    expect(box.x + box.w).toBe(160)
+    const points = source.build(box)
+    expect(points.length).toBeGreaterThan(0)
+    expect(points.every((p) => p.x >= 0 && p.x <= 1)).toBe(true)
+    expect(points.filter((p) => p.x === 1)).toHaveLength(0)
+  })
+
+  it('asks for a rebuild of the trace points when the diagram changes size on screen', () => {
+    mountFlow({}, { 'a>b': rect(100, 200, 80, 60) })
+    const [before] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    const first = before.rebuildKey?.(before.box()!)
+    expect(first).toBeDefined()
+    document.body.replaceChildren()
+    mountFlow({}, { 'a>b': rect(100, 200, 160, 120) })
+    const [after] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    expect(after.rebuildKey?.(after.box()!)).not.toBe(first)
+    expect(after.id).toBe(before.id)
+  })
+
+  it('still boxes a straight edge that has no thickness', () => {
+    mountFlow({}, { 'a>b': rect(100, 200, 80, 0) })
+    const [source] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    const box = source.box()
+    expect(box).not.toBeNull()
+    expect(box!.h).toBeGreaterThanOrEqual(24)
+    const points = source.build(box!)
+    expect(points.length).toBeGreaterThanOrEqual(8)
+    expect(points.every((p) => Math.abs(p.y - 0.5) < 0.01)).toBe(true)
+  })
+
+  it('a new trace is a new figure, so the particles are recruited again', () => {
+    const one = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))[0].id
+    const two = sceneFigureSources(flowScene({ trace: ['a', 'b', 'c'] }))[0].id
+    expect(one).not.toBe(two)
+  })
+
+  it('keeps pointing after the scene completed, but not once it was stopped', () => {
+    expect(sceneFigureSources(flowScene({ highlighted: ['a'] }, { status: 'ended', reason: 'completed' }))).toHaveLength(1)
+    expect(sceneFigureSources(flowScene({ highlighted: ['a'] }, { status: 'ended', reason: 'stopped' }))).toEqual([])
+  })
+
+  it('does not point at a hidden diagram', () => {
+    const scene = flowScene({ highlighted: ['a'], visible: false })
+    expect(sceneFigureSources(scene)).toEqual([])
+  })
+})

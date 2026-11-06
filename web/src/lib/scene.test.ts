@@ -5,7 +5,7 @@ import type { SceneObject } from '@/types/scene'
 const objects: SceneObject[] = [
   { id: 'a', primitive: 'code', params: { code: 'x = 1', language: 'python' }, hidden: false },
   { id: 'b', primitive: 'code', params: { code: 'y = 2' }, hidden: true },
-  { id: 'c', primitive: 'diagram', params: {}, hidden: false },
+  { id: 'c', primitive: 'hologram', params: {}, hidden: false },
   { id: 'cube', primitive: 'shape', params: { shape: 'cube', wireframe: true }, hidden: false },
   { id: 'sphere', primitive: 'shape', params: { shape: 'sphere' }, hidden: true },
 ]
