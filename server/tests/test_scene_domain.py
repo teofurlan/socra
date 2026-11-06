@@ -401,6 +401,13 @@ def test_shape_set_action_updates_shape_and_wireframe():
         (lambda s: s["objects"][0].update(params={"shape": "cube", "wireframe": "yes"}), "objects[0].params.wireframe", "wireframe must be a boolean"),
         (lambda s: s["cues"][0]["do"][0].update(params={"rx": "up"}), "cues[0].do[0].params.rx", "rx must be a number"),
         (lambda s: s["cues"][0]["do"][0].update(params={"spin": 1}), "cues[0].do[0].params.spin", "unknown field"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rx": float("nan")}), "cues[0].do[0].params.rx", "finite number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"ry": float("inf")}), "cues[0].do[0].params.ry", "finite number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rz": float("-inf")}), "cues[0].do[0].params.rz", "finite number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rx": True}), "cues[0].do[0].params.rx", "rx must be a number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={}), "cues[0].do[0].params", "at least one of rx, ry, rz"),
+        (lambda s: s["cues"][0]["do"][0].pop("params"), "cues[0].do[0].params", "rotate needs params"),
+        (lambda s: s["cues"][0]["do"].append({"object": "cube", "action": "set", "params": {}}), "cues[0].do[1].params", "at least one of shape, wireframe"),
     ],
 )
 def test_each_shape_problem_is_reported_with_its_path(mutate, path, fragment):
@@ -411,6 +418,26 @@ def test_each_shape_problem_is_reported_with_its_path(mutate, path, fragment):
     assert path in paths(errors), errors
     assert fragment in next(e["message"] for e in errors if e["path"] == path)
 
+
+def test_the_guide_tells_callers_about_headlines():
+    from socra_server.domain.scene import SCENE_GUIDE
+
+    assert 'primitive "headline"' in SCENE_GUIDE
+    assert "24 characters" in SCENE_GUIDE
+    assert 'set {"text"}' in SCENE_GUIDE
+
+
+def test_the_json_schema_requires_what_the_validator_requires_for_rotate_and_set():
+    schema = json.loads((DOCS / "scene.schema.json").read_text(encoding="utf-8"))
+    branches = schema["$defs"]["action"]["allOf"]
+
+    def then_of(action: str) -> dict:
+        return next(b["then"] for b in branches if b["if"]["properties"]["action"].get("const") == action)
+
+    rotate = then_of("rotate")["properties"]["params"]
+    assert rotate["minProperties"] == 1
+    set_params = then_of("set")["properties"]["params"]
+    assert set_params["minProperties"] == 1
 
 
 def test_the_scene_guide_tells_when_to_use_shape_headline_and_no_ascii_figures():

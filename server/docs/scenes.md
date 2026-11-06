@@ -52,7 +52,7 @@ Every primitive supports `show` and `hide`. Primitive-specific actions:
 | --- | --- | --- |
 | `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. The page outlines the focused lines with particles. |
 | `headline` | `text` (required, one line, at most 24 characters after trimming) | `set` with `{ "text": "..." }` replaces the words. |
-| `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (numbers), `reset` (restores rotation to 0), `set` with `{ "shape"?, "wireframe"? }`. Shapes have no colour param; the page draws them with the state palette. |
+| `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (finite numbers, in turns; at least one is required), `reset` (restores rotation to 0), `set` with `{ "shape"?, "wireframe"? }` (at least one is required). Shapes have no colour param; the page draws them with the state palette. |
 
 ### Presenting with particles
 

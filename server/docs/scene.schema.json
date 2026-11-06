@@ -145,6 +145,7 @@
               "params": {
                 "type": "object",
                 "additionalProperties": false,
+                "minProperties": 1,
                 "properties": {
                   "rx": { "type": "number" },
                   "ry": { "type": "number" },
@@ -162,6 +163,7 @@
               "params": {
                 "type": "object",
                 "additionalProperties": false,
+                "minProperties": 1,
                 "properties": {
                   "text": { "$ref": "#/$defs/headlineText" },
                   "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },

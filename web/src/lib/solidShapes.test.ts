@@ -15,7 +15,7 @@ describe('sampleSolid', () => {
         it('keeps every point inside the unit sphere and gives unit normals', () => {
           for (const p of sampleSolid(kind, wireframe, 600)) {
             expect(Math.hypot(p.x, p.y, p.z)).toBeLessThanOrEqual(1)
-            expect(near(Math.hypot(p.nx, p.ny, p.nz), 1, 1e-6)).toBe(true)
+            expect(near(Math.hypot(p.nx, p.ny, p.nz), 1, 1e-9)).toBe(true)
           }
         })
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import math
 import re
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -232,8 +233,12 @@ def _parse_rotate(raw: Any, _object_params: dict, path: str) -> tuple[dict, Erro
             val = raw[axis]
             if not _is_number(val):
                 errors.append(_error(f"{path}.{axis}", f"{axis} must be a number"))
+            elif not math.isfinite(val):
+                errors.append(_error(f"{path}.{axis}", f"{axis} must be a finite number"))
             else:
                 normalized[axis] = float(val)
+    if not any(axis in raw for axis in ("rx", "ry", "rz")):
+        errors.append(_error(path, "rotate needs at least one of rx, ry, rz"))
     return normalized, errors
 
 
@@ -254,6 +259,8 @@ def _parse_shape_set(raw: Any, _object_params: dict, path: str) -> tuple[dict, E
             errors.append(_error(f"{path}.wireframe", "wireframe must be a boolean"))
         else:
             normalized["wireframe"] = wireframe
+    if not any(key in raw for key in ("shape", "wireframe")):
+        errors.append(_error(path, "set needs at least one of shape, wireframe"))
     return normalized, errors
 
 
