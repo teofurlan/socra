@@ -6,14 +6,14 @@ const objects: SceneObject[] = [
   { id: 'a', primitive: 'code', params: { code: 'x = 1', language: 'python' }, hidden: false },
   { id: 'b', primitive: 'code', params: { code: 'y = 2' }, hidden: true },
   { id: 'c', primitive: 'diagram', params: {}, hidden: false },
-  { id: 'cube', primitive: 'shape', params: { shape: 'cube', color: '#00f0ff', wireframe: true }, hidden: false },
+  { id: 'cube', primitive: 'shape', params: { shape: 'cube', wireframe: true }, hidden: false },
   { id: 'sphere', primitive: 'shape', params: { shape: 'sphere' }, hidden: true },
 ]
 
 describe('visibleShapeViews', () => {
   it('shows non-hidden shape objects before the first step', () => {
     expect(visibleShapeViews(objects, null)).toEqual([
-      { id: 'cube', shape: 'cube', color: '#00f0ff', wireframe: true, rx: 0, ry: 0, rz: 0 },
+      { id: 'cube', shape: 'cube', wireframe: true, rx: 0, ry: 0, rz: 0 },
     ])
   })
 
@@ -23,7 +23,7 @@ describe('visibleShapeViews', () => {
       sphere: { visible: true, rx: 0.5, ry: 0.25, rz: 0 },
     }
     expect(visibleShapeViews(objects, state)).toEqual([
-      { id: 'sphere', shape: 'sphere', color: '', wireframe: false, rx: 0.5, ry: 0.25, rz: 0 },
+      { id: 'sphere', shape: 'sphere', wireframe: false, rx: 0.5, ry: 0.25, rz: 0 },
     ])
   })
 })

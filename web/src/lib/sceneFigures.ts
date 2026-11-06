@@ -3,7 +3,9 @@
  * finds its box on screen every frame (so it follows panels that slide or scroll), and
  * builds its points once from the first box it is shown in.
  */
-import { outlinePoints, textFigure } from '@/lib/particleFigures'
+import { outlinePoints, solidFigurePoints, textFigure } from '@/lib/particleFigures'
+import { visibleShapeViews, type ShapeView } from '@/lib/scene'
+import type { SolidPose } from '@/lib/solidShapes'
 import type { FigureBox, FigurePoint } from '@/lib/particleField'
 import type { WalkthroughData } from '@/types/exam'
 
@@ -13,6 +15,8 @@ export interface FigureSource {
   role: 'lead' | 'pointer'
   /** Opt in to the 3D projection (see ``Figure.depth``); headlines and outlines stay flat. */
   depth?: boolean
+  /** A solid's rotation from the scene state, in turns (with ``depth``); see ``Figure.pose``. */
+  pose?: SolidPose
   /** Where it is on screen now, or ``null`` while it cannot be seen. */
   box: () => FigureBox | null
   build: (box: FigureBox) => FigurePoint[]
@@ -104,7 +108,52 @@ function headlineSource(id: string, text: string): FigureSource {
   }
 }
 
-/** The figures a scene shows right now (headline first); none once it has ended. */
+/**
+ * How many points a shape asks for: the same ceiling as a headline (the largest figure budget a
+ * screen offers). Smaller screens recruit fewer and spread evenly over the points, which are
+ * ordered so that a stride through them still covers the whole solid.
+ */
+const SHAPE_POINTS = 1260
+/**
+ * How much of the shorter side of the voice stage a shape's box takes. The box holds the solid
+ * in any pose; perspective magnifies the near side by up to about 1.5x, so the box stays well
+ * inside the stage and the near side does not leave it.
+ */
+const SHAPE_SIZE = 0.7
+
+/** The first visible shape of the current step, if any; it takes the stage over a headline. */
+function sceneShape(walkthrough: WalkthroughData | null): ShapeView | null {
+  const state = liveState(walkthrough)
+  if (!state || !walkthrough) return null
+  return visibleShapeViews(walkthrough.objects, state)[0] ?? null
+}
+
+/**
+ * The solid as 3D points in a square box centred on the stage. Its id names the kind and
+ * wireframe but not the pose, so turning it keeps its particles and changing the solid recruits
+ * them again; the pose travels beside the points and is read every frame.
+ */
+function shapeSource(view: ShapeView): FigureSource {
+  return {
+    id: `shape:${view.id}:${view.shape}:${view.wireframe ? 'wire' : 'solid'}`,
+    role: 'lead',
+    depth: true,
+    pose: { rx: view.rx, ry: view.ry, rz: view.rz },
+    box: () => {
+      const stage = document.querySelector<HTMLElement>('.voice-stage')?.getBoundingClientRect()
+      if (!stage) return null
+      const side = Math.min(stage.width, stage.height) * SHAPE_SIZE
+      if (side < MIN_SIDE) return null
+      return { x: stage.left + (stage.width - side) / 2, y: stage.top + (stage.height - side) / 2, w: side, h: side }
+    },
+    build: () => solidFigurePoints(view.shape, view.wireframe, SHAPE_POINTS),
+  }
+}
+
+/**
+ * The figures a scene shows right now (the lead first); none once it has ended. A shape and a
+ * headline both lead the stage: the shape wins and the headline is not drawn while it is visible.
+ */
 export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureSource[] {
   const state = liveState(walkthrough)
   if (!state || !walkthrough) return []
@@ -120,5 +169,7 @@ export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureS
       build: outline,
     }]
   })
+  const shape = sceneShape(walkthrough)
+  if (shape) return [shapeSource(shape), ...focus]
   return headline ? [headlineSource(headline.id, headline.text), ...focus] : focus
 }

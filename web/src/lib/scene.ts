@@ -1,3 +1,4 @@
+import { SOLID_KINDS, type SolidKind } from '@/lib/solidShapes'
 import type { SceneObject, SceneState } from '@/types/scene'
 
 /** A code object ready for a CodePane; ``focus`` is 1-based and inclusive. */
@@ -8,11 +9,10 @@ export interface CodeView {
   focus: [number, number] | null
 }
 
-/** A 3D shape object ready for a ShapePane. */
+/** A 3D shape object ready for the particles to assemble; ``rx, ry, rz`` are its rotation in turns. */
 export interface ShapeView {
   id: string
-  shape: 'cube' | 'cylinder' | 'cone' | 'sphere' | 'torus'
-  color: string
+  shape: SolidKind
   wireframe: boolean
   rx: number
   ry: number
@@ -48,17 +48,17 @@ export function visibleCodeViews(objects: SceneObject[], state: SceneState | nul
 }
 
 /**
- * The 3D shape objects to draw right now.
+ * The 3D shape objects to draw right now: the same rule as code (before the first step, those
+ * that do not start hidden), with the kind, wireframe and rotation of the current step.
  */
 export function visibleShapeViews(objects: SceneObject[], state: SceneState | null): ShapeView[] {
   return objects.flatMap((object) => {
     if (object.primitive !== 'shape') return []
-    const shape = object.params.shape
-    if (typeof shape !== 'string') return []
     const current = state?.[object.id]
     if (!(current ? current.visible : !object.hidden)) return []
-    const activeShape = (typeof current?.shape === 'string' ? current.shape : shape) as ShapeView['shape']
-    const color = typeof current?.color === 'string' ? current.color : (typeof object.params.color === 'string' ? object.params.color : '')
+    const kind = typeof current?.shape === 'string' ? current.shape : object.params.shape
+    const activeShape = SOLID_KINDS.find((k) => k === kind)
+    if (!activeShape) return []
     const wireframe = typeof current?.wireframe === 'boolean' ? current.wireframe : Boolean(object.params.wireframe)
     const rx = typeof current?.rx === 'number' ? current.rx : 0
     const ry = typeof current?.ry === 'number' ? current.ry : 0
@@ -66,7 +66,6 @@ export function visibleShapeViews(objects: SceneObject[], state: SceneState | nu
     return [{
       id: object.id,
       shape: activeShape,
-      color,
       wireframe,
       rx,
       ry,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outlinePoints, pointsFromMask, type Mask } from './particleFigures'
+import { outlinePoints, pointsFromMask, solidFigurePoints, type Mask } from './particleFigures'
 
 /** A mask with one opaque rectangle, as a canvas would return it (RGBA bytes). */
 function maskWithBlock(width: number, height: number, block: { x0: number; y0: number; x1: number; y1: number }): Mask {
@@ -68,5 +68,20 @@ describe('outlinePoints', () => {
 
   it('returns no points for no budget', () => {
     expect(outlinePoints(0, 100, 100)).toEqual([])
+  })
+})
+
+describe('solidFigurePoints', () => {
+  it('maps a solid to 0..1 of its box with its depth and normal', () => {
+    const points = solidFigurePoints('sphere', false, 200)
+    expect(points).toHaveLength(200)
+    for (const q of points) {
+      expect(q.x).toBeGreaterThanOrEqual(0)
+      expect(q.x).toBeLessThanOrEqual(1)
+      expect(q.y).toBeGreaterThanOrEqual(0)
+      expect(q.y).toBeLessThanOrEqual(1)
+      expect(Math.abs(q.z ?? 9)).toBeLessThanOrEqual(1)
+      expect(Math.hypot(q.nx ?? 0, q.ny ?? 0, q.nz ?? 0)).toBeCloseTo(1, 5)
+    }
   })
 })

@@ -13,9 +13,8 @@ import { AgentTimeline } from '@/components/AgentTimeline'
 import { PermissionPromptCard } from '@/components/PermissionPromptCard'
 import { ModeSwitchCard } from '@/components/ModeSwitchCard'
 import { CodePane } from '@/components/CodePane'
-import { ShapePane } from '@/components/ShapePane'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
-import { sceneKey, visibleCodeViews, visibleShapeViews } from '@/lib/scene'
+import { sceneKey, visibleCodeViews } from '@/lib/scene'
 import { sceneFigureSources, sceneHeadline } from '@/lib/sceneFigures'
 import { Panel } from '@/components/shell/Panel'
 import { BackgroundPattern } from '@/components/shell/BackgroundPattern'
@@ -228,10 +227,9 @@ export const AgentApp: React.FC = () => {
     }
     return null
   }, [state.timeline])
-  // A scene owns the code/shape pane while it is on screen; otherwise the newest reply code does.
+  // A scene owns the code pane while it is on screen; otherwise the newest reply code does.
   const sceneViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
-  const shapeViews = walkthrough ? visibleShapeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
-  const sceneCodeKey = walkthrough && (sceneViews.length > 0 || shapeViews.length > 0) ? sceneKey(walkthrough.title, walkthrough.objects) : null
+  const sceneCodeKey = walkthrough && sceneViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
   const showCode = walkthrough
     ? sceneCodeKey !== null && sceneCodeKey !== closedSceneKey
     : code !== null && code.id !== closedCodeId
@@ -402,19 +400,6 @@ export const AgentApp: React.FC = () => {
                   focus={view.focus}
                   sceneObject={view.id}
                   label={sceneViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
-                  onClose={() => setClosedSceneKey(sceneCodeKey)}
-                />
-              ))}
-              {shapeViews.map((shape) => (
-                <ShapePane
-                  key={shape.id}
-                  id={shape.id}
-                  shape={shape.shape}
-                  color={shape.color}
-                  wireframe={shape.wireframe}
-                  rx={shape.rx}
-                  ry={shape.ry}
-                  rz={shape.rz}
                   onClose={() => setClosedSceneKey(sceneCodeKey)}
                 />
               ))}

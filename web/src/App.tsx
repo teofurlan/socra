@@ -10,8 +10,7 @@ import { SettingsMenu } from '@/components/SettingsMenu'
 import { VoicePicker } from '@/components/VoicePicker'
 import { PushToTalkControl } from '@/components/PushToTalkControl'
 import { CodePane } from '@/components/CodePane'
-import { ShapePane } from '@/components/ShapePane'
-import { sceneKey, visibleCodeViews, visibleShapeViews } from '@/lib/scene'
+import { sceneKey, visibleCodeViews } from '@/lib/scene'
 import { sceneFigureSources, sceneHeadline } from '@/lib/sceneFigures'
 import { WalkthroughPanel } from '@/components/WalkthroughPanel'
 import { Panel } from '@/components/shell/Panel'
@@ -73,9 +72,8 @@ export const App: React.FC = () => {
   const sceneFigures = useMemo(() => sceneFigureSources(walkthrough), [walkthrough])
   const headline = useMemo(() => sceneHeadline(walkthrough), [walkthrough])
   const codeViews = walkthrough ? visibleCodeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
-  const shapeViews = walkthrough ? visibleShapeViews(walkthrough.objects, walkthrough.step?.state ?? null) : []
   const questionCodeKey = question?.code !== undefined && !state.finished ? `${question.index}:${question.code}` : null
-  const sceneCodeKey = walkthrough && (codeViews.length > 0 || shapeViews.length > 0) ? sceneKey(walkthrough.title, walkthrough.objects) : null
+  const sceneCodeKey = walkthrough && codeViews.length ? sceneKey(walkthrough.title, walkthrough.objects) : null
   const codeKey = walkthrough ? sceneCodeKey : questionCodeKey
   const showCode = codeKey !== null && codeKey !== closedCode
   const walkthroughRunning = !!walkthrough && walkthrough.status !== 'ended'
@@ -221,19 +219,6 @@ export const App: React.FC = () => {
                   focus={view.focus}
                   sceneObject={view.id}
                   label={codeViews.length > 1 ? `Walkthrough code ${view.id}` : 'Walkthrough code'}
-                  onClose={() => setClosedCode(codeKey)}
-                />
-              ))}
-              {shapeViews.map((shape) => (
-                <ShapePane
-                  key={shape.id}
-                  id={shape.id}
-                  shape={shape.shape}
-                  color={shape.color}
-                  wireframe={shape.wireframe}
-                  rx={shape.rx}
-                  ry={shape.ry}
-                  rz={shape.rz}
                   onClose={() => setClosedCode(codeKey)}
                 />
               ))}

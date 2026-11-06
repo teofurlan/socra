@@ -6,6 +6,7 @@
  *
  * Plain TypeScript with no React, so the physics can be tested without a canvas.
  */
+import { applyMatrix, idleTurn, isSide, solidMatrix, type Mat3, type SolidPose } from '@/lib/solidShapes'
 
 export type FieldState = 'idle' | 'speaking' | 'listening' | 'thinking'
 export type FieldShape = 'sphere' | 'wave'
@@ -31,11 +32,19 @@ export interface FieldFrame {
   figures?: Figure[]
 }
 
-/** A point of a figure, normalised to 0..1 of its box; ``a`` is the stroke angle there, unused by the dot look. */
+/**
+ * A point of a figure, normalised to 0..1 of its box; ``a`` is the stroke angle there, unused by
+ * the dot look. A point of a solid also has its depth ``z`` (in half boxes, away from the viewer
+ * is positive) and its unit surface normal ``nx, ny, nz``.
+ */
 export interface FigurePoint {
   x: number
   y: number
   a?: number
+  z?: number
+  nx?: number
+  ny?: number
+  nz?: number
 }
 
 export interface FigureBox {
@@ -63,6 +72,14 @@ export interface Figure {
    * brighter. Off by default: headlines and outlines are flat 2D, so text stays easy to read.
    */
   depth?: boolean
+  /**
+   * Makes the figure a solid body (with ``depth``): its points carry their own depth and normal
+   * and turn by this pose, in turns, from the scene's state, plus a slow idle turn that holds
+   * still under reduced motion. Points whose turned normal faces the viewer take the first
+   * colour of the palette, the sides the second (``isSide``). The pose is the only state: the
+   * same pose gives the same picture.
+   */
+  pose?: SolidPose
 }
 
 /** At most this share of the particles is recruited by figures, all together. */
@@ -107,6 +124,13 @@ export interface Particle {
    * how near it reads this frame (0 back .. 1 front) with the perspective scale it is drawn at.
    */
   fz: number
+  /** Of a solid figure's point: depth in half boxes and surface normal. */
+  fpz: number
+  fnx: number
+  fny: number
+  fnz: number
+  /** Side colour of a solid's point, 0 front (first colour) .. 1 side (second), eased as it turns. */
+  st: number
   near: number
   persp: number
   /** Whether its current figure is a pointer, so it is painted over the content; set by step(). */
@@ -137,6 +161,8 @@ const FOCAL = 1.4
 /** Under reduced motion the turn holds still at this small yaw, so the depth still reads. */
 const STILL_YAW = 0.16
 const GOLDEN = 0.6180339887498949
+/** A solid's point whose surface turns fully away from the viewer keeps this share of its brightness. */
+const BACK_DIM = 0.45
 /**
  * Headline dot size follows density. Letters read filled when the dots are about one spacing
  * wide, and spacing shrinks with the square root of the dot count, so a headline holding fewer
@@ -264,6 +290,11 @@ export class ParticleField {
         fx: 0,
         fy: 0,
         fz: -1,
+        fpz: 0,
+        fnx: 0,
+        fny: 0,
+        fnz: 0,
+        st: 0,
         near: 1,
         persp: 1,
         pointer: false,
@@ -328,6 +359,10 @@ export class ParticleField {
           const p = this.particles[i]
           p.fx = q.x
           p.fy = q.y
+          p.fpz = q.z ?? 0
+          p.fnx = q.nx ?? 0
+          p.fny = q.ny ?? 0
+          p.fnz = q.nz ?? 0
           // Depth through a solid figure: golden-ratio spacing by rank, so the share on the front
           // face is the same for any figure and every run.
           const u = ((k + 0.5) * GOLDEN) % 1
@@ -387,6 +422,8 @@ export class ParticleField {
     // A lead figure takes the stage: everyone else drifts loose as if nothing were said.
     const G = (f.state === 'idle' && !resting) || lead ? 0 : 1
     const R = f.radius * (resting ? 0.6 : 0.85) * (1 + vol * 0.1)
+    // A solid's turn is the same for all its points: the scene's pose plus the idle angle.
+    const turns: (Mat3 | null)[] = figures.map((fig) => (fig.depth && fig.pose ? solidMatrix(fig.pose, idleTurn(t, f.reducedMotion)) : null))
     const cr = Math.cos(this.rot), sr = Math.sin(this.rot)
     const ct = Math.cos(TILT), st = Math.sin(TILT)
     const wave = this.shape === 'wave'
@@ -444,23 +481,43 @@ export class ParticleField {
       if (p.fg < 1e-3) p.fg = 0
       const ef = smooth(clamp(p.fg, 0, 1))
       let gx = 0, gy = 0
+      // Set for a solid's point: where in the two colours it sits, 0 front .. 1 side.
+      let sideTint = -1
+      // Set for a solid's point: 1 facing the viewer .. BACK_DIM when its surface turns away, so the
+      // near surface hides the far one and the silhouette reads.
+      let facing = 1
       if (fig) {
         const breath = (1.2 + 2.6 * vol) * motion
         let ox = (p.fx - 0.5) * fig.box.w, oy = (p.fy - 0.5) * fig.box.h
         if (fig.depth) {
-          // A solid figure is a slab: its points sit at their depth through the thickness and the
-          // whole figure turns a little, so the targets are the projected 3D points.
-          const yaw = f.reducedMotion ? STILL_YAW : YAW * Math.sin(t * 0.55)
-          const pitch = f.reducedMotion ? 0 : PITCH * Math.sin(t * 0.37 + 1)
-          const oz = p.fz * THICKNESS * fig.box.h
-          const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch)
-          const x1 = ox * cyw + oz * syw, z1 = -ox * syw + oz * cyw
-          const y2 = oy * cp - z1 * sp, z2 = oy * sp + z1 * cp
+          // A depth figure is projected from 3D: a flat figure is a slab, its points at their depth
+          // through a thickness and the whole figure turning a little; a solid's points have their
+          // own depth and turn by the scene's pose. Both share the perspective and the nearness.
+          const turn = turns[p.figure]
+          let x1: number, y2: number, z2: number, reach: number
+          if (turn) {
+            ;[x1, y2, z2] = applyMatrix(turn, ox, oy, p.fpz * fig.box.w * 0.5)
+            reach = fig.box.w / 2
+            const nz = applyMatrix(turn, p.fnx, p.fny, p.fnz)[2]
+            const side = isSide(nz) ? 1 : 0
+            facing = lerp(1, BACK_DIM, clamp(nz / 0.5, 0, 1))
+            p.st = p.fg < 0.05 ? side : p.st + (side - p.st) * (1 - Math.exp(-dt * 10))
+            sideTint = p.st
+          } else {
+            const yaw = f.reducedMotion ? STILL_YAW : YAW * Math.sin(t * 0.55)
+            const pitch = f.reducedMotion ? 0 : PITCH * Math.sin(t * 0.37 + 1)
+            const oz = p.fz * THICKNESS * fig.box.h
+            const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch)
+            x1 = ox * cyw + oz * syw
+            const z1 = -ox * syw + oz * cyw
+            y2 = oy * cp - z1 * sp
+            z2 = oy * sp + z1 * cp
+            reach = Math.hypot(fig.box.w / 2, THICKNESS * fig.box.h)
+          }
           const focal = FOCAL * fig.box.w
           p.persp = focal / Math.max(focal * 0.2, focal + z2)
           // Nearness follows the turned depth, scaled by the farthest a point can reach, so the
           // side turning toward the viewer grows and brightens without saturating.
-          const reach = Math.hypot(fig.box.w / 2, THICKNESS * fig.box.h)
           p.near = clamp(0.5 - z2 / (2 * reach), 0, 1)
           ox = x1 * p.persp
           oy = y2 * p.persp
@@ -511,8 +568,9 @@ export class ParticleField {
         const fill = fig && fig.role === 'lead' ? headlineDotScale(this.recruits[p.figure]?.members.length ?? 0) : 1
         const far = this.additive === 'lighter' ? 0.4 : 0.7
         p.depth = lerp(p.depth, p.near, ef)
-        p.alpha = lerp(p.alpha, (0.62 + 0.3 * twinkle * (0.5 + vol)) * (far + (1 - far) * p.near), ef)
+        p.alpha = lerp(p.alpha, (0.62 + 0.3 * twinkle * (0.5 + vol)) * (far + (1 - far) * p.near) * facing, ef)
         p.size = lerp(p.size, (5 + 5 * vol) * (0.6 + 0.9 * p.near) * p.persp * fill, ef)
+        if (sideTint >= 0) p.tint = lerp(p.tint, sideTint, ef)
       }
     }
   }
