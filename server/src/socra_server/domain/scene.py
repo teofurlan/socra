@@ -17,6 +17,7 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from socra_server.domain import structures
 from socra_server.domain.walkthrough import Walkthrough
 
 VERSION = 1
@@ -46,6 +47,18 @@ SCENE_GUIDE = (
     'replaces the previous set), reveal {"from", "to"} to draw an edge declared hidden, trace '
     '{"path": [node ids]} to animate along existing edges in order (each pair must be an edge, in its '
     'direction), annotate {"node", "text"} and clear (drops highlight, dim, trace and notes). '
+    'primitive "structure": params {"kind": "array"|"stack"|"queue"|"hashTable"|"tree", "items"?: the initial '
+    "contents (whole numbers, or text of at most 8 characters; a tree and a mod hash table take whole numbers), "
+    '"buckets"?: 2 to 8 and "hash"?: "mod" (default, whole-number keys) or "charSum" (text keys) for a hashTable}. '
+    "Use a structure to teach arrays, stacks, queues, hash tables (collisions are chained) and binary search "
+    "trees; not for general graphs or system flows (use a diagram). You name the operations and the page "
+    "computes the result: never compute or draw bucket indexes, positions or paths yourself. Actions by kind: "
+    'array set {"index", "value"}, swap {"indexes": [i, j]}, compare {"indexes": [i, j]}, highlight {"indexes": [..]}; '
+    'stack push {"value"}, pop, peek; queue enqueue {"value"}, dequeue, peek; hashTable insert {"key"}, '
+    'lookup {"key"}, remove {"key"}; tree insert {"key"}, lookup {"key"}, highlight {"key"}; clear drops the mark '
+    "of the last operation. Operations are simulated in step order and an impossible one is rejected (pop on an "
+    "empty stack, an index out of range, removing a missing key); a lookup of a missing key is allowed and shows "
+    "not found. Limits: 12 items (10 in a stack or queue), 5 tree levels. "
     "Narration belongs inside the steps: after present returns, do not describe what is on screen "
     "(the last step stays up until the user speaks). "
     'steps [{"id", "say"}] are spoken in order, each on its own; '
@@ -108,6 +121,8 @@ class Primitive:
     parse_params: Callable[[Any, str], tuple[dict, Errors]]
     initial_state: Callable[[dict], State]
     actions: Mapping[str, ActionSpec]
+    # Primitives whose actions depend on the object's params (a structure's kind) narrow them here.
+    actions_for: Callable[[dict], Mapping[str, ActionSpec]] | None = None
 
 
 def _no_params(name: str) -> Callable[[Any, dict, str], tuple[dict, Errors]]:
@@ -552,13 +567,83 @@ DIAGRAM = Primitive(
     },
 )
 
+def _parse_structure_params(raw: Any, path: str) -> tuple[dict, Errors]:
+    if not isinstance(raw, dict):
+        return {}, [_error(path, "params must be an object with kind and optional items, buckets and hash")]
+    errors = _unknown_fields(raw, {"kind", "items", "buckets", "hash"}, path)
+    kind = raw.get("kind")
+    if kind not in structures.KINDS:
+        return {}, errors + [_error(f"{path}.kind", f"kind must be one of {', '.join(structures.KINDS)}")]
+    params: dict[str, Any] = {"kind": kind}
+    items = raw.get("items", [])
+    if not isinstance(items, list):
+        errors.append(_error(f"{path}.items", "items must be a list of the initial contents"))
+        items = []
+    params["items"] = items
+    if kind == "hashTable":
+        buckets = raw.get("buckets", structures.DEFAULT_BUCKETS)
+        if not _is_int(buckets) or not structures.MIN_BUCKETS <= buckets <= structures.MAX_BUCKETS:
+            errors.append(_error(
+                f"{path}.buckets",
+                f"buckets must be a whole number from {structures.MIN_BUCKETS} to {structures.MAX_BUCKETS}",
+            ))
+            buckets = structures.DEFAULT_BUCKETS
+        rule = raw.get("hash", structures.DEFAULT_HASH_RULE)
+        if rule not in structures.HASH_RULES:
+            errors.append(_error(f"{path}.hash", f"hash must be one of {', '.join(structures.HASH_RULES)}"))
+            rule = structures.DEFAULT_HASH_RULE
+        params |= {"buckets": buckets, "hash": rule}
+    else:
+        errors += [_error(f"{path}.{key}", f"{key} only applies to a hashTable") for key in ("buckets", "hash") if key in raw]
+    if kind in ("array", "stack", "queue"):
+        for i, value in enumerate(items):
+            problem = structures.item_problem(value)
+            if problem:
+                errors.append(_error(f"{path}.items[{i}]", problem))
+    if errors:
+        return params, errors
+    try:
+        initial = structures.initial_state(params)
+    except structures.StructureError as exc:
+        return params, [_error(f"{path}.items", str(exc))]
+    # The page draws this before the first step speaks, so it never rebuilds a structure itself.
+    items = [v.strip() if isinstance(v, str) else v for v in items]
+    return params | {"items": items, "initial": initial}, []
+
+
+def _structure_spec(op: str) -> ActionSpec:
+    def parse(raw: Any, object_params: dict, path: str) -> tuple[dict, Errors]:
+        args, problems = structures.parse_args(object_params, op, raw)
+        return args, [_error(f"{path}.{field}" if field else path, message) for field, message in problems]
+    return ActionSpec(parse, lambda state, params: structures.reduce(state, op, params))
+
+
+_STRUCTURE_ACTIONS = {op: _structure_spec(op) for op in structures.ALL_OPERATIONS}
+
+
+def _structure_actions_for(params: dict) -> dict[str, ActionSpec]:
+    supported = (*structures.OPERATIONS[params["kind"]], "clear")
+    return {op: _STRUCTURE_ACTIONS[op] for op in supported}
+
+
+# Array, stack, queue, hash table and binary search tree whose states the runtime computes from
+# operations (one pure reducer per kind, in structures.py); the model never places an element.
+STRUCTURE = Primitive(
+    name="structure",
+    parse_params=_parse_structure_params,
+    initial_state=lambda params: copy.deepcopy(params["initial"]),
+    actions=_STRUCTURE_ACTIONS,
+    actions_for=_structure_actions_for,
+)
+
 PRIMITIVES: dict[str, Primitive] = {
-    CODE.name: CODE, HEADLINE.name: HEADLINE, SHAPE.name: SHAPE, DIAGRAM.name: DIAGRAM,
+    CODE.name: CODE, HEADLINE.name: HEADLINE, SHAPE.name: SHAPE, DIAGRAM.name: DIAGRAM, STRUCTURE.name: STRUCTURE,
 }
 
 
-def _actions_of(primitive: Primitive) -> dict[str, ActionSpec]:
-    return _COMMON_ACTIONS | dict(primitive.actions)
+def _actions_of(primitive: Primitive, params: dict) -> dict[str, ActionSpec]:
+    specific = primitive.actions_for(params) if primitive.actions_for else primitive.actions
+    return _COMMON_ACTIONS | dict(specific)
 
 
 # ---------------------------------------------------------------------------
@@ -616,9 +701,19 @@ class Scene:
         ]
 
 
-def _resolve(objects: tuple[SceneObject, ...], steps: tuple[SceneStep, ...], cues: tuple[Cue, ...]) -> tuple[dict[str, State], ...]:
+def _resolve(
+    objects: tuple[SceneObject, ...],
+    steps: tuple[SceneStep, ...],
+    cues: tuple[Cue, ...],
+    errors: Errors | None = None,
+) -> tuple[dict[str, State], ...]:
+    """Fold every cue, step by step. With ``errors``, an action that cannot happen (popping an
+    empty stack) is reported there with its ``cues[i].do[j]`` path and its object stops changing,
+    since what follows would depend on the failed action; without it the cues must be valid."""
     by_step = {cue.at: cue for cue in cues}
+    cue_index = {cue.at: i for i, cue in enumerate(cues)}
     by_id = {obj.id: obj for obj in objects}
+    failed: set[str] = set()
     state = {
         obj.id: {"visible": not obj.hidden} | PRIMITIVES[obj.primitive].initial_state(obj.params)
         for obj in objects
@@ -626,15 +721,26 @@ def _resolve(objects: tuple[SceneObject, ...], steps: tuple[SceneStep, ...], cue
     states = []
     for step in steps:
         cue = by_step.get(step.id)
-        for action in cue.actions if cue else ():
-            spec = _actions_of(PRIMITIVES[by_id[action.object].primitive])[action.action]
-            state[action.object] = spec.apply(state[action.object], action.params)
+        for j, action in enumerate(cue.actions if cue else ()):
+            if action.object in failed:
+                continue
+            obj = by_id[action.object]
+            spec = _actions_of(PRIMITIVES[obj.primitive], obj.params)[action.action]
+            try:
+                state[action.object] = spec.apply(state[action.object], action.params)
+            except structures.StructureError as exc:
+                if errors is None:
+                    raise
+                failed.add(action.object)
+                errors.append(_error(f"cues[{cue_index[step.id]}].do[{j}]", f"step {step.id!r}: {exc}"))
         states.append(copy.deepcopy(state))
     return tuple(states)
 
 
-def _assemble(title: str, objects: tuple[SceneObject, ...], steps: tuple[SceneStep, ...], cues: tuple[Cue, ...]) -> Scene:
-    return Scene(VERSION, title, objects, steps, cues, _resolve(objects, steps, cues))
+def _assemble(
+    title: str, objects: tuple[SceneObject, ...], steps: tuple[SceneStep, ...], cues: tuple[Cue, ...], errors: Errors | None = None,
+) -> Scene:
+    return Scene(VERSION, title, objects, steps, cues, _resolve(objects, steps, cues, errors))
 
 
 def _list(raw: dict, key: str, cap: int, *, required: bool) -> tuple[list, Errors]:
@@ -724,7 +830,7 @@ def _parse_action(raw: Any, path: str, objects: dict[str, SceneObject | None]) -
     obj = objects[object_id]
     if obj is None:  # the object already reported its own problems
         return None, errors
-    actions = _actions_of(PRIMITIVES[obj.primitive])
+    actions = _actions_of(PRIMITIVES[obj.primitive], obj.params)
     name = raw.get("action")
     spec = actions.get(name) if isinstance(name, str) else None
     if spec is None:
@@ -798,7 +904,10 @@ def parse_scene(raw: Any) -> tuple[Scene | None, Errors]:
 
     if errors:
         return None, errors
-    return _assemble(title.strip(), tuple(objects), tuple(steps), tuple(cues)), []
+    # Every cue is simulated in step order: an impossible operation is reported before anything is spoken.
+    problems: Errors = []
+    scene = _assemble(title.strip(), tuple(objects), tuple(steps), tuple(cues), problems)
+    return (None, problems) if problems else (scene, [])
 
 
 def scene_from_walkthrough(walkthrough: Walkthrough) -> Scene:

@@ -1,6 +1,8 @@
 import { afterEach, describe, it, expect } from 'vitest'
-import { sceneFigureSources, sceneHeadline } from './sceneFigures'
+import { partBox, sceneFigureSources, sceneHeadline } from './sceneFigures'
+import { MAX_TOUCH_OUTLINES } from './sceneStructure'
 import type { WalkthroughData } from '@/types/exam'
+import type { SceneObject } from '@/types/scene'
 
 const CODE = { id: 'src', primitive: 'code', params: { code: 'one\ntwo\nthree\nfour', language: 'python' }, hidden: false }
 
@@ -372,5 +374,147 @@ describe('diagram pointing', () => {
   it('does not point at a hidden diagram', () => {
     const scene = flowScene({ highlighted: ['a'], visible: false })
     expect(sceneFigureSources(scene)).toEqual([])
+  })
+})
+
+const STACK = { id: 'ds', primitive: 'structure', hidden: false, params: { kind: 'stack', items: [1], initial: { kind: 'stack', items: [1], last: null } } }
+const TABLE = { id: 'ds', primitive: 'structure', hidden: false, params: { kind: 'hashTable', items: [], initial: { kind: 'hashTable', buckets: [[]], last: null } } }
+
+function structureScene(object: SceneObject, state: Record<string, unknown>, over: Partial<WalkthroughData> = {}): WalkthroughData {
+  return {
+    title: 'Structure',
+    objects: [object],
+    total: 1,
+    step: { index: 1, total: 1, id: 's', say: 'x', state: { ds: { visible: true, ...state } } },
+    status: 'playing',
+    reason: null,
+    ...over,
+  }
+}
+
+/** A structure's SVG: a viewport and parts, each with a rect at a given screen rectangle. */
+function mountStructure(parts: Record<string, DOMRect>, view = rect(0, 0, 800, 600)) {
+  const viewport = document.createElement('div')
+  viewport.setAttribute('data-structure-viewport', '')
+  viewport.getBoundingClientRect = () => view
+  const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  root.setAttribute('data-structure-root', '')
+  root.dataset.sceneObject = 'ds'
+  for (const [id, box] of Object.entries(parts)) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.setAttribute('data-structure-part', id)
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+    r.getBoundingClientRect = () => box
+    g.appendChild(r)
+    root.appendChild(g)
+  }
+  viewport.appendChild(root)
+  document.body.appendChild(viewport)
+}
+
+describe('structure pointing', () => {
+  const push = { kind: 'stack', items: [1, 2], last: { op: 'push', index: 1, value: 2 } }
+
+  it('outlines the element the last operation touched as a pointer figure', () => {
+    const sources = sceneFigureSources(structureScene(STACK, push))
+    expect(sources.map((s) => [s.id.startsWith('touch:ds:'), s.id.endsWith(':cell:1'), s.role])).toEqual([[true, true, 'pointer']])
+    expect(sources.every((s) => !s.depth)).toBe(true)
+  })
+
+  it('points at nothing before the first operation', () => {
+    expect(sceneFigureSources(structureScene(STACK, { kind: 'stack', items: [1], last: null }))).toEqual([])
+  })
+
+  it('points at nothing for a structure the scene hid, and does again once it is shown', () => {
+    expect(sceneFigureSources(structureScene(STACK, { ...push, visible: false }))).toEqual([])
+    expect(sceneFigureSources(structureScene(STACK, { ...push, visible: true }))).toHaveLength(1)
+  })
+
+  it('points at nothing for a structure that starts hidden and was not shown yet', () => {
+    const hidden = { ...STACK, hidden: true }
+    const unshown: WalkthroughData = { ...structureScene(hidden, push), step: { index: 0, total: 1, id: 's', say: 'x', state: {} } }
+    expect(sceneFigureSources(unshown)).toEqual([])
+  })
+
+  it('points at nothing after a pop or a dequeue: the element is gone from the drawing', () => {
+    expect(sceneFigureSources(structureScene(STACK, { kind: 'stack', items: [1], last: { op: 'pop', index: 1, value: 2 } }))).toEqual([])
+    const queue = { ...STACK, params: { kind: 'queue', items: [], initial: { kind: 'queue', items: [], last: null } } }
+    expect(sceneFigureSources(structureScene(queue, { kind: 'queue', items: [2], last: { op: 'dequeue', index: 0, value: 1 } }))).toEqual([])
+  })
+
+  it('outlines the bucket row after a hash remove, which is still drawn although the key left it', () => {
+    const remove = { kind: 'hashTable', buckets: [[5]], hash: 'mod', last: { op: 'remove', key: 10, hash: 10, bucket: 0, position: 1 } }
+    expect(sceneFigureSources(structureScene(TABLE, remove)).map((s) => s.id.split(':').slice(-2).join(':'))).toEqual(['bucket:0'])
+  })
+
+  it('finds a part by an id with quotes, brackets and colons without building a selector from it', () => {
+    const id = 'entry:"a]:\'b'
+    mountStructure({ [id]: rect(100, 100, 60, 40), 'cell:1': rect(300, 100, 60, 40) })
+    expect(partBox('ds', id)).toEqual({ x: 97, y: 97, w: 66, h: 46 })
+    expect(partBox('ds', 'missing"id')).toBeNull()
+  })
+
+  it('keeps pointing after the scene completed, but not after it was stopped', () => {
+    expect(sceneFigureSources(structureScene(STACK, push, { status: 'ended', reason: 'completed' }))).toHaveLength(1)
+    expect(sceneFigureSources(structureScene(STACK, push, { status: 'ended', reason: 'stopped' }))).toEqual([])
+  })
+
+  it('boxes the part with a margin, clipped to the structure viewport', () => {
+    mountStructure({ 'cell:1': rect(100, 100, 60, 40) })
+    const [source] = sceneFigureSources(structureScene(STACK, push))
+    expect(source.box()).toEqual({ x: 97, y: 97, w: 66, h: 46 })
+    const points = source.build(source.box()!)
+    expect(points.length).toBeGreaterThan(20)
+    expect(points.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)).toBe(true)
+  })
+
+  it('has no box while the part is not on screen', () => {
+    const [source] = sceneFigureSources(structureScene(STACK, push))
+    expect(source.box()).toBeNull()
+    mountStructure({ 'cell:1': rect(100, 100, 60, 40) }, rect(0, 0, 50, 50))
+    expect(source.box()).toBeNull()
+  })
+
+  it('asks for a rebuild when the part changes size on screen', () => {
+    mountStructure({ 'cell:1': rect(100, 100, 60, 40) })
+    const [source] = sceneFigureSources(structureScene(STACK, push))
+    const small = source.rebuildKey!(source.box()!)
+    document.body.innerHTML = ''
+    mountStructure({ 'cell:1': rect(100, 100, 120, 80) })
+    expect(source.rebuildKey!(source.box()!)).not.toBe(small)
+  })
+
+  it('names the operation in the figure id so a new operation recruits the particles again', () => {
+    const next = { kind: 'stack', items: [1, 2, 3], last: { op: 'push', index: 2, value: 3 } }
+    const [a] = sceneFigureSources(structureScene(STACK, push))
+    const [b] = sceneFigureSources(structureScene(STACK, next))
+    expect(a.id).not.toBe(b.id)
+  })
+
+  it('outlines the chain entry of a hash table insert, and the bucket for a missing key', () => {
+    const insert = { kind: 'hashTable', buckets: [[5, 10]], hash: 'mod', last: { op: 'insert', key: 10, hash: 10, bucket: 0, position: 1, collision: true } }
+    expect(sceneFigureSources(structureScene(TABLE, insert)).map((s) => s.id.split(':').slice(-3).join(':'))).toEqual(['entry:0:1'])
+    const miss = { kind: 'hashTable', buckets: [[5]], hash: 'mod', last: { op: 'lookup', key: 7, hash: 7, bucket: 0, position: null, found: false, probes: 1 } }
+    expect(sceneFigureSources(structureScene(TABLE, miss)).map((s) => s.id.split(':').slice(-2).join(':'))).toEqual(['bucket:0'])
+  })
+
+  describe('tree paths', () => {
+    const tree = { ...STACK, params: { kind: 'tree', items: [], initial: { kind: 'tree', nodes: [], last: null } } }
+    const nodesOf = (path: number[]) =>
+      sceneFigureSources(structureScene(tree, { kind: 'tree', nodes: [], last: { op: 'lookup', key: 9, path, found: true } })).map((s) => s.id.split(':').slice(-1)[0])
+
+    it('outlines at most four nodes, the documented maximum', () => {
+      expect(MAX_TOUCH_OUTLINES).toBe(4)
+      expect(nodesOf([1, 2, 3, 4, 5, 9])).toHaveLength(MAX_TOUCH_OUTLINES)
+    })
+
+    it('keeps the last four nodes of a longer path, in walking order, so the target is among them', () => {
+      expect(nodesOf([1, 2, 3, 4, 5, 9])).toEqual(['3', '4', '5', '9'])
+    })
+
+    it('keeps every node of a path of four or fewer', () => {
+      expect(nodesOf([1, 2, 3, 4])).toEqual(['1', '2', '3', '4'])
+      expect(nodesOf([8, 3])).toEqual(['8', '3'])
+    })
   })
 })

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { useMemo, useRef, type CSSProperties } from 'react'
 import { X } from 'lucide-react'
 import { Panel } from '@/components/shell/Panel'
 import type { PrimitiveProps } from '@/components/scene/registry'
 import { EDGE_FONT, NODE_FONT, pickLayout, polylineLength, type PlacedEdge, type PlacedNode, type Point } from '@/lib/diagramLayout'
 import { visibleDiagramViews, type DiagramView } from '@/lib/sceneDiagram'
+import { useElementSize } from '@/lib/useElementSize'
+import { usePrefersReducedMotion } from '@/lib/useReducedMotion'
 
 /** Room around the drawing inside its scrolling viewport, in pixels. */
 const VIEWPORT_PAD = 8
@@ -19,38 +21,6 @@ const NOTE_WRAP = 28
 
 /** Colours a group can take, in the order groups first appear; ungrouped nodes stay neutral. */
 const GROUP_COLORS = ['var(--accent)', 'var(--violet)', 'var(--live)', 'var(--orange)']
-
-function useViewportSize(ref: React.RefObject<HTMLElement | null>) {
-  const [size, setSize] = useState(FALLBACK_SIZE)
-  useEffect(() => {
-    const element = ref.current
-    if (!element || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver((entries) => {
-      const rect = entries[entries.length - 1]?.contentRect
-      if (rect && rect.width > 0 && rect.height > 0) setSize((old) => (old.width === rect.width && old.height === rect.height ? old : { width: rect.width, height: rect.height }))
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [ref])
-  return size
-}
-
-const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
-
-function subscribeReducedMotion(notify: () => void): () => void {
-  const query = typeof window !== 'undefined' ? window.matchMedia?.(REDUCED_QUERY) : undefined
-  query?.addEventListener?.('change', notify)
-  return () => query?.removeEventListener?.('change', notify)
-}
-
-function reducedMotionNow(): boolean {
-  return typeof window !== 'undefined' && (window.matchMedia?.(REDUCED_QUERY).matches ?? false)
-}
-
-/** Follows the user's reduced-motion preference, also when it changes while a diagram is drawn. */
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeReducedMotion, reducedMotionNow, () => false)
-}
 
 function arrowHead(points: Point[]): string {
   const tip = points[points.length - 1]
@@ -187,7 +157,7 @@ function Note({ node, text, width }: { node: PlacedNode; text: string; width: nu
 export function DiagramObject({ object, state, siblings, onClose }: PrimitiveProps) {
   const view = visibleDiagramViews([object], state ? { [object.id]: state } : null)[0]
   const viewport = useRef<HTMLDivElement | null>(null)
-  const size = useViewportSize(viewport)
+  const size = useElementSize(viewport, FALLBACK_SIZE)
   const reduced = usePrefersReducedMotion()
   // The layout depends on the diagram and the room it has, not on the step's highlights.
   const picked = useMemo(() => {

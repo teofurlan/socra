@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "title": "Five data structures, one operation each",
+  "objects": [
+    { "id": "array", "primitive": "structure", "params": { "kind": "array", "items": [5, 3, 8, 1] } },
+    { "id": "stack", "primitive": "structure", "hidden": true, "params": { "kind": "stack", "items": [1, 2] } },
+    { "id": "queue", "primitive": "structure", "hidden": true, "params": { "kind": "queue", "items": ["a", "b"] } },
+    { "id": "table", "primitive": "structure", "hidden": true, "params": { "kind": "hashTable", "buckets": 5, "hash": "mod", "items": [12, 3] } },
+    { "id": "tree", "primitive": "structure", "hidden": true, "params": { "kind": "tree", "items": [8, 3, 10, 1, 6] } }
+  ],
+  "steps": [
+    { "id": "array", "say": "An array is numbered cells. Compare the first two, then swap them." },
+    { "id": "stack", "say": "A stack gives back the last item in first: push a three, then pop it." },
+    { "id": "queue", "say": "A queue serves in arrival order: enqueue a c, then dequeue the oldest." },
+    { "id": "collide", "say": "A hash table turns a key into a bucket. Seventeen and twelve both land in bucket two, so they chain." },
+    { "id": "find", "say": "Looking up seventeen follows the chain of its bucket." },
+    { "id": "tree", "say": "In a search tree, smaller keys go left and larger go right. Inserting seven walks down from the root." }
+  ],
+  "cues": [
+    {
+      "at": "array",
+      "do": [
+        { "object": "array", "action": "compare", "params": { "indexes": [0, 1] } },
+        { "object": "array", "action": "swap", "params": { "indexes": [0, 1] } }
+      ]
+    },
+    {
+      "at": "stack",
+      "do": [
+        { "object": "array", "action": "hide" },
+        { "object": "stack", "action": "show" },
+        { "object": "stack", "action": "push", "params": { "value": 3 } },
+        { "object": "stack", "action": "pop" }
+      ]
+    },
+    {
+      "at": "queue",
+      "do": [
+        { "object": "stack", "action": "hide" },
+        { "object": "queue", "action": "show" },
+        { "object": "queue", "action": "enqueue", "params": { "value": "c" } },
+        { "object": "queue", "action": "dequeue" }
+      ]
+    },
+    {
+      "at": "collide",
+      "do": [
+        { "object": "queue", "action": "hide" },
+        { "object": "table", "action": "show" },
+        { "object": "table", "action": "insert", "params": { "key": 17 } }
+      ]
+    },
+    { "at": "find", "do": [{ "object": "table", "action": "lookup", "params": { "key": 17 } }] },
+    {
+      "at": "tree",
+      "do": [
+        { "object": "table", "action": "hide" },
+        { "object": "tree", "action": "show" },
+        { "object": "tree", "action": "insert", "params": { "key": 7 } }
+      ]
+    }
+  ]
+}
