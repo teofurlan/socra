@@ -80,7 +80,7 @@ async def test_a_scene_plays_on_the_agent_page_and_the_agent_hears_how_it_ended(
     task = await _play(app, channel, toolbox.present(SCENE))
     result = json.loads(await asyncio.wait_for(task, 2))
 
-    assert result == {"status": "completed", "steps": 2}
+    assert result | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     assert channel.of_type("walkthrough")[0]["title"] == "Adding"
     clips = [m for m in channel.of_type("tts_audio") if "step" in m]
     assert [c["step"]["state"]["src"]["lines"] for c in clips] == [[1, 2], [3, 3]]

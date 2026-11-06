@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { applyMatrix, idleTurn, isSide, solidMatrix, type SolidKind } from './solidShapes'
+import { solidFigurePoints } from './particleFigures'
 import { FIGURE_SHARE, ParticleField, headlineDotScale, fibonacciSphere, particleCount, type Figure, type FieldFrame } from './particleField'
 
 /** Small deterministic PRNG so the physics runs the same way every time. */
@@ -554,6 +556,141 @@ describe('ParticleField figures', () => {
     })
   })
 
+  describe('solid figure (a shape with a pose)', () => {
+    const SQUARE = { x: 200, y: 150, w: 300, h: 300 }
+    type Pose = { rx: number; ry: number; rz: number }
+    const FLAT: Pose = { rx: 0, ry: 0, rz: 0 }
+    const run3d = (field: ParticleField, seconds: number, start: number, pose: Pose, kind: SolidKind, reducedMotion: boolean, wireframe = false) => {
+      const points = solidFigurePoints(kind, wireframe, 300)
+      let time = start
+      for (let i = 0; i < seconds * 60; i++) {
+        time += BASE.dt
+        field.step({ ...BASE, state: 'speaking', volume: 0.5, time, reducedMotion, figures: [{ id: `shape:${kind}`, points: SHARED.get(`${kind}${wireframe}`) ?? (SHARED.set(`${kind}${wireframe}`, points), points), box: SQUARE, role: 'lead', depth: true, pose }] })
+      }
+      return time
+    }
+    // The same points object across calls, as the page keeps it while the id lives.
+    const SHARED = new Map<string, ReturnType<typeof solidFigurePoints>>()
+    const make = (seed = 3) => {
+      const field = new ParticleField({ count: 400, random: seeded(seed) })
+      field.resize(BASE.width, BASE.height)
+      return field
+    }
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+
+    it('draws nearer points larger and brighter, so the body reads as a volume', () => {
+      const field = make()
+      run3d(field, 4, 0, FLAT, 'cube', false)
+      const ps = [...recruited(field)].sort((a, b) => b.near - a.near)
+      const third = Math.floor(ps.length / 3)
+      expect(ps.length).toBeGreaterThan(200)
+      expect(mean(ps.slice(0, third).map((p) => p.size))).toBeGreaterThan(mean(ps.slice(-third).map((p) => p.size)))
+      expect(mean(ps.slice(0, third).map((p) => p.alpha))).toBeGreaterThan(mean(ps.slice(-third).map((p) => p.alpha)))
+      for (const p of ps) {
+        expect(p.near).toBeGreaterThanOrEqual(0)
+        expect(p.near).toBeLessThanOrEqual(1)
+      }
+    })
+
+    it('paints the front in the main colour and the sides in the second, by the turned normal', () => {
+      for (const kind of ['cube', 'sphere', 'torus'] as SolidKind[]) {
+        const field = make()
+        const pose = { rx: 0.1, ry: 0.15, rz: 0 }
+        run3d(field, 5, 0, pose, kind, true)
+        const m = solidMatrix(pose, idleTurn(0, true))
+        const ps = recruited(field)
+        let front = 0, side = 0
+        for (const p of ps) {
+          const side_ = isSide(applyMatrix(m, p.fnx, p.fny, p.fnz)[2])
+          expect(p.tint).toBeCloseTo(side_ ? 1 : 0, 1)
+          if (side_) side++
+          else front++
+        }
+        expect(front).toBeGreaterThan(ps.length * 0.1)
+        expect(side).toBeGreaterThan(ps.length * 0.1)
+      }
+    })
+
+    it('dims surfaces that turn away from the viewer (beyond what depth does), so the near surface hides the far one', () => {
+      const pose = { rx: 0.1, ry: 0.15, rz: 0 }
+      const field = make()
+      run3d(field, 5, 0, pose, 'sphere', true)
+      const m = solidMatrix(pose, 0)
+      const ps = recruited(field)
+      // Brightness with the depth part (dark ground: 0.4 + 0.6 * near) divided out.
+      const level = (p: (typeof ps)[number]) => p.alpha / (0.4 + 0.6 * p.near)
+      const nz = (p: (typeof ps)[number]) => applyMatrix(m, p.fnx, p.fny, p.fnz)[2]
+      const away = ps.filter((p) => nz(p) > 0.5), toward = ps.filter((p) => nz(p) < -0.5)
+      expect(away.length).toBeGreaterThan(3)
+      expect(toward.length).toBeGreaterThan(3)
+      expect(mean(away.map(level))).toBeLessThan(mean(toward.map(level)) * 0.7)
+    })
+
+    it('keeps headline particles on their own hue tint (side colour is for solids only)', () => {
+      const field = make()
+      run3d(field, 3, 0, FLAT, 'cube', true)
+      const flat = new ParticleField({ count: 400, random: seeded(3) })
+      flat.resize(BASE.width, BASE.height)
+      const grid = Array.from({ length: 60 }, (_, i) => ({ x: (i % 10) / 9, y: Math.floor(i / 10) / 5 }))
+      let time = 0
+      for (let i = 0; i < 180; i++) {
+        time += BASE.dt
+        flat.step({ ...BASE, state: 'speaking', volume: 0.5, time, figures: [{ id: 'h', points: grid, box: SQUARE, role: 'lead' }] })
+      }
+      const tints = new Set(recruited(flat).map((p) => Math.round(p.tint * 10)))
+      expect(tints.size).toBeGreaterThan(3)
+    })
+
+    it('shows the pose of the scene state: a different rotation moves the particles, the same one puts them back', () => {
+      const field = make()
+      const A = { rx: 0.1, ry: 0.2, rz: 0 }
+      let t = run3d(field, 4, 0, A, 'cube', true)
+      const ps = recruited(field)
+      const first = ps.map((p) => [p.gx, p.gy])
+      t = run3d(field, 4, t, { rx: 0.35, ry: 0.5, rz: 0.1 }, 'cube', true)
+      const moved = ps.map((p, i) => Math.hypot(p.gx - first[i][0], p.gy - first[i][1]))
+      expect(mean(moved)).toBeGreaterThan(15)
+      run3d(field, 4, t, A, 'cube', true)
+      // Back at the earlier pose, up to the breathing (a few pixels), not accumulated.
+      ps.forEach((p, i) => {
+        expect(Math.abs(p.gx - first[i][0])).toBeLessThan(4)
+        expect(Math.abs(p.gy - first[i][1])).toBeLessThan(4)
+      })
+    })
+
+    it('turns slowly while idle and holds still under reduced motion', () => {
+      const drift = (reduced: boolean) => {
+        const field = make()
+        const t = run3d(field, 3, 0, FLAT, 'cube', reduced)
+        const ps = recruited(field)
+        const before = ps.map((p) => [p.gx, p.gy])
+        run3d(field, 4, t, FLAT, 'cube', reduced)
+        return mean(ps.map((p, i) => Math.hypot(p.gx - before[i][0], p.gy - before[i][1])))
+      }
+      expect(drift(false)).toBeGreaterThan(20)
+      expect(drift(true)).toBeLessThan(4)
+    })
+
+    it('keeps the solid inside its box in every pose, so it never leaves the stage', () => {
+      const field = make()
+      run3d(field, 3, 0, { rx: 0.13, ry: 0.31, rz: 0.07 }, 'cube', true)
+      for (const p of recruited(field)) {
+        expect(p.gx).toBeGreaterThan(SQUARE.x - 20)
+        expect(p.gx).toBeLessThan(SQUARE.x + SQUARE.w + 20)
+        expect(p.gy).toBeGreaterThan(SQUARE.y - 20)
+        expect(p.gy).toBeLessThan(SQUARE.y + SQUARE.h + 20)
+      }
+    })
+
+    it('releases its particles when the shape is hidden', () => {
+      const field = make()
+      const t = run3d(field, 3, 0, FLAT, 'torus', true)
+      expect(recruited(field).length).toBeGreaterThan(100)
+      runWith(field, 'speaking', 3, t, [])
+      expect(recruited(field)).toHaveLength(0)
+    })
+  })
+
   it('keeps every position finite with figures, also under reduced motion and while idle', () => {
     const field = new ParticleField({ count: 200, random: seeded(5) })
     field.resize(BASE.width, BASE.height)
@@ -567,5 +704,45 @@ describe('ParticleField figures', () => {
       expect(Number.isFinite(p.y)).toBe(true)
     }
     expect(figureError(field, GRID)).toBeLessThan(12)
+  })
+
+  describe('a held figure (#109, S17)', () => {
+    // The loose flow wraps at the screen edges; the seam must not fling particles, and above all
+    // not particles that settled on the figure.
+    const SQUARE = { x: 250, y: 150, w: 300, h: 300 }
+    const points = solidFigurePoints('torus', false, 1260)
+    const figure: Figure = { id: 'shape:torus', points, box: SQUARE, role: 'lead', depth: true, pose: { rx: 0, ry: 0, rz: 0 } }
+
+    it('keeps every recruit on its figure, and the loose ones from blinking across the screen', () => {
+      const field = new ParticleField({ count: 1000, random: seeded(7) })
+      field.resize(BASE.width, BASE.height)
+      let time = 0
+      const step = () => {
+        time += BASE.dt
+        field.step({ ...BASE, state: 'idle', volume: 0, time, figures: [figure] })
+      }
+      for (let i = 0; i < 6 * 60; i++) step()
+      const members = field.particles.map((p) => p.figure)
+      expect(members.filter((m) => m >= 0).length).toBeGreaterThan(500)
+
+      const jumps = new Array(field.particles.length).fill(0)
+      let farthest = 0
+      let before = field.particles.map((p) => [p.x, p.y])
+      for (let i = 0; i < 40 * 60; i++) {
+        step()
+        field.particles.forEach((p, k) => {
+          // A particle that moves a fifth of the screen in one frame has been flung, not driven.
+          if (Math.hypot(p.x - before[k][0], p.y - before[k][1]) > BASE.width / 5) jumps[k]++
+          if (p.figure >= 0) farthest = Math.max(farthest, Math.hypot(p.x - p.gx, p.y - p.gy))
+        })
+        before = field.particles.map((p) => [p.x, p.y])
+      }
+      // Membership is decided once and kept.
+      expect(field.particles.map((p) => p.figure)).toEqual(members)
+      // Settled recruits stay at their points (breathing and turning move them by a few pixels).
+      expect(farthest).toBeLessThan(40)
+      // A loose particle wraps a few times in that time at most (it was every frame at the seam).
+      expect(Math.max(...jumps)).toBeLessThanOrEqual(5)
+    })
   })
 })

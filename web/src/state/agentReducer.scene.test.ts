@@ -38,10 +38,30 @@ describe('agentReducer scenes', () => {
     expect(agentReducer(ended, { type: 'transcript', text: 'thanks', final: true }).walkthrough).toBeNull()
   })
 
-  it('drops an ended scene when the agent replies, so the reply code can take the pane', () => {
-    const ended = run(scene, step, { type: 'walkthrough_status', status: 'ended', reason: 'completed' })
-    expect(agentReducer(ended, { type: 'agent_reply', text: 'Done.' }).walkthrough).toBeNull()
+  const completed: AgentAction = { type: 'walkthrough_status', status: 'ended', reason: 'completed' }
+
+  it('keeps a completed scene when the agent replies without code, so the last step stays up', () => {
+    const ended = run(scene, step, completed)
+    expect(agentReducer(ended, { type: 'agent_reply', text: 'Anything unclear?' }).walkthrough).toMatchObject({ status: 'ended', reason: 'completed' })
     const playing = run(scene, step)
     expect(agentReducer(playing, { type: 'agent_reply', text: 'Still going.' }).walkthrough).not.toBeNull()
+  })
+
+  it('drops an ended scene when the agent replies with code, so that code can take the pane', () => {
+    const ended = run(scene, step, completed)
+    const reply = { type: 'agent_reply', text: 'Try:\n```python\nx = 1\n```' } as const
+    expect(agentReducer(ended, reply).walkthrough).toBeNull()
+  })
+
+  it('releases a completed scene at the user turn, typed or spoken', () => {
+    const ended = run(scene, step, completed)
+    expect(agentReducer(ended, { type: 'user_text', text: 'why?' }).walkthrough).toBeNull()
+    expect(agentReducer(ended, { type: 'transcript', text: 'why?', final: true }).walkthrough).toBeNull()
+    expect(agentReducer(ended, { type: 'transcript', text: 'wh', final: false }).walkthrough).not.toBeNull()
+  })
+
+  it('a new scene replaces the held one', () => {
+    const next: AgentAction = { type: 'walkthrough', title: 'Next', objects, total: 1 }
+    expect(run(scene, step, completed, next).walkthrough).toMatchObject({ title: 'Next', status: 'playing', step: null })
   })
 })

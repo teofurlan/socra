@@ -311,6 +311,114 @@ def test_code_and_headline_objects_share_a_scene():
     assert scene.state_at(1)["src"] == {"visible": True, "lines": [3, 3]}
 
 
+def test_the_shape_example_scene_is_valid():
+    content = json.loads((DOCS / "scene.shape.example.json").read_text(encoding="utf-8"))
+    scene, errors = parse_scene(content)
+    assert errors == []
+    assert scene is not None
+    assert scene.title == "What is a cube?"
+    assert scene.state_at(0)["my_cube"]["shape"] == "cube"
+    assert scene.state_at(1)["my_cube"]["rx"] == 0.35
+    assert scene.state_at(2)["my_cube"]["wireframe"] is True
+
+
+def test_the_json_schema_describes_headline_params_and_set():
+    schema = json.loads((DOCS / "scene.schema.json").read_text(encoding="utf-8"))
+    assert schema["$defs"]["headlineParams"]["properties"]["text"] == {"$ref": "#/$defs/headlineText"}
+    assert schema["$defs"]["headlineText"]["maxLength"] == 24
+    assert "set" in schema["$defs"]["action"]["properties"]["action"]["enum"]
+
+
+# ---------------------------------------------------------------------------
+# 3D Shapes (assembled by the particles)
+# ---------------------------------------------------------------------------
+
+def shape_scene() -> dict:
+    return {
+        "version": 1,
+        "title": "Examining a 3D cube",
+        "objects": [{"id": "cube", "primitive": "shape", "params": {"shape": "cube", "wireframe": True}}],
+        "steps": [
+            {"id": "intro", "say": "A cube has six identical square faces."},
+            {"id": "tilt", "say": "Let us rotate it to look at the top face."},
+            {"id": "reset", "say": "Back to the front orientation."},
+        ],
+        "cues": [
+            {"at": "tilt", "do": [{"object": "cube", "action": "rotate", "params": {"rx": 0.5, "ry": 0.25}}]},
+            {"at": "reset", "do": [{"object": "cube", "action": "reset"}]},
+        ],
+    }
+
+
+def test_a_valid_shape_scene_is_parsed_with_per_step_state():
+    scene, errors = parse_scene(shape_scene())
+    assert errors == []
+    assert scene is not None
+    assert scene.state_at(0)["cube"] == {
+        "visible": True,
+        "shape": "cube",
+        "wireframe": True,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 0.0,
+    }
+    assert scene.state_at(1)["cube"] == {
+        "visible": True,
+        "shape": "cube",
+        "wireframe": True,
+        "rx": 0.5,
+        "ry": 0.25,
+        "rz": 0.0,
+    }
+    assert scene.state_at(2)["cube"] == {
+        "visible": True,
+        "shape": "cube",
+        "wireframe": True,
+        "rx": 0.0,
+        "ry": 0.0,
+        "rz": 0.0,
+    }
+
+
+def test_shape_set_action_updates_shape_and_wireframe():
+    raw = shape_scene()
+    raw["cues"][0]["do"].append({"object": "cube", "action": "set", "params": {"shape": "sphere", "wireframe": False}})
+    scene, errors = parse_scene(raw)
+    assert errors == []
+    assert scene.state_at(1)["cube"]["shape"] == "sphere"
+    assert scene.state_at(1)["cube"]["wireframe"] is False
+    assert "color" not in scene.state_at(1)["cube"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "path", "fragment"),
+    [
+        (lambda s: s["objects"][0].update(params={}), "objects[0].params.shape", "shape must be one of"),
+        (lambda s: s["objects"][0].update(params={"shape": "donut"}), "objects[0].params.shape", "shape must be one of"),
+        (lambda s: s["objects"][0].update(params={"shape": "cube", "unknown": 1}), "objects[0].params.unknown", "unknown field"),
+        (lambda s: s["objects"][0].update(params={"shape": "cube", "color": "red"}), "objects[0].params.color", "unknown field"),
+        (lambda s: s["cues"][0]["do"].append({"object": "cube", "action": "set", "params": {"color": "red"}}), "cues[0].do[1].params.color", "unknown field"),
+        (lambda s: s["objects"][0].update(params={"shape": "cube", "wireframe": "yes"}), "objects[0].params.wireframe", "wireframe must be a boolean"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rx": "up"}), "cues[0].do[0].params.rx", "rx must be a number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"spin": 1}), "cues[0].do[0].params.spin", "unknown field"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rx": float("nan")}), "cues[0].do[0].params.rx", "finite number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"ry": float("inf")}), "cues[0].do[0].params.ry", "finite number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rz": float("-inf")}), "cues[0].do[0].params.rz", "finite number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={"rx": True}), "cues[0].do[0].params.rx", "rx must be a number"),
+        (lambda s: s["cues"][0]["do"][0].update(params={}), "cues[0].do[0].params", "at least one of rx, ry, rz"),
+        (lambda s: s["cues"][0]["do"][0].pop("params"), "cues[0].do[0].params", "rotate needs params"),
+        (lambda s: s["cues"][0]["do"].append({"object": "cube", "action": "set", "params": {}}), "cues[0].do[1].params", "at least one of shape, wireframe"),
+    ],
+)
+def test_each_shape_problem_is_reported_with_its_path(mutate, path, fragment):
+    raw = shape_scene()
+    mutate(raw)
+    scene, errors = parse_scene(raw)
+    assert scene is None
+    assert path in paths(errors), errors
+    assert fragment in next(e["message"] for e in errors if e["path"] == path)
+
+
 def test_the_guide_tells_callers_about_headlines():
     from socra_server.domain.scene import SCENE_GUIDE
 
@@ -319,8 +427,29 @@ def test_the_guide_tells_callers_about_headlines():
     assert 'set {"text"}' in SCENE_GUIDE
 
 
-def test_the_json_schema_describes_headline_params_and_set():
+def test_the_json_schema_requires_what_the_validator_requires_for_rotate_and_set():
     schema = json.loads((DOCS / "scene.schema.json").read_text(encoding="utf-8"))
-    assert schema["$defs"]["headlineParams"]["properties"]["text"] == {"$ref": "#/$defs/headlineText"}
-    assert schema["$defs"]["headlineText"]["maxLength"] == 24
-    assert "set" in schema["$defs"]["action"]["properties"]["action"]["enum"]
+    branches = schema["$defs"]["action"]["allOf"]
+
+    def then_of(action: str) -> dict:
+        return next(b["then"] for b in branches if b["if"]["properties"]["action"].get("const") == action)
+
+    rotate = then_of("rotate")["properties"]["params"]
+    assert rotate["minProperties"] == 1
+    set_params = then_of("set")["properties"]["params"]
+    assert set_params["minProperties"] == 1
+
+
+def test_the_scene_guide_tells_when_to_use_shape_headline_and_no_ascii_figures():
+    from socra_server.domain.scene import SCENE_GUIDE
+
+    guide = SCENE_GUIDE.lower()
+    assert "color" not in guide
+    assert "zdog" not in guide
+    assert "cube, cylinder, cone, sphere, torus" in guide
+    assert "one key concept" in guide
+    assert "not as a caption" in guide
+    assert "ascii" in guide and "code block" in guide
+    assert "takes the stage" in guide
+    assert "narration belongs inside the steps" in guide
+    assert "after present returns, do not describe what is on screen" in guide

@@ -79,6 +79,8 @@ export function examReducer(state: ExamState, action: ExamAction): ExamState {
           text: action.text,
           final: action.final,
         },
+        // The user's answer releases a scene that ended and is held on screen.
+        walkthrough: action.final && state.walkthrough?.status === 'ended' ? null : state.walkthrough,
       }
 
     case 'walkthrough':

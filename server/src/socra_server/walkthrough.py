@@ -21,6 +21,14 @@ PLAYBACK_GRACE_S = 2.0
 _GONE = "gone"
 
 
+# Said to the agent in the tool result: the page keeps the last step up after the scene ends.
+COMPLETED_NOTE = (
+    "The scene has finished playing. Its last step stays on screen until the user speaks. "
+    "Do not narrate the scene as if it were appearing now (never say it is on screen now); "
+    "it was already narrated step by step. You may briefly ask a follow-up question."
+)
+
+
 class WalkthroughRunner:
     def __init__(
         self,
@@ -129,7 +137,7 @@ class WalkthroughRunner:
                 at = self._cursor.index + 1
                 await self._end(reason)
                 if outcome == "finished":
-                    return {"status": "completed", "steps": total}
+                    return {"status": "completed", "steps": total, "note": COMPLETED_NOTE}
                 return {"status": "stopped", "step": at, "total": total}
         except asyncio.CancelledError:
             # The caller gave up on the scene (an agent turn was interrupted): close the page's panel.

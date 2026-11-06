@@ -52,6 +52,7 @@ Every primitive supports `show` and `hide`. Primitive-specific actions:
 | --- | --- | --- |
 | `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. The page outlines the focused lines with particles. |
 | `headline` | `text` (required, one line, at most 24 characters after trimming) | `set` with `{ "text": "..." }` replaces the words. |
+| `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (finite numbers, in turns; at least one is required), `reset` (restores rotation to 0), `set` with `{ "shape"?, "wireframe"? }` (at least one is required). Shapes have no colour param; the page draws them with the state palette. |
 
 ### Presenting with particles
 
@@ -60,10 +61,27 @@ particles leave the voice shape and assemble its words in the voice stage, still
 and colouring with who is speaking; the words are also in the page for screen readers.
 Only the first visible headline is drawn. While a `code` object has a focus, a few
 particles outline the focused lines in the code panel and follow them as it scrolls.
+A visible `shape` is assembled from the particles as a solid and takes the stage over a
+headline: while a shape is visible, the headline is not drawn.
 Everything that has to be read stays crisp text: code, labels and what is being said.
+
+### Choosing what to show
+
+- Use `shape` to show a body (cube, cylinder, cone, sphere, torus).
+- Use a `headline` only for one key concept worth highlighting, not as a caption for every step.
+- Never draw figures as ASCII art in a code block; code blocks are for real code.
+- Narration belongs inside the steps: after `present` returns, do not describe what is on screen.
 
 New primitives (diagrams, call flows, data structures) register their params, actions
 and state in `PRIMITIVES` without changing the scene contract.
+
+## When a scene ends
+
+A scene that plays to the end returns `{"status": "completed", "steps": N, "note": "..."}`.
+The `note` tells the agent the scene is over, that its last step (figures and panel) stays
+on the page until the user speaks, and that it must not narrate the scene as if it were
+appearing now; a brief follow-up question is fine. A stopped scene returns
+`{"status": "stopped", ...}` and its figures clear at once.
 
 ## Validation
 

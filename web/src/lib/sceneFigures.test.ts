@@ -34,6 +34,13 @@ function mountPane(top: number, focused: number[]) {
   document.body.appendChild(pre)
 }
 
+function mountStage(w: number, h: number, x = 100, y = 50) {
+  const stage = document.createElement('div')
+  stage.className = 'voice-stage'
+  stage.getBoundingClientRect = () => rect(x, y, w, h)
+  document.body.appendChild(stage)
+}
+
 afterEach(() => {
   document.body.innerHTML = ''
 })
@@ -42,6 +49,13 @@ describe('sceneFigureSources', () => {
   it('points at the focused lines of a code object while the scene plays', () => {
     const sources = sceneFigureSources(scene())
     expect(sources.map((s) => [s.id, s.role])).toEqual([['focus:src:2-3', 'pointer']])
+  })
+
+  it('keeps pointing after the scene completed, but not after it was stopped', () => {
+    expect(sceneFigureSources(scene({ status: 'ended', reason: 'completed' }))).toHaveLength(1)
+    for (const reason of ['stopped', 'error', 'disconnected']) {
+      expect(sceneFigureSources(scene({ status: 'ended', reason }))).toEqual([])
+    }
   })
 
   it('keeps pointing while the scene is paused', () => {
@@ -104,6 +118,12 @@ describe('headline figure', () => {
     expect(sources.map((s) => [s.id, s.role])).toEqual([['headline:title:Hello', 'lead'], ['focus:src:2-3', 'pointer']])
   })
 
+  it('stays after the scene completed and goes when it was stopped', () => {
+    const shown = withHeadline({ title: { visible: true, text: 'Hello' } })
+    expect(sceneHeadline({ ...shown, status: 'ended', reason: 'completed' })).toEqual({ id: 'title', text: 'Hello' })
+    expect(sceneHeadline({ ...shown, status: 'ended', reason: 'stopped' })).toBeNull()
+  })
+
   it('is absent when hidden, ended or without a step', () => {
     expect(sceneFigureSources(withHeadline({ title: { visible: false, text: 'Hello' } }))).toEqual([])
     expect(sceneFigureSources({ ...withHeadline({ title: { visible: true, text: 'Hello' } }), status: 'ended' })).toEqual([])
@@ -130,5 +150,82 @@ describe('headline figure', () => {
     document.body.appendChild(stage)
     const [source] = sceneFigureSources(withHeadline({ title: { visible: true, text: 'Hello' } }))
     expect(source.box()).toBeNull()
+  })
+})
+
+describe('shape figure', () => {
+  const HEAD = { id: 'title', primitive: 'headline', params: { text: 'Hello' }, hidden: false }
+  const CUBE = { id: 'body', primitive: 'shape', params: { shape: 'cube', wireframe: false }, hidden: false }
+  const withShape = (state: Record<string, unknown>, objects: unknown[] = [CUBE, HEAD, CODE]) =>
+    scene({ objects: objects as WalkthroughData['objects'], step: { index: 1, total: 2, id: 'mid', say: 'x', state } as WalkthroughData['step'] })
+  const shown = { body: { visible: true, shape: 'cube', wireframe: false, rx: 0, ry: 0, rz: 0 } }
+
+  it('is a lead figure that opts in to depth and carries the scene pose', () => {
+    const [source] = sceneFigureSources(withShape({ body: { ...shown.body, rx: 0.35, ry: 0.25 } }))
+    expect(source.id).toBe('shape:body:cube:solid')
+    expect(source.role).toBe('lead')
+    expect(source.depth).toBe(true)
+    expect(source.pose).toEqual({ rx: 0.35, ry: 0.25, rz: 0 })
+  })
+
+  it('wins over a headline: while both are visible only the shape (and the code focus) is drawn', () => {
+    const sources = sceneFigureSources(withShape({ ...shown, title: { visible: true, text: 'Hello' }, src: { visible: true, lines: [2, 3] } }))
+    expect(sources.map((s) => [s.id, s.role])).toEqual([['shape:body:cube:solid', 'lead'], ['focus:src:2-3', 'pointer']])
+  })
+
+  it('gives the stage back to the headline once the shape is hidden', () => {
+    const sources = sceneFigureSources(withShape({ body: { ...shown.body, visible: false }, title: { visible: true, text: 'Hello' } }))
+    expect(sources.map((s) => s.id)).toEqual(['headline:title:Hello'])
+    expect(sceneFigureSources(withShape({ body: { ...shown.body, visible: false } }))).toEqual([])
+  })
+
+  it('keeps its id (and so its particles) as the pose changes, and renews it when the solid changes', () => {
+    const id = (state: Record<string, unknown>) => sceneFigureSources(withShape(state))[0].id
+    expect(id({ body: { ...shown.body, ry: 0.5 } })).toBe(id(shown))
+    expect(id({ body: { ...shown.body, shape: 'torus' } })).toBe('shape:body:torus:solid')
+    expect(id({ body: { ...shown.body, wireframe: true } })).toBe('shape:body:cube:wire')
+  })
+
+  it('goes back to the earlier pose when an earlier step is shown again', () => {
+    const at = (rx: number) => sceneFigureSources(withShape({ body: { ...shown.body, rx } }))[0].pose
+    const first = at(0.1)
+    at(0.6)
+    expect(at(0.1)).toEqual(first)
+  })
+
+  it('stays after the scene completed and goes when it was stopped', () => {
+    expect(sceneFigureSources({ ...withShape(shown), status: 'ended', reason: 'completed' }).map((x) => x.role)).toEqual(['lead'])
+    expect(sceneFigureSources({ ...withShape(shown), status: 'ended', reason: 'stopped' })).toEqual([])
+  })
+
+  it('is absent once the scene ended or without a step', () => {
+    expect(sceneFigureSources({ ...withShape(shown), status: 'ended' })).toEqual([])
+    expect(sceneFigureSources({ ...withShape(shown), step: null })).toEqual([])
+  })
+
+  it('uses only the first visible shape', () => {
+    const second = { ...CUBE, id: 'other' }
+    const sources = sceneFigureSources(withShape({ body: shown.body, other: { ...shown.body, shape: 'cone' } }, [CUBE, second]))
+    expect(sources.map((s) => s.id)).toEqual(['shape:body:cube:solid'])
+  })
+
+  it('boxes a square in the stage, small enough that perspective keeps it inside', () => {
+    mountStage(600, 400)
+    const [source] = sceneFigureSources(withShape(shown))
+    const box = source.box()!
+    expect(box.w).toBe(box.h)
+    expect(box.h).toBeLessThan(400)
+    expect(box.h).toBeGreaterThan(200)
+    expect(box.x + box.w / 2).toBeCloseTo(400)
+    expect(box.y + box.h / 2).toBeCloseTo(250)
+    document.body.innerHTML = ''
+    expect(source.box()).toBeNull()
+  })
+
+  it('builds the solid points of its kind and wireframe', () => {
+    const [source] = sceneFigureSources(withShape(shown))
+    const points = source.build({ x: 0, y: 0, w: 300, h: 300 })
+    expect(points.length).toBeGreaterThan(500)
+    expect(points.every((q) => q.nx !== undefined && q.z !== undefined)).toBe(true)
   })
 })

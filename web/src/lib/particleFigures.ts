@@ -4,6 +4,7 @@
  * the field can place them over whatever element they belong to, frame by frame.
  */
 import type { FigurePoint } from '@/lib/particleField'
+import { sampleSolid, type SolidKind } from '@/lib/solidShapes'
 
 /** RGBA pixels, as ``CanvasRenderingContext2D.getImageData`` returns them. */
 export interface Mask {
@@ -101,4 +102,13 @@ export function textFigure(text: string, max: number, fontFamily: string): { poi
   } catch {
     return null
   }
+}
+
+/**
+ * ``count`` points on a solid (see ``sampleSolid``), as figure points: x and y are 0..1 of the
+ * box (the solid fits the unit sphere, so it fits its box in any pose), ``z`` is the depth in
+ * half boxes, and ``nx, ny, nz`` the surface normal, which the field turns to tell front from side.
+ */
+export function solidFigurePoints(kind: SolidKind, wireframe: boolean, count: number): FigurePoint[] {
+  return sampleSolid(kind, wireframe, count).map((p) => ({ x: 0.5 + p.x / 2, y: 0.5 + p.y / 2, z: p.z, nx: p.nx, ny: p.ny, nz: p.nz }))
 }

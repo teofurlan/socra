@@ -50,4 +50,14 @@ describe('examReducer walkthrough', () => {
     const asked = examReducer(initialExamState, { type: 'question', index: 1, total: 3, text: 'Why?' })
     expect(examReducer(asked, { type: 'walkthrough', title: 'x', objects: [], total: 1 }).question?.text).toBe('Why?')
   })
+
+  it('keeps a completed scene until the user answers, then releases it', () => {
+    const ended = examReducer(started, { type: 'walkthrough_status', status: 'ended', reason: 'completed' })
+    expect(examReducer(ended, { type: 'transcript', text: 'ba', final: false }).walkthrough).not.toBeNull()
+    expect(examReducer(ended, { type: 'transcript', text: 'because', final: true }).walkthrough).toBeNull()
+  })
+
+  it('does not release a scene that is still playing when a transcript arrives', () => {
+    expect(examReducer(started, { type: 'transcript', text: 'stop', final: true }).walkthrough).not.toBeNull()
+  })
 })
