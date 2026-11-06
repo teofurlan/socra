@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/teofurlan/socra/server/docs/scene.schema.json",
   "title": "Socra narrated scene",
-  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive, line ranges inside the code and headline length after trimming, diagram node and edge references, and that a traced path follows existing edges.",
+  "description": "What Socra says (steps), what it shows (objects) and cues that bind visual actions to the moment a step starts speaking. The server also checks what a schema cannot: ids that cues reference, one cue per step, actions allowed by each primitive, line ranges inside the code and headline length after trimming, diagram node and edge references, that a traced path follows existing edges, and every structure operation by simulating the cues in step order (popping an empty stack, an index out of range or removing a missing key are rejected).",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "title", "steps"],
@@ -18,7 +18,7 @@
         "required": ["id", "primitive", "params"],
         "properties": {
           "id": { "$ref": "#/$defs/id" },
-          "primitive": { "enum": ["code", "headline", "shape", "diagram"] },
+          "primitive": { "enum": ["code", "headline", "shape", "diagram", "structure"] },
           "params": { "type": "object" },
           "hidden": { "type": "boolean", "default": false, "description": "Start hidden; a show action reveals it." }
         },
@@ -38,6 +38,10 @@
           {
             "if": { "properties": { "primitive": { "const": "diagram" } } },
             "then": { "properties": { "params": { "$ref": "#/$defs/diagramParams" } } }
+          },
+          {
+            "if": { "properties": { "primitive": { "const": "structure" } } },
+            "then": { "properties": { "params": { "$ref": "#/$defs/structureParams" } } }
           }
         ]
       }
@@ -149,6 +153,25 @@
         "direction": { "enum": ["TB", "LR"], "default": "LR" }
       }
     },
+    "structureValue": {
+      "description": "A whole number between -9999 and 9999, or one line of text of at most 8 characters.",
+      "oneOf": [
+        { "type": "integer", "minimum": -9999, "maximum": 9999 },
+        { "type": "string", "maxLength": 8, "pattern": "^[^\\n\\r]*\\S[^\\n\\r]*$" }
+      ]
+    },
+    "structureParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "description": "A data structure whose states the runtime computes from operations. items are the initial contents (an array needs at least one; at most 12, or 10 for a stack and a queue); buckets and hash apply to a hashTable only; a tree and a mod hash table take whole numbers, a charSum hash table takes text.",
+      "properties": {
+        "kind": { "enum": ["array", "stack", "queue", "hashTable", "tree"] },
+        "items": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/structureValue" } },
+        "buckets": { "type": "integer", "minimum": 2, "maximum": 8, "default": 5 },
+        "hash": { "enum": ["mod", "charSum"], "default": "mod", "description": "mod: the whole-number key itself; charSum: the sum of the characters' code points. Both are reduced modulo the bucket count." }
+      }
+    },
     "diagramLine": {
       "type": "string",
       "pattern": "^[^\\n\\r]*\\S[^\\n\\r]*$"
@@ -165,7 +188,7 @@
       "required": ["object", "action"],
       "properties": {
         "object": { "$ref": "#/$defs/id" },
-        "action": { "enum": ["show", "hide", "focus", "clear", "set", "rotate", "reset", "highlight", "dim", "reveal", "trace", "annotate"] },
+        "action": { "enum": ["show", "hide", "focus", "clear", "set", "rotate", "reset", "highlight", "dim", "reveal", "trace", "annotate", "swap", "compare", "push", "pop", "peek", "enqueue", "dequeue", "insert", "lookup", "remove"] },
         "params": { "type": "object" }
       },
       "allOf": [
@@ -221,7 +244,9 @@
                 "properties": {
                   "text": { "$ref": "#/$defs/headlineText" },
                   "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },
-                  "wireframe": { "type": "boolean" }
+                  "wireframe": { "type": "boolean" },
+                  "index": { "type": "integer", "description": "Array only: with value." },
+                  "value": { "$ref": "#/$defs/structureValue" }
                 }
               }
             }
@@ -235,8 +260,54 @@
               "params": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["nodes"],
-                "properties": { "nodes": { "$ref": "#/$defs/diagramNodes" } }
+                "properties": {
+                  "nodes": { "$ref": "#/$defs/diagramNodes" },
+                  "indexes": { "type": "array", "minItems": 1, "maxItems": 12, "items": { "type": "integer", "minimum": 0 }, "description": "Array highlight." },
+                  "key": { "type": "integer", "description": "Tree highlight: marks the path to this key." }
+                },
+                "minProperties": 1
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["swap", "compare"] } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["indexes"],
+                "properties": { "indexes": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 0 } } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["push", "enqueue"] } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value"],
+                "properties": { "value": { "$ref": "#/$defs/structureValue" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["insert", "lookup", "remove"] } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key"],
+                "properties": { "key": { "$ref": "#/$defs/structureValue" } }
               }
             }
           }
@@ -295,7 +366,7 @@
           }
         },
         {
-          "if": { "properties": { "action": { "enum": ["show", "hide", "clear", "reset"] } } },
+          "if": { "properties": { "action": { "enum": ["show", "hide", "clear", "reset", "pop", "peek", "dequeue"] } } },
           "then": { "properties": { "params": { "type": "object", "maxProperties": 0 } } }
         }
       ]
