@@ -71,7 +71,10 @@ const HEADLINE_WIDTH = 0.9
 const HEADLINE_HEIGHT = 0.7
 
 function liveState(walkthrough: WalkthroughData | null) {
-  if (!walkthrough || walkthrough.status === 'ended' || !walkthrough.step) return null
+  if (!walkthrough || !walkthrough.step) return null
+  // A scene that played to its end leaves its last step up until the user speaks; a stopped or
+  // failed one clears at once.
+  if (walkthrough.status === 'ended' && walkthrough.reason !== 'completed') return null
   return walkthrough.step.state
 }
 
@@ -151,7 +154,7 @@ function shapeSource(view: ShapeView): FigureSource {
 }
 
 /**
- * The figures a scene shows right now (the lead first); none once it has ended. A shape and a
+ * The figures a scene shows right now (the lead first); none once it was stopped or failed (a completed scene holds its last step). A shape and a
  * headline both lead the stage: the shape wins and the headline is not drawn while it is visible.
  */
 export function sceneFigureSources(walkthrough: WalkthroughData | null): FigureSource[] {

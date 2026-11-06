@@ -38,6 +38,8 @@ SCENE_GUIDE = (
     "over a headline, so the headline is not drawn while it is visible. Use a headline only for one "
     "key concept worth highlighting, not as a caption for every step. Never draw figures as ASCII art "
     "in a code block; code blocks are for real code. "
+    "Narration belongs inside the steps: after present returns, do not describe what is on screen "
+    "(the last step stays up until the user speaks). "
     'steps [{"id", "say"}] are spoken in order, each on its own; '
     'cues [{"at": step id, "do": [{"object": id, "action", "params"?}]}] change the picture '
     "when that step starts. Every primitive supports show and hide; code also supports "
@@ -46,7 +48,7 @@ SCENE_GUIDE = (
     'shape supports rotate {"rx"?, "ry"?, "rz"?}, reset, and set {"shape"?, "wireframe"?}. '
     "A step without a cue keeps the previous picture. Limits: 60 steps, 16 objects, one cue per step, 16 actions "
     "per cue. Blocks until the scene ends; the user may pause, repeat, go back, skip or stop "
-    "meanwhile. Returns completed (steps), stopped (step, total), invalid (errors: each with "
+    "meanwhile. Returns completed (steps, note), stopped (step, total), invalid (errors: each with "
     "path and message; nothing was shown, fix them and call again), busy, page_disconnected "
     "or error (message)."
 )

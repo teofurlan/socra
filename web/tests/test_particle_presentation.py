@@ -297,14 +297,25 @@ class ParticlePresentationTest(unittest.TestCase):
             self.assertGreater(during["ring"]["border"], 25, f"{tag}: outline is missing {during['ring']}")
             self.assertEqual(during["ring"]["covered"], "", f"{tag}: outline canvas is not above the panels")
 
-        # The scene ends: the figures let go and the stage goes back to the voice formation.
+        # The scene ends: its last step stays on the stage until the user speaks.
         page.evaluate(
             """() => window.testSockets.find(s => s.onmessage)
               .receive({type: 'walkthrough_status', status: 'ended', reason: 'completed'})"""
         )
         self.settle(page)
-        after = page.evaluate(PIXELS)
+        held = page.evaluate(PIXELS)
         page.screenshot(path=str(SHOTS / f"{tag}-3-ended.png"))
+        self.assertIn(f"headline:h:{HEADLINE}", held["figures"], f"{tag}: the ended scene vanished at once")
+        self.assertGreater(held["spread"], 0.5, f"{tag}: held headline is not spread like words {held}")
+
+        # The user speaks: the figures let go and the stage goes back to the voice formation.
+        page.evaluate(
+            """() => window.testSockets.find(s => s.onmessage)
+              .receive({type: 'transcript', text: 'why?', final: true})"""
+        )
+        self.settle(page)
+        after = page.evaluate(PIXELS)
+        page.screenshot(path=str(SHOTS / f"{tag}-3b-released.png"))
         self.assertEqual(after["figures"], "", tag)
         self.assertLess(after["spread"], during["spread"] - 0.1, f"{tag}: still spread like words {after}")
 
@@ -378,6 +389,25 @@ class ParticlePresentationTest(unittest.TestCase):
         page.screenshot(path=str(SHOTS / f"{tag}-4-shape-hidden.png"))
         self.assertNotIn("shape:", head["figures"], tag)
         self.assertIn(f"headline:h:{SHAPE_HEADLINE}", head["figures"], tag)
+
+        # The scene ends on a shape: it stays drawn until the user speaks, then goes.
+        self.show(page, shape_step(5, "A cube again.", shape="cube", rx=0.1, ry=0.15), wav, "shape:body:cube")
+        page.evaluate(
+            """() => window.testSockets.find(s => s.onmessage)
+              .receive({type: 'walkthrough_status', status: 'ended', reason: 'completed'})"""
+        )
+        self.settle(page)
+        held = page.evaluate(SHAPE_PIXELS)
+        page.screenshot(path=str(SHOTS / f"{tag}-5-ended.png"))
+        self.assertIn("shape:body:cube", held["figures"], f"{tag}: the shape vanished when the scene ended")
+        self.assertGreater(held["lit"], 400, f"{tag}: the held shape is barely lit {held}")
+        page.evaluate(
+            """() => window.testSockets.find(s => s.onmessage)
+              .receive({type: 'transcript', text: 'why?', final: true})"""
+        )
+        self.settle(page)
+        released = page.evaluate(SHAPE_PIXELS)
+        self.assertNotIn("shape:", released["figures"], f"{tag}: the shape stayed after the user spoke")
 
     def test_same_pose_draws_the_same_picture_when_a_step_is_shown_again(self):
         wav = silent_wav()

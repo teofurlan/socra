@@ -22,8 +22,10 @@ export const initialAgentState: AgentState = {
 const modeLabel = (mode: AgentMode) => AGENT_MODES.find((m) => m.id === mode)?.label ?? mode
 
 /**
- * An ended scene gives the code pane back at the next user turn or agent reply. While it plays,
- * what the user says steers it, so it stays.
+ * A scene that ended stays on screen (its last step: figures and code) and gives the stage back at
+ * the next user turn, a reply that brings its own code, or a new scene. A plain agent reply does
+ * not release it: the agent speaks right after `present` returns, which would clear the scene the
+ * user was just shown. While a scene plays, what the user says steers it, so it stays.
  */
 function dropEndedScene(state: AgentState): AgentState {
   return state.walkthrough?.status === 'ended' ? { ...state, walkthrough: null } : state
@@ -137,10 +139,11 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'agent_reply': {
       // The final text block usually arrives twice: as agent_text, then as the reply.
       const last = state.timeline.at(-1)
+      const release = action.text.includes('```') ? dropEndedScene : (next: AgentState) => next
       if (last?.kind === 'text' && last.text === action.text) {
-        return dropEndedScene({ ...state, timeline: [...state.timeline.slice(0, -1), { ...last, kind: 'reply' }] })
+        return release({ ...state, timeline: [...state.timeline.slice(0, -1), { ...last, kind: 'reply' }] })
       }
-      return dropEndedScene(append(state, { kind: 'reply', text: action.text }))
+      return release(append(state, { kind: 'reply', text: action.text }))
     }
     case 'agent_error':
       return append(state, { kind: 'error', text: action.message })

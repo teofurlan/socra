@@ -51,6 +51,13 @@ describe('sceneFigureSources', () => {
     expect(sources.map((s) => [s.id, s.role])).toEqual([['focus:src:2-3', 'pointer']])
   })
 
+  it('keeps pointing after the scene completed, but not after it was stopped', () => {
+    expect(sceneFigureSources(scene({ status: 'ended', reason: 'completed' }))).toHaveLength(1)
+    for (const reason of ['stopped', 'error', 'disconnected']) {
+      expect(sceneFigureSources(scene({ status: 'ended', reason }))).toEqual([])
+    }
+  })
+
   it('keeps pointing while the scene is paused', () => {
     expect(sceneFigureSources(scene({ status: 'paused' }))).toHaveLength(1)
   })
@@ -109,6 +116,12 @@ describe('headline figure', () => {
   it('leads with the visible headline, before the code focus', () => {
     const sources = sceneFigureSources(withHeadline({ title: { visible: true, text: 'Hello' }, src: { visible: true, lines: [2, 3] } }))
     expect(sources.map((s) => [s.id, s.role])).toEqual([['headline:title:Hello', 'lead'], ['focus:src:2-3', 'pointer']])
+  })
+
+  it('stays after the scene completed and goes when it was stopped', () => {
+    const shown = withHeadline({ title: { visible: true, text: 'Hello' } })
+    expect(sceneHeadline({ ...shown, status: 'ended', reason: 'completed' })).toEqual({ id: 'title', text: 'Hello' })
+    expect(sceneHeadline({ ...shown, status: 'ended', reason: 'stopped' })).toBeNull()
   })
 
   it('is absent when hidden, ended or without a step', () => {
@@ -178,6 +191,11 @@ describe('shape figure', () => {
     const first = at(0.1)
     at(0.6)
     expect(at(0.1)).toEqual(first)
+  })
+
+  it('stays after the scene completed and goes when it was stopped', () => {
+    expect(sceneFigureSources({ ...withShape(shown), status: 'ended', reason: 'completed' }).map((x) => x.role)).toEqual(['lead'])
+    expect(sceneFigureSources({ ...withShape(shown), status: 'ended', reason: 'stopped' })).toEqual([])
   })
 
   it('is absent once the scene ended or without a step', () => {

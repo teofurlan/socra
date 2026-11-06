@@ -76,7 +76,7 @@ async def test_each_step_is_spoken_separately_with_its_focus_on_the_audio():
 
     result = await runner.run(make_walkthrough(3))
 
-    assert result == {"status": "completed", "steps": 3}
+    assert result | {"note": None} == {"status": "completed", "steps": 3, "note": None}
     assert page.spoken == ["Step 1.", "Step 2.", "Step 3."]
     assert page.messages[0] == {
         "type": "walkthrough",
@@ -125,7 +125,7 @@ async def test_pause_opens_listening_and_repeat_replays_the_same_step():
     result = await asyncio.wait_for(task, 2)
 
     assert page.steps_heard() == [1, 1, 2]
-    assert result == {"status": "completed", "steps": 2}
+    assert result | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     assert "playing" in page.statuses()
 
 
@@ -287,3 +287,31 @@ async def test_a_synthesis_failure_ends_the_walkthrough_and_reports_it():
     assert page.messages[-1] == {"type": "walkthrough_status", "status": "ended", "reason": "error"}
     assert page.states[-1] == "idle"
     assert not runner.active
+
+
+@pytest.mark.asyncio
+async def test_a_completed_scene_tells_the_agent_it_is_over_and_still_on_screen():
+    page = Page()
+    runner = make_runner(page)
+
+    result = await runner.run(make_walkthrough(2))
+
+    assert result["status"] == "completed" and result["steps"] == 2
+    note = result["note"].lower()
+    assert "finished" in note
+    assert "stays on screen until the user speaks" in note
+    assert "do not narrate" in note
+
+
+@pytest.mark.asyncio
+async def test_a_stopped_scene_carries_no_completed_note():
+    page = Page()
+    page.hold = True
+    runner = make_runner(page)
+    task = asyncio.create_task(runner.run(make_walkthrough(3)))
+    await settle()
+    runner.command("stop")
+    result = await asyncio.wait_for(task, 2)
+
+    assert result["status"] == "stopped"
+    assert "note" not in result

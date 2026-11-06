@@ -451,3 +451,5 @@ def test_the_scene_guide_tells_when_to_use_shape_headline_and_no_ascii_figures()
     assert "not as a caption" in guide
     assert "ascii" in guide and "code block" in guide
     assert "takes the stage" in guide
+    assert "narration belongs inside the steps" in guide
+    assert "after present returns, do not describe what is on screen" in guide

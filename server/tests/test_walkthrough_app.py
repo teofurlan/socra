@@ -51,7 +51,7 @@ async def settle() -> None:
 async def test_explain_plays_every_step_and_returns_completed(app, channel):
     page = connect_page(app, channel)
     result = await app.explain(CODE, "python", STEPS)
-    assert result == {"status": "completed", "steps": 2}
+    assert result | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     assert [m["step"]["state"]["code"]["lines"] for m in page.of("tts_audio")] == [[1, 2], [3, 3]]
     assert page.of("walkthrough")[0]["objects"][0]["params"]["code"] == CODE
 
@@ -65,7 +65,7 @@ async def test_invalid_ranges_are_reported_and_leave_the_page_and_session_alone(
     assert result["errors"][0]["step"] == 3 and "only has 4 lines" in result["errors"][0]["message"]
     assert page.messages == []
     assert not app.walkthrough.active
-    assert await app.explain(CODE, "python", STEPS) == {"status": "completed", "steps": 2}
+    assert await app.explain(CODE, "python", STEPS) | {"note": None} == {"status": "completed", "steps": 2, "note": None}
 
 
 @pytest.mark.asyncio
@@ -88,7 +88,7 @@ async def test_paused_voice_command_is_a_walkthrough_command_not_an_answer(app, 
     await app.handle_answer_audio("AAAA")
     result = await asyncio.wait_for(task, 2)
 
-    assert result == {"status": "completed", "steps": 2}
+    assert result | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     assert [m["step"]["index"] for m in page.of("tts_audio")] == [1, 1, 2]
     assert app.session.pending_answer is None
     assert page.of("transcript") == []
@@ -161,7 +161,7 @@ async def test_explain_is_an_mcp_tool_that_returns_the_result(app, channel):
     assert "explain" in {t.name for t in await mcp.list_tools()}
 
     payload = await call(mcp, "explain", {"code": CODE, "language": "python", "steps": STEPS})
-    assert payload == {"status": "completed", "steps": 2}
+    assert payload | {"note": None} == {"status": "completed", "steps": 2, "note": None}
 
     payload = await call(
         mcp,
@@ -220,7 +220,7 @@ async def test_page_drives_a_walkthrough_over_the_socket(ws_app):
         clip = await recv_until(ws, "tts_audio")
         assert clip["step"]["index"] == 2
         await ws.send(json.dumps({"type": "playback_done", "seq": clip["step"]["seq"]}))
-        assert (await asyncio.wait_for(task, 3)) == {"status": "completed", "steps": 2}
+        assert (await asyncio.wait_for(task, 3)) | {"note": None} == {"status": "completed", "steps": 2, "note": None}
 
 
 @pytest.mark.asyncio
@@ -260,7 +260,7 @@ SCENE = {
 async def test_present_plays_a_scene_and_returns_completed(app, channel):
     page = connect_page(app, channel)
     result = await app.present(SCENE)
-    assert result == {"status": "completed", "steps": 2}
+    assert result | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     assert page.of("walkthrough")[0]["title"] == "Adding"
     assert [m["step"]["id"] for m in page.of("tts_audio")] == ["names", "sum"]
     assert [m["step"]["state"]["src"]["lines"] for m in page.of("tts_audio")] == [[1, 2], [3, 3]]
@@ -305,6 +305,6 @@ async def test_present_is_an_mcp_tool_that_returns_the_result(app, channel):
     assert "present" in tools
     assert "scene" in tools["present"].inputSchema["properties"]
 
-    assert await call(mcp, "present", {"scene": SCENE}) == {"status": "completed", "steps": 2}
+    assert await call(mcp, "present", {"scene": SCENE}) | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     payload = await call(mcp, "present", {"scene": {"version": 1, "title": "x", "steps": []}})
     assert payload["status"] == "invalid" and payload["errors"][0]["path"] == "steps"

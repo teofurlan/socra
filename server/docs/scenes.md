@@ -70,9 +70,18 @@ Everything that has to be read stays crisp text: code, labels and what is being 
 - Use `shape` to show a body (cube, cylinder, cone, sphere, torus).
 - Use a `headline` only for one key concept worth highlighting, not as a caption for every step.
 - Never draw figures as ASCII art in a code block; code blocks are for real code.
+- Narration belongs inside the steps: after `present` returns, do not describe what is on screen.
 
 New primitives (diagrams, call flows, data structures) register their params, actions
 and state in `PRIMITIVES` without changing the scene contract.
+
+## When a scene ends
+
+A scene that plays to the end returns `{"status": "completed", "steps": N, "note": "..."}`.
+The `note` tells the agent the scene is over, that its last step (figures and panel) stays
+on the page until the user speaks, and that it must not narrate the scene as if it were
+appearing now; a brief follow-up question is fine. A stopped scene returns
+`{"status": "stopped", ...}` and its figures clear at once.
 
 ## Validation
 

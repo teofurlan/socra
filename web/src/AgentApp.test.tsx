@@ -103,7 +103,18 @@ describe('AgentApp', () => {
       expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
       expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
       act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      // The last step stays up after a completed scene, until the user speaks.
+      expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
+      expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
+      act(() => ws.receive({ type: 'transcript', text: 'why?', final: true }))
       expect(visualizer).toHaveAttribute('data-figures', '')
+    })
+
+    it('clears the figures at once when the scene was stopped', () => {
+      const { ws } = openPage()
+      playScene(ws)
+      act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'stopped' }))
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
     })
 
     it('forms the headline with the particles and keeps its text for screen readers', () => {
@@ -118,6 +129,9 @@ describe('AgentApp', () => {
       expect(text).toHaveTextContent('Big idea')
       expect(text).toHaveAttribute('aria-live', 'polite')
       act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', 'headline:h:Big idea')
+      expect(screen.getByTestId('scene-headline')).toHaveTextContent('Big idea')
+      act(() => ws.receive({ type: 'transcript', text: 'ok', final: true }))
       expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
       expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
     })
