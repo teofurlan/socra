@@ -89,6 +89,7 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
 
     // Each figure's points, built from the first box it is seen in and kept while its id lives.
     const built = new Map<string, FigurePoint[]>()
+    const builtKeys = new Map<string, string>()
     const frameFigures = (): Figure[] => {
       const out: Figure[] = []
       const ids = new Set<string>()
@@ -96,14 +97,16 @@ export const ParticleVisualizer: React.FC<ParticleVisualizerProps> = ({
         ids.add(source.id)
         const box = source.box()
         if (!box) continue
+        const key = source.rebuildKey?.(box) ?? ''
         let points = built.get(source.id)
-        if (!points) {
+        if (!points || builtKeys.get(source.id) !== key) {
           points = source.build(box)
           built.set(source.id, points)
+          builtKeys.set(source.id, key)
         }
         out.push({ id: source.id, points, box, role: source.role, depth: source.depth, pose: source.pose })
       }
-      for (const id of built.keys()) if (!ids.has(id)) built.delete(id)
+      for (const id of built.keys()) if (!ids.has(id)) { built.delete(id); builtKeys.delete(id) }
       return out
     }
 

@@ -131,6 +131,27 @@ describe('fitScale and pickLayout', () => {
     expect(narrow.scale).toBeGreaterThan(fitScale(layoutDiagram(chain, links, 'LR'), 300, 480))
   })
 
+  it('keeps the asked direction when it fits, even if the other one would be drawn larger', () => {
+    const three = ['a', 'b', 'c'].map((id) => node(id, `${id.toUpperCase()} node`))
+    const links = [edge('a', 'b'), edge('b', 'c')]
+    const asked = layoutDiagram(three, links, 'LR')
+    const other = layoutDiagram(three, links, 'TB')
+    const askedScale = fitScale(asked, 375, 300)
+    expect(askedScale).toBeGreaterThanOrEqual(1)
+    expect(fitScale(other, 375, 300)).toBeGreaterThan(askedScale * 1.1)
+    const picked = pickLayout(three, links, 'LR', 375, 300)
+    expect(picked.direction).toBe('LR')
+    expect(picked.scale).toBeCloseTo(askedScale)
+  })
+
+  it('switches direction when the asked one does not fit and the other fits clearly better', () => {
+    const three = ['a', 'b', 'c'].map((id) => node(id, `${id.toUpperCase()} node`))
+    const links = [edge('a', 'b'), edge('b', 'c')]
+    const picked = pickLayout(three, links, 'LR', 300, 300)
+    expect(fitScale(layoutDiagram(three, links, 'LR'), 300, 300)).toBeLessThan(1)
+    expect(picked.direction).toBe('TB')
+  })
+
   it('scrolls down rather than sideways when the floor makes the panel scroll', () => {
     const wide = Array.from({ length: 4 }, (_, i) => node(`n${i}`, `Service number ${i}`))
     const links = wide.slice(1).map((n, i) => edge(`n${i}`, n.id, 'calls the next one'))

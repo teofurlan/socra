@@ -324,6 +324,40 @@ class DiagramTest(unittest.TestCase):
                         finally:
                             context.close()
 
+    def test_three_nodes_fit_a_phone_and_stay_legible(self):
+        SHOTS.mkdir(parents=True, exist_ok=True)
+        wav = silent_wav()
+        nodes = [{"id": n, "label": label, "group": ""} for n, label in (("a", "Browser"), ("b", "API"), ("c", "Database"))]
+        edges = [{"from": "a", "to": "b", "label": "", "hidden": False}, {"from": "b", "to": "c", "label": "", "hidden": False}]
+        scene = {
+            "type": "walkthrough",
+            "title": "Three",
+            "objects": [{"id": "flow", "primitive": "diagram", "params": {"nodes": nodes, "edges": edges, "direction": "LR"}, "hidden": False}],
+            "total": 1,
+        }
+        state = flow_state(revealed=[{"from": e["from"], "to": e["to"]} for e in edges], highlighted=["b"])
+        with sync_playwright() as playwright:
+            with playwright.chromium.launch(channel="chrome", args=["--autoplay-policy=no-user-gesture-required"]) as browser:
+                context = browser.new_context(viewport={"width": 360, "height": 640})
+                context.add_init_script(SOCKET)
+                page = context.new_page()
+                try:
+                    self.prepare(page, "agent")
+                    self.send(page, scene)
+                    self.play(page, step(1, "Three services.", state, 1), wav)
+                    page.locator("[data-diagram-root]").wait_for()
+                    page.wait_for_timeout(1500)
+                    info = page.evaluate(READ)
+                    page.screenshot(path=str(SHOTS / "three-360x640.png"))
+                    print(f"3 nodes 360x640: direction={info['direction']} font={info['fontPx']:.1f}px scrolls={info['scrolls']}")
+                    self.assertEqual(info["nodes"], 3)
+                    self.assertFalse(info["scrolls"], info)
+                    self.assertLessEqual(info["overflowX"], 1, info)
+                    self.assertGreaterEqual(info["fontPx"], MIN_FONT_PX, info)
+                    self.assertLessEqual(info["pane"]["r"], info["vw"] + 1, info)
+                finally:
+                    context.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

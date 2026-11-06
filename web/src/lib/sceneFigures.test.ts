@@ -324,6 +324,29 @@ describe('diagram pointing', () => {
     expect(points[0].x).toBeLessThan(points[points.length - 1].x)
   })
 
+  it('drops trace points outside the clipped viewport instead of piling them on its border', () => {
+    mountFlow({}, { 'a>b': rect(100, 200, 200, 2) }, rect(0, 0, 160, 600))
+    const [source] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    const box = source.box()!
+    expect(box.x + box.w).toBe(160)
+    const points = source.build(box)
+    expect(points.length).toBeGreaterThan(0)
+    expect(points.every((p) => p.x >= 0 && p.x <= 1)).toBe(true)
+    expect(points.filter((p) => p.x === 1)).toHaveLength(0)
+  })
+
+  it('asks for a rebuild of the trace points when the diagram changes size on screen', () => {
+    mountFlow({}, { 'a>b': rect(100, 200, 80, 60) })
+    const [before] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    const first = before.rebuildKey?.(before.box()!)
+    expect(first).toBeDefined()
+    document.body.replaceChildren()
+    mountFlow({}, { 'a>b': rect(100, 200, 160, 120) })
+    const [after] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))
+    expect(after.rebuildKey?.(after.box()!)).not.toBe(first)
+    expect(after.id).toBe(before.id)
+  })
+
   it('still boxes a straight edge that has no thickness', () => {
     mountFlow({}, { 'a>b': rect(100, 200, 80, 0) })
     const [source] = sceneFigureSources(flowScene({ trace: ['a', 'b'] }))

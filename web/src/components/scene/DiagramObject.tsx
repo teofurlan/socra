@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { X } from 'lucide-react'
 import { Panel } from '@/components/shell/Panel'
 import type { PrimitiveProps } from '@/components/scene/registry'
@@ -35,8 +35,21 @@ function useViewportSize(ref: React.RefObject<HTMLElement | null>) {
   return size
 }
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
+
+function subscribeReducedMotion(notify: () => void): () => void {
+  const query = typeof window !== 'undefined' ? window.matchMedia?.(REDUCED_QUERY) : undefined
+  query?.addEventListener?.('change', notify)
+  return () => query?.removeEventListener?.('change', notify)
+}
+
+function reducedMotionNow(): boolean {
+  return typeof window !== 'undefined' && (window.matchMedia?.(REDUCED_QUERY).matches ?? false)
+}
+
+/** Follows the user's reduced-motion preference, also when it changes while a diagram is drawn. */
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(subscribeReducedMotion, reducedMotionNow, () => false)
 }
 
 function arrowHead(points: Point[]): string {
@@ -175,7 +188,7 @@ export function DiagramObject({ object, state, siblings, onClose }: PrimitivePro
   const view = visibleDiagramViews([object], state ? { [object.id]: state } : null)[0]
   const viewport = useRef<HTMLDivElement | null>(null)
   const size = useViewportSize(viewport)
-  const reduced = prefersReducedMotion()
+  const reduced = usePrefersReducedMotion()
   // The layout depends on the diagram and the room it has, not on the step's highlights.
   const picked = useMemo(() => {
     const whole = visibleDiagramViews([{ ...object, hidden: false }], null)[0]

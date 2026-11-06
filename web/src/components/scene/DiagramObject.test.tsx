@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DiagramObject } from '@/components/scene/DiagramObject'
 import { PRIMITIVE_RENDERERS, hasScenePanel, panelObjects } from '@/components/scene/registry'
@@ -90,6 +90,50 @@ describe('DiagramObject', () => {
       expect((e as HTMLElement).style.getPropertyValue('--trace-duration')).toBe('0s')
     }
     expect(document.querySelectorAll('[data-diagram-edge][data-traced="true"]')).toHaveLength(2)
+  })
+
+  it('follows a change of the reduced-motion preference while it is drawn', () => {
+    let reduce = false
+    const listeners = new Set<() => void>()
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      get matches() { return reduce && query.includes('reduce') },
+      media: query,
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    }))
+    draw({ ...base, trace: ['browser', 'api', 'db'] })
+    const root = () => document.querySelector('[data-diagram-root]')!
+    expect(root()).toHaveAttribute('data-motion', 'full')
+    expect(parseFloat((edge('api>db') as HTMLElement).style.getPropertyValue('--trace-delay'))).toBeGreaterThan(0)
+    reduce = true
+    act(() => listeners.forEach((fn) => fn()))
+    expect(root()).toHaveAttribute('data-motion', 'reduced')
+    expect((edge('api>db') as HTMLElement).style.getPropertyValue('--trace-delay')).toBe('0s')
+    reduce = false
+    act(() => listeners.forEach((fn) => fn()))
+    expect(root()).toHaveAttribute('data-motion', 'full')
+  })
+
+  it('delays each hop of a long trace one step after the other, and replays the edges for a new trace', () => {
+    const wide: SceneObject = {
+      ...flow,
+      params: { ...flow.params, edges: [...(flow.params.edges as object[]), { from: 'db', to: 'cache', label: '', hidden: false }] },
+    }
+    const props = { object: wide, say: '', siblings: 1, name: 'walkthrough', onClose: () => {} }
+    const revealed = [...base.revealed, { from: 'api', to: 'cache' }, { from: 'db', to: 'cache' }]
+    const delay = (key: string) => parseFloat((edge(key) as HTMLElement).style.getPropertyValue('--trace-delay'))
+    const { rerender } = render(<DiagramObject {...props} state={{ ...base, revealed, trace: ['browser', 'api', 'db', 'cache'] } as never} />)
+    const d = [delay('browser>api'), delay('api>db'), delay('db>cache')]
+    expect(d[0]).toBe(0)
+    expect(d[1]).toBeGreaterThan(d[0])
+    expect(d[2]).toBeGreaterThan(d[1])
+    expect(d[2] - d[1]).toBeCloseTo(d[1] - d[0])
+    const before = edge('browser>api')
+    const untouched = edge('api>cache')
+    rerender(<DiagramObject {...props} state={{ ...base, revealed, trace: ['browser', 'api', 'cache'] } as never} />)
+    expect(edge('browser>api')).not.toBe(before)
+    expect(edge('api>cache')).not.toBe(untouched)
+    expect(document.querySelector('[data-diagram-edge="db>cache"]')).not.toHaveAttribute('data-traced')
   })
 
   it('returns to exactly the earlier picture when the earlier state comes back', () => {

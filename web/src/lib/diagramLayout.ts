@@ -165,9 +165,10 @@ const OTHER: Record<DiagramDirection, DiagramDirection> = { TB: 'LR', LR: 'TB' }
 const SWITCH_GAIN = 1.1
 
 /**
- * The layout to draw in a panel of this size: the asked direction, unless the other one fits
- * clearly better (a wide LR chain on a narrow screen turns top to bottom), at a scale that
- * never goes under ``MIN_SCALE``.
+ * The layout to draw in a panel of this size: the asked direction whenever it fits at full
+ * size (scale 1 or more). Only when it must shrink does the other one replace it, if that fits
+ * clearly better (a wide LR chain on a narrow screen turns top to bottom) or the asked one
+ * would scroll sideways; the scale never goes under ``MIN_SCALE``.
  */
 export function pickLayout(
   nodes: DiagramNodeInput[],
@@ -178,7 +179,8 @@ export function pickLayout(
 ): DiagramLayout & { scale: number } {
   const asked = layoutDiagram(nodes, edges, direction)
   const askedScale = fitScale(asked, availWidth, availHeight)
-  if (askedScale >= MAX_SCALE) return { ...asked, scale: askedScale }
+  // The asked direction that fits (drawn at full size or larger) is never replaced.
+  if (askedScale >= 1) return { ...asked, scale: askedScale }
   const other = layoutDiagram(nodes, edges, OTHER[direction])
   const otherScale = fitScale(other, availWidth, availHeight)
   // Where the floor makes the panel scroll anyway, scroll down (the page's way) rather than sideways.

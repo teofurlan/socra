@@ -79,7 +79,9 @@ The page lays the diagram out (dagre); you never provide coordinates. Rules:
 - A `trace` path needs at least two nodes, and each consecutive pair must be an existing edge in
   its direction (`no edge a -> b in this diagram` otherwise).
 - Diagrams of 3 to 15 nodes read best; 25 is the cap. `LR` suits request paths and call flows;
-  the page lays a wide `LR` diagram out top to bottom on a narrow screen when that reads better.
+  the page keeps the direction you asked for whenever the diagram fits at full size, and lays a
+  wide `LR` diagram out top to bottom only when it would have to shrink (or scroll sideways) and
+  the other direction fits clearly better.
 - Notes (`annotate`) are one line, at most 60 characters; a second note on a node replaces its text.
 
 Example ([`scene.diagram.example.json`](scene.diagram.example.json)):

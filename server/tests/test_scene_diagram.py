@@ -87,6 +87,19 @@ def test_a_valid_diagram_scene_has_per_step_state():
     assert EDGE_API_CACHE in flow_state(scene, 2)["revealed"]
 
 
+def test_reveal_on_an_edge_that_is_already_visible_is_accepted_and_changes_nothing():
+    raw = diagram_scene()
+    raw["cues"] = [{"at": "hit", "do": [
+        {"object": "flow", "action": "reveal", "params": {"from": "browser", "to": "api"}},
+    ]}]
+    scene, errors = parse_scene(raw)
+    assert errors == [] and scene is not None
+    before = flow_state(scene, 1)
+    after = flow_state(scene, 2)
+    assert after["revealed"] == before["revealed"]
+    assert EDGE_BROWSER_API in after["revealed"]
+
+
 def test_trace_sets_the_path_and_reveals_its_edges():
     raw = diagram_scene()
     raw["cues"][2]["do"] = [{"object": "flow", "action": "trace", "params": {"path": ["browser", "api", "cache"]}}]
@@ -156,10 +169,6 @@ def test_the_page_receives_normalized_diagram_params():
 
 def many_nodes(count: int) -> list[dict]:
     return [{"id": f"n{i}", "label": f"Node {i}"} for i in range(count)]
-
-
-def test_the_node_cap_is_25():
-    assert MAX_DIAGRAM_NODES == 25
 
 
 def test_a_diagram_may_have_the_most_nodes_and_one_over_is_rejected():

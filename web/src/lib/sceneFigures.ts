@@ -21,6 +21,11 @@ export interface FigureSource {
   /** Where it is on screen now, or ``null`` while it cannot be seen. */
   box: () => FigureBox | null
   build: (box: FigureBox) => FigurePoint[]
+  /**
+   * Read every frame with the box: when it changes, the points are built again (same id, so the
+   * particles stay recruited). For figures whose points depend on what is on screen, not only on the id.
+   */
+  rebuildKey?: (box: FigureBox) => string
 }
 
 /** Space above and below the focused lines, in pixels; lines sit close, so it stays small. */
@@ -253,11 +258,18 @@ function diagramSources(walkthrough: WalkthroughData, state: NonNullable<ReturnT
       id: `trace:${view.id}:${view.trace.join('>')}`,
       role: 'pointer',
       box: () => traceBox(view.id, view.trace),
+      // Points sit where the edges are on screen now: a new size (resize, zoom) or clip (scroll) rebuilds them.
+      rebuildKey: (box) => {
+        const scale = tracedLines(view.id, view.trace)[0]?.getScreenCTM?.()?.a ?? 1
+        return `${Math.round(box.w / 4)}x${Math.round(box.h / 4)}@${scale.toFixed(2)}`
+      },
       build: (box) =>
-        tracePixels(tracedLines(view.id, view.trace)).map((p) => ({
-          x: Math.min(1, Math.max(0, (p.x - box.x) / box.w)),
-          y: Math.min(1, Math.max(0, (p.y - box.y) / box.h)),
-        })),
+        tracePixels(tracedLines(view.id, view.trace)).flatMap((p) => {
+          const x = (p.x - box.x) / box.w
+          const y = (p.y - box.y) / box.h
+          // Outside the clipped viewport the edge is out of sight: leave those points out.
+          return x < 0 || x > 1 || y < 0 || y > 1 ? [] : [{ x, y }]
+        }),
     }]
     return [...rings, ...lines]
   })
