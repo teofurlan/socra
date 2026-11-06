@@ -7,7 +7,6 @@
       "primitive": "shape",
       "params": {
         "shape": "cube",
-        "color": "#00f0ff",
         "wireframe": false
       }
     }

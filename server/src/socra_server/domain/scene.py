@@ -31,14 +31,18 @@ SCENE_GUIDE = (
     'objects [{"id", "primitive", "params", "hidden"?}] are what can be shown '
     '(primitive "code": params {"code", "language"?}; primitive "headline": params {"text"}, '
     "a title or key term of at most 24 characters on one line, drawn large with the page's "
-    'particles; the page shows the first visible headline; primitive "shape": params {"shape", "color"?, "wireframe"?}, '
-    "a 3D solid drawn on the Stage); "
+    'particles; the page shows the first visible headline; primitive "shape": params {"shape", "wireframe"?}, '
+    "a 3D solid assembled by the particles, in the state palette's colours). "
+    "Use shape to show a body (cube, cylinder, cone, sphere, torus); a visible shape takes the stage "
+    "over a headline, so the headline is not drawn while it is visible. Use a headline only for one "
+    "key concept worth highlighting, not as a caption for every step. Never draw figures as ASCII art "
+    "in a code block; code blocks are for real code. "
     'steps [{"id", "say"}] are spoken in order, each on its own; '
     'cues [{"at": step id, "do": [{"object": id, "action", "params"?}]}] change the picture '
     "when that step starts. Every primitive supports show and hide; code also supports "
     'focus {"lines": [start, end]} (1-based, inclusive) and clear, which the page also '
     'marks with particles; headline supports set {"text"} to change its words; '
-    'shape supports rotate {"rx"?, "ry"?, "rz"?}, reset, and set {"shape"?, "color"?, "wireframe"?}. '
+    'shape supports rotate {"rx"?, "ry"?, "rz"?}, reset, and set {"shape"?, "wireframe"?}. '
     "A step without a cue keeps the previous picture. Limits: 60 steps, 16 objects, one cue per step, 16 actions "
     "per cue. Blocks until the scene ends; the user may pause, repeat, go back, skip or stop "
     "meanwhile. Returns completed (steps), stopped (step, total), invalid (errors: each with "
@@ -205,19 +209,15 @@ _SHAPE_NAMES = ", ".join(ALLOWED_SHAPES)
 def _parse_shape_params(raw: Any, path: str) -> tuple[dict, Errors]:
     if not isinstance(raw, dict):
         return {}, [_error(path, "params must be an object with shape")]
-    errors = _unknown_fields(raw, {"shape", "color", "wireframe"}, path)
+    errors = _unknown_fields(raw, {"shape", "wireframe"}, path)
     shape = raw.get("shape")
     if shape not in ALLOWED_SHAPES:
         errors.append(_error(f"{path}.shape", f"shape must be one of {_SHAPE_NAMES}"))
-    color = raw.get("color", "")
-    if color is not None and not isinstance(color, str):
-        errors.append(_error(f"{path}.color", "color must be a string"))
     wireframe = raw.get("wireframe", False)
     if not isinstance(wireframe, bool):
         errors.append(_error(f"{path}.wireframe", "wireframe must be a boolean"))
     return {
         "shape": shape if shape in ALLOWED_SHAPES else "",
-        "color": color if isinstance(color, str) else "",
         "wireframe": bool(wireframe) if isinstance(wireframe, bool) else False,
     }, errors
 
@@ -239,8 +239,8 @@ def _parse_rotate(raw: Any, _object_params: dict, path: str) -> tuple[dict, Erro
 
 def _parse_shape_set(raw: Any, _object_params: dict, path: str) -> tuple[dict, Errors]:
     if not isinstance(raw, dict):
-        return {}, [_error(path, "set needs params object with shape, color, or wireframe")]
-    errors = _unknown_fields(raw, {"shape", "color", "wireframe"}, path)
+        return {}, [_error(path, "set needs params object with shape or wireframe")]
+    errors = _unknown_fields(raw, {"shape", "wireframe"}, path)
     normalized: dict[str, Any] = {}
     if "shape" in raw:
         shape = raw["shape"]
@@ -248,12 +248,6 @@ def _parse_shape_set(raw: Any, _object_params: dict, path: str) -> tuple[dict, E
             errors.append(_error(f"{path}.shape", f"shape must be one of {_SHAPE_NAMES}"))
         else:
             normalized["shape"] = shape
-    if "color" in raw:
-        color = raw["color"]
-        if not isinstance(color, str):
-            errors.append(_error(f"{path}.color", "color must be a string"))
-        else:
-            normalized["color"] = color
     if "wireframe" in raw:
         wireframe = raw["wireframe"]
         if not isinstance(wireframe, bool):
@@ -267,13 +261,12 @@ def _apply_rotate(state: State, params: dict) -> State:
     return state | {k: params[k] for k in ("rx", "ry", "rz") if k in params}
 
 
-# A 3D geometric solid drawn on the Stage with lightweight Zdog rendering.
+# A 3D geometric solid assembled by the particle field in the voice stage; it follows the state palette.
 SHAPE = Primitive(
     name="shape",
     parse_params=_parse_shape_params,
     initial_state=lambda params: {
         "shape": params["shape"],
-        "color": params["color"],
         "wireframe": params["wireframe"],
         "rx": 0.0,
         "ry": 0.0,

@@ -52,7 +52,7 @@ Every primitive supports `show` and `hide`. Primitive-specific actions:
 | --- | --- | --- |
 | `code` | `code` (required, shown verbatim), `language` (syntax colours only) | `focus` with `{ "lines": [start, end] }` (1-based, inclusive, inside the code); `clear` removes the focus. The page outlines the focused lines with particles. |
 | `headline` | `text` (required, one line, at most 24 characters after trimming) | `set` with `{ "text": "..." }` replaces the words. |
-| `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `color` (optional string), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (numbers), `reset` (restores rotation to 0), `set` with `{ "shape"?, "color"?, "wireframe"? }`. Rendered interactively via Zdog; users can drag to spin. |
+| `shape` | `shape` (`cube`, `cylinder`, `cone`, `sphere`, `torus`), `wireframe` (optional boolean) | `rotate` with `{ "rx"?, "ry"?, "rz"? }` (numbers), `reset` (restores rotation to 0), `set` with `{ "shape"?, "wireframe"? }`. Shapes have no colour param; the page draws them with the state palette. |
 
 ### Presenting with particles
 
@@ -61,7 +61,15 @@ particles leave the voice shape and assemble its words in the voice stage, still
 and colouring with who is speaking; the words are also in the page for screen readers.
 Only the first visible headline is drawn. While a `code` object has a focus, a few
 particles outline the focused lines in the code panel and follow them as it scrolls.
+A visible `shape` is assembled from the particles as a solid and takes the stage over a
+headline: while a shape is visible, the headline is not drawn.
 Everything that has to be read stays crisp text: code, labels and what is being said.
+
+### Choosing what to show
+
+- Use `shape` to show a body (cube, cylinder, cone, sphere, torus).
+- Use a `headline` only for one key concept worth highlighting, not as a caption for every step.
+- Never draw figures as ASCII art in a code block; code blocks are for real code.
 
 New primitives (diagrams, call flows, data structures) register their params, actions
 and state in `PRIMITIVES` without changing the scene contract.

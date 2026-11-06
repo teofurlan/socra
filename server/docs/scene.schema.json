@@ -102,7 +102,6 @@
       "required": ["shape"],
       "properties": {
         "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },
-        "color": { "type": "string", "default": "" },
         "wireframe": { "type": "boolean", "default": false }
       }
     },
@@ -166,7 +165,6 @@
                 "properties": {
                   "text": { "$ref": "#/$defs/headlineText" },
                   "shape": { "enum": ["cube", "cylinder", "cone", "sphere", "torus"] },
-                  "color": { "type": "string" },
                   "wireframe": { "type": "boolean" }
                 }
               }
