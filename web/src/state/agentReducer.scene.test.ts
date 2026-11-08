@@ -28,14 +28,14 @@ describe('agentReducer scenes', () => {
     expect(run({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }).walkthrough).toBeNull()
   })
 
-  it('keeps the scene while the user steers it, and drops an ended scene at the next turn', () => {
+  it('keeps the scene while the user steers it, and an ended scene stays at the next turn', () => {
     const playing = run(scene, step, { type: 'transcript', text: 'pause', final: true })
     expect(playing.walkthrough?.status).toBe('playing')
 
     const ended = agentReducer(playing, { type: 'walkthrough_status', status: 'ended', reason: 'completed' })
     expect(ended.walkthrough?.reason).toBe('completed')
-    expect(agentReducer(ended, { type: 'user_text', text: 'thanks' }).walkthrough).toBeNull()
-    expect(agentReducer(ended, { type: 'transcript', text: 'thanks', final: true }).walkthrough).toBeNull()
+    expect(agentReducer(ended, { type: 'user_text', text: 'thanks' }).walkthrough?.status).toBe('ended')
+    expect(agentReducer(ended, { type: 'transcript', text: 'thanks', final: true }).walkthrough?.status).toBe('ended')
   })
 
   const completed: AgentAction = { type: 'walkthrough_status', status: 'ended', reason: 'completed' }
@@ -53,11 +53,20 @@ describe('agentReducer scenes', () => {
     expect(agentReducer(ended, reply).walkthrough).toBeNull()
   })
 
-  it('releases a completed scene at the user turn, typed or spoken', () => {
+  it('keeps a completed scene at the user turn, typed or spoken, so the check can point at it', () => {
     const ended = run(scene, step, completed)
-    expect(agentReducer(ended, { type: 'user_text', text: 'why?' }).walkthrough).toBeNull()
-    expect(agentReducer(ended, { type: 'transcript', text: 'why?', final: true }).walkthrough).toBeNull()
-    expect(agentReducer(ended, { type: 'transcript', text: 'wh', final: false }).walkthrough).not.toBeNull()
+    expect(agentReducer(ended, { type: 'user_text', text: 'why?' }).walkthrough).toMatchObject({ status: 'ended' })
+    expect(agentReducer(ended, { type: 'transcript', text: 'why?', final: true }).walkthrough).toMatchObject({ status: 'ended' })
+  })
+
+  it('releases an ended scene when the agent clears it', () => {
+    expect(run(scene, step, completed, { type: 'walkthrough_cleared' }).walkthrough).toBeNull()
+  })
+
+  it('ignores the clear while the scene still plays, and without a scene', () => {
+    const playing = run(scene, step)
+    expect(agentReducer(playing, { type: 'walkthrough_cleared' })).toBe(playing)
+    expect(run({ type: 'walkthrough_cleared' }).walkthrough).toBeNull()
   })
 
   it('a new scene replaces the held one', () => {

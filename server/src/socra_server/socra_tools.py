@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from socra_server.domain.modes import (
+    CLEAR_SCENE,
     PRESENT,
     RECORD_EXAM_RESULT,
     SCENE_GUIDE_TOOL,
@@ -63,6 +64,10 @@ async def _present(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
     return await toolbox.present(args.get("scene"))
 
 
+async def _clear_scene(toolbox: SocraToolbox, _args: dict[str, Any]) -> str:
+    return await toolbox.clear_scene()
+
+
 async def _scene_guide(_toolbox: SocraToolbox, args: dict[str, Any]) -> str:
     topic = args.get("topic")
     return scene_guide(topic if isinstance(topic, str) else "")
@@ -94,7 +99,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         RECORD_EXAM_RESULT,
-        "Record the verdict on one exam answer after grading it.",
+        "Record the verdict on one answer to an exam or check question after grading it.",
         {
             "type": "object",
             "properties": {
@@ -128,6 +133,13 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         },
         _present,
     ),
+    ToolSpec(
+        CLEAR_SCENE,
+        "Removes the finished scene from the user's screen. Call it when the check after a "
+        "scene ends or is declined. A scene that is still playing is not removed.",
+        {"type": "object", "properties": {}},
+        _clear_scene,
+    ),
 )
 
 
@@ -143,6 +155,7 @@ class CallbackToolbox:
     record: Callable[[str, str, str], Awaitable[str]]
     search: Callable[[str, int], Awaitable[list[Any]]]
     play: Callable[[Any], Awaitable[str]]
+    clear: Callable[[], Awaitable[str]]
 
     async def switch_mode(self, target: str) -> str:
         return await self.switch(target)
@@ -155,3 +168,6 @@ class CallbackToolbox:
 
     async def present(self, scene: Any) -> str:
         return await self.play(scene)
+
+    async def clear_scene(self) -> str:
+        return await self.clear()

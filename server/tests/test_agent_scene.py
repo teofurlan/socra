@@ -67,7 +67,7 @@ async def test_the_present_tool_passes_the_scene_to_the_toolbox():
     async def unused(*_args):
         return ""
 
-    toolbox = CallbackToolbox(switch=unused, record=unused, search=unused, play=present)
+    toolbox = CallbackToolbox(switch=unused, record=unused, search=unused, play=present, clear=unused)
     spec = next(s for s in specs_for(get_mode("mentor")) if s.id == PRESENT)
     assert spec.schema["required"] == ["scene"]
     assert await spec.handler(toolbox, {"scene": SCENE}) == "played"
@@ -167,3 +167,41 @@ async def test_a_reply_clip_without_a_step_still_counts_as_the_reply_playing(tmp
     app, *_ = await _opened(tmp_path)
     app.handle_playback_done()
     assert app.acknowledged_clips == 1
+
+
+async def test_clearing_an_ended_scene_tells_the_page(tmp_path):  # S4
+    app, channel, _, toolbox = await _opened(tmp_path)
+    task = await _play(app, channel, toolbox.present(SCENE))
+    await asyncio.wait_for(task, 2)
+
+    text = await toolbox.clear_scene()
+
+    assert channel.of_type("walkthrough_cleared") == [{"type": "walkthrough_cleared"}]
+    assert text == "Scene cleared."
+    assert await toolbox.clear_scene() == "No finished scene is on screen."
+    assert len(channel.of_type("walkthrough_cleared")) == 1
+
+
+async def test_a_scene_that_still_plays_is_not_cleared(tmp_path):  # S4
+    app, channel, _, toolbox = await _opened(tmp_path)
+    task = await _play(app, channel, toolbox.present(SCENE), ack=False)
+    await _settle()
+
+    assert await toolbox.clear_scene() == "No finished scene is on screen."
+    assert channel.of_type("walkthrough_cleared") == []
+    await app.handle_walkthrough_control("stop")
+    await asyncio.wait_for(task, 2)
+
+
+async def test_clearing_without_any_scene_sends_nothing(tmp_path):  # S4
+    _, channel, _, toolbox = await _opened(tmp_path)
+
+    assert await toolbox.clear_scene() == "No finished scene is on screen."
+    assert channel.of_type("walkthrough_cleared") == []
+
+
+async def test_a_new_scene_after_clearing_can_be_cleared_again(tmp_path):  # S4
+    app, channel, _, toolbox = await _opened(tmp_path)
+    for _ in range(2):
+        await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+        assert await toolbox.clear_scene() == "Scene cleared."

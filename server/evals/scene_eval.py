@@ -90,7 +90,7 @@ async def _unused(*_: Any) -> Any:
 
 
 def toolbox_for(page: FakePage) -> CallbackToolbox:
-    return CallbackToolbox(switch=_unused, record=_unused, search=_unused, play=page.play)
+    return CallbackToolbox(switch=_unused, record=_unused, search=_unused, play=page.play, clear=_unused)
 
 
 async def read_only(request: PermissionRequest) -> bool:

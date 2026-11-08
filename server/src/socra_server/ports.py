@@ -73,6 +73,10 @@ class SocraToolbox(Protocol):
         """Play a narrated scene on the page; returns how it ended, as text for the agent."""
         ...
 
+    async def clear_scene(self) -> str:
+        """Remove the finished scene from the page; returns text for the agent."""
+        ...
+
 
 @runtime_checkable
 class AgentBackend(Protocol):

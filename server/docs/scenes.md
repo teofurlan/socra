@@ -199,6 +199,22 @@ on the page until the user speaks, and that it must not narrate the scene as if 
 appearing now; a brief follow-up question is fine. A stopped scene returns
 `{"status": "stopped", ...}` and its figures clear at once.
 
+## The check after a scene
+
+In mentor and exam modes, once `present` returns `completed`, the agent offers by voice a short
+check of 2 or 3 questions about what the scene showed. It is never forced:
+
+- **Accepted**: the agent asks one question at a time, gives brief spoken feedback (correct,
+  partial or incorrect) and calls `record_exam_result` after grading each answer. Recording works
+  in mentor mode too.
+- **Declined**: the conversation continues normally.
+
+The finished scene stays on screen while the check runs, even when the user speaks, so the
+questions can refer to it. When the check ends or is declined, the agent calls `clear_scene`
+(no arguments). The page then drops the scene (`walkthrough_cleared`). `clear_scene` only removes
+a scene that has ended: while one plays it does nothing and returns "No finished scene is on
+screen." A new `present` or a reply with code also releases an ended scene.
+
 ## Validation
 
 The whole scene is checked before anything is shown or spoken. An invalid scene returns

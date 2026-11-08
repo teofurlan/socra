@@ -40,9 +40,17 @@ def test_mode_instructions_tell_the_agent_to_reply_in_english():  # S5
         assert "Spanish" not in mode.instructions
 
 
-def test_only_exam_records_exam_results():
-    assert "record_exam_result" in get_mode("exam").tools
-    assert "record_exam_result" not in get_mode("mentor").tools
+def test_mentor_and_exam_record_results_and_clear_the_scene():  # S3, S4
+    for mode_id in ("mentor", "exam"):
+        assert {"record_exam_result", "clear_scene"} <= get_mode(mode_id).tools
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_describe_the_check_after_a_scene(mode_id):  # S1, S2, S3
+    text = get_mode(mode_id).instructions.lower()
+    assert "check" in text and "never" in text
+    assert "record_exam_result" in text
+    assert "clear_scene" in text
 
 
 def test_mentor_placeholder_is_a_read_only_explainer():

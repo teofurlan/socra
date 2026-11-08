@@ -69,7 +69,7 @@ SCENE_GUIDE = (
     "empty stack, an index out of range, removing a missing key); a lookup of a missing key is allowed and shows "
     "not found. Limits: 12 items (10 in a stack or queue), 5 tree levels. "
     "Narration belongs inside the steps: after present returns, do not describe what is on screen "
-    "(the last step stays up until the user speaks). "
+    "(the last step stays up until you call clear_scene). "
     'steps [{"id", "say"}] are spoken in order, each on its own; '
     'cues [{"at": step id, "do": [{"object": id, "action", "params"?}]}] change the picture '
     "when that step starts. Every primitive supports show and hide; code also supports "

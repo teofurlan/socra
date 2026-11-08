@@ -22,17 +22,17 @@ export const initialAgentState: AgentState = {
 const modeLabel = (mode: AgentMode) => AGENT_MODES.find((m) => m.id === mode)?.label ?? mode
 
 /**
- * A scene that ended stays on screen (its last step: figures and code) and gives the stage back at
- * the next user turn, a reply that brings its own code, or a new scene. A plain agent reply does
- * not release it: the agent speaks right after `present` returns, which would clear the scene the
- * user was just shown. While a scene plays, what the user says steers it, so it stays.
+ * A scene that ended stays on screen (its last step: figures and code) so the agent can ask about
+ * it. It leaves when the agent clears it (`walkthrough_cleared`), a reply brings its own code, or a
+ * new scene starts. Neither the user's turn nor a plain agent reply releases it. While a scene
+ * plays, what the user says steers it, so it stays.
  */
 function dropEndedScene(state: AgentState): AgentState {
   return state.walkthrough?.status === 'ended' ? { ...state, walkthrough: null } : state
 }
 
 function userTurn(state: AgentState, text: string): AgentState {
-  return dropEndedScene(append({ ...state, spoken: null }, { kind: 'user', text }))
+  return append({ ...state, spoken: null }, { kind: 'user', text })
 }
 
 function append(state: AgentState, entry: Omit<TimelineEntry, 'id'>): AgentState {
@@ -132,6 +132,9 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       const walkthrough = reduceWalkthrough(state.walkthrough, action)
       return walkthrough === state.walkthrough ? state : { ...state, walkthrough }
     }
+    case 'walkthrough_cleared':
+      // Only a finished scene is released; one still playing ignores the message.
+      return state.walkthrough?.status === 'ended' ? { ...state, walkthrough: null } : state
     case 'agent_text':
       return append(state, { kind: 'text', text: action.text })
     case 'agent_tool':

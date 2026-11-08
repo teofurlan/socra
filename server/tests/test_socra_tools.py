@@ -23,6 +23,10 @@ class RecordingToolbox:
         self.calls.append(("search", query, limit))
         return self.hits
 
+    async def clear_scene(self) -> str:
+        self.calls.append(("clear",))
+        return "cleared"
+
 
 def _spec(name):
     return next(s for s in TOOL_SPECS if s.id == name)
@@ -30,11 +34,26 @@ def _spec(name):
 
 def test_specs_for_a_mode_are_exactly_the_tools_it_lists():
     assert [s.id for s in specs_for(get_mode("mentor"))] == [
-        "switch_mode", "search_transcript", "scene_guide", "present",
+        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present", "clear_scene",
     ]
     assert {s.id for s in specs_for(get_mode("exam"))} == {
-        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present",
+        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present", "clear_scene",
     }
+
+
+async def test_clear_scene_takes_no_arguments_and_calls_the_toolbox():  # S4
+    toolbox = RecordingToolbox()
+
+    spec = _spec("clear_scene")
+
+    assert spec.schema == {"type": "object", "properties": {}}
+    assert "removes" in spec.description.lower() and "screen" in spec.description
+    assert await spec.handler(toolbox, {}) == "cleared"
+    assert toolbox.calls == [("clear",)]
+
+
+def test_record_exam_result_covers_exam_and_check_answers():  # S3
+    assert "check" in _spec("record_exam_result").description
 
 
 def test_every_spec_has_a_description_and_an_object_schema():
@@ -100,10 +119,15 @@ async def test_callback_toolbox_delegates_to_its_callbacks():
     async def play(scene):
         return ""
 
-    toolbox = CallbackToolbox(switch=switch, record=record, search=search, play=play)
+    async def clear():
+        seen.append("clear")
+        return "ok"
+
+    toolbox = CallbackToolbox(switch=switch, record=record, search=search, play=play, clear=clear)
 
     await toolbox.switch_mode("mentor")
     await toolbox.record_exam_result("Q", "correct", "")
     await toolbox.search_transcript("q", 2)
+    await toolbox.clear_scene()
 
-    assert seen == ["mentor", ("Q", "correct", ""), ("q", 2)]
+    assert seen == ["mentor", ("Q", "correct", ""), ("q", 2), "clear"]

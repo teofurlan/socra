@@ -92,9 +92,11 @@ class AgentApp:
         self._previous_transcript: Any = None
         self._toolbox = CallbackToolbox(
             switch=self._tool_switch, record=self._tool_record, search=self._tool_search,
-            play=self._tool_present,
+            play=self._tool_present, clear=self._tool_clear,
         )
         self._switch_request: str | None = None
+        # A scene that ended and is still on the page, waiting for the agent to clear it.
+        self._scene_on_screen = False
         # What the user said while a switch ran; the session that comes out of it answers it.
         self._switch_turns: list[str] = []
         self.switch_task: asyncio.Task | None = None
@@ -319,6 +321,7 @@ class AgentApp:
 
     async def handle_disconnect(self) -> None:
         self.walkthrough.abort()
+        self._scene_on_screen = False
         # The page that owed those acknowledgements is gone; a new page starts clean.
         self._ack_debt = 0
         self._playback_done.set()  # wake a wait for clips nobody can play any more
@@ -730,10 +733,19 @@ class AgentApp:
                 return json.dumps({"status": "stopped", "step": 1, "total": len(parsed.steps)})
             if not self.channel.is_connected:
                 return json.dumps({"status": "page_disconnected"})
+        self._scene_on_screen = False
         result = await self.walkthrough.run(parsed)
+        self._scene_on_screen = result.get("status") in ("completed", "stopped", "error")
         # The agent's turn goes on after the scene.
         await self._state("thinking" if self._turn_running else "listening")
         return json.dumps(result)
+
+    async def _tool_clear(self) -> str:
+        if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
+            return "No finished scene is on screen."
+        self._scene_on_screen = False
+        await self.channel.send({"type": "walkthrough_cleared"})
+        return "Scene cleared."
 
     async def _route_scene_speech(self, text: str) -> None:
         """While a scene plays, what the user says or types steers it instead of starting a turn."""

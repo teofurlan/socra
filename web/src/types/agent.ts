@@ -93,6 +93,8 @@ export type AgentServerMessage =
   | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number }; text?: string }
   | { type: 'notice'; text: string }
   | WalkthroughMessage
+  /** The agent finished with the scene (after the oral check): the page releases it if it ended. */
+  | { type: 'walkthrough_cleared' }
   | VoicesMessage
 
 // Page -> server messages on /ws/agent
