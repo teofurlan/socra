@@ -98,14 +98,14 @@ def _check_target(raw: Any, objects: dict[str, SceneObject], state: dict[str, di
     return target, []
 
 
-def validate_targets(scene: Scene, index: int, raw: Any) -> tuple[Targets, Errors]:
+def validate_targets(scene: Scene, index: int, raw: Any, state: dict | None = None) -> tuple[Targets, Errors]:
     """The normalized targets, or every problem as a ``path: message`` line (never both)."""
     if not isinstance(raw, list):
         return [], ["targets: targets must be a list (empty to remove the highlight)"]
     if len(raw) > MAX_TARGETS:
         return [], [f"targets: at most {MAX_TARGETS} targets, got {len(raw)}"]
     objects = {o.id: o for o in scene.objects}
-    state = scene.state_at(index)
+    state = state if state is not None else scene.state_at(index)
     targets: Targets = []
     errors: Errors = []
     for i, item in enumerate(raw):

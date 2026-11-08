@@ -135,6 +135,14 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'walkthrough_cleared':
       // Only a finished scene is released; one still playing ignores the message.
       return state.walkthrough?.status === 'ended' ? { ...state, walkthrough: null } : state
+    case 'walkthrough_result': {
+      // Only a finished scene takes a result, and only for an object it shows.
+      const shown = state.walkthrough
+      if (shown?.status !== 'ended' || !shown.step || !(action.object in shown.step.state)) return state
+      const { pointing: _pointing, ...rest } = shown
+      const step = { ...shown.step, state: { ...shown.step.state, [action.object]: action.state } }
+      return { ...state, walkthrough: { ...rest, step } }
+    }
     case 'walkthrough_point': {
       // Only a finished scene is pointed at; one still playing, or none, ignores the message.
       if (state.walkthrough?.status !== 'ended') return state

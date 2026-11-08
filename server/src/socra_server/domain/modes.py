@@ -14,6 +14,8 @@ RECORD_EXAM_RESULT = "record_exam_result"
 PRESENT = "present"
 CLEAR_SCENE = "clear_scene"
 POINT_AT = "point_at"
+SHOW_RESULT = "show_result"
+REPLAY_STEP = "replay_step"
 SCENE_GUIDE_TOOL = "scene_guide"
 
 
@@ -41,6 +43,10 @@ _SCENE_CHECK = (
     "give brief spoken feedback (correct, partial or incorrect) and call record_exam_result "
     "after grading each answer. Before asking each question, call point_at with the scene objects "
     "it is about; call it with an empty list when the question is not about anything specific. "
+    "A check may include one prediction question about a structure in the scene: point at it, "
+    "ask what will happen if an operation is applied, wait for the answer, then call show_result "
+    "and grade the answer against the outcome it returns. After an incorrect or partial answer, "
+    "offer to replay the related step, and call replay_step if the user accepts. "
     "When the check ends or the user declines, call clear_scene and continue the conversation "
     "normally. "
 )
@@ -71,7 +77,7 @@ MODES: dict[str, Mode] = {
             f"{_COMMON}"
         ),
         tools=frozenset(
-            {SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT, CLEAR_SCENE, POINT_AT}
+            {SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT, CLEAR_SCENE, POINT_AT, SHOW_RESULT, REPLAY_STEP}
         ),
         opening=(
             "Now say, in one spoken sentence, what you understand the situation to be, "
@@ -92,7 +98,7 @@ MODES: dict[str, Mode] = {
             f"{_COMMON}"
         ),
         tools=frozenset(
-            {SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT, CLEAR_SCENE, POINT_AT}
+            {SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT, CLEAR_SCENE, POINT_AT, SHOW_RESULT, REPLAY_STEP}
         ),
         opening=(
             "Start the exam now: ask the first question right away, with at most a very short "

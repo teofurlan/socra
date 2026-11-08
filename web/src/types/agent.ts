@@ -1,4 +1,4 @@
-import type { PointTarget } from '@/types/scene'
+import type { ObjectState, PointTarget } from '@/types/scene'
 import type {
   ConnectionStatus,
   ProtocolState,
@@ -98,6 +98,8 @@ export type AgentServerMessage =
   | { type: 'walkthrough_cleared' }
   /** The agent points at objects of the finished scene while it asks about them; empty removes it. */
   | { type: 'walkthrough_point'; targets: PointTarget[] }
+  /** The real outcome of a prediction: one object's new state on the finished scene, animated like a step. */
+  | { type: 'walkthrough_result'; object: string; state: ObjectState }
   | VoicesMessage
 
 // Page -> server messages on /ws/agent

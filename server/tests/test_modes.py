@@ -80,3 +80,15 @@ def test_mentor_and_exam_can_point_at_the_scene():  # S5
 def test_instructions_tell_the_agent_to_point_before_each_check_question(mode_id):  # S5, S10
     text = get_mode(mode_id).instructions
     assert "point_at" in text and "empty list" in text
+
+
+def test_mentor_and_exam_can_show_results_and_replay_steps():  # S7, S8
+    for mode_id in ("mentor", "exam"):
+        assert {"show_result", "replay_step"} <= get_mode(mode_id).tools
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_describe_the_prediction_question_and_the_replay(mode_id):  # S7, S8, S10
+    text = get_mode(mode_id).instructions
+    assert "show_result" in text and "prediction" in text and "replay_step" in text
+    assert "incorrect or partial" in text

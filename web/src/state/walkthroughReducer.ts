@@ -8,7 +8,9 @@ export function reduceWalkthrough(current: WalkthroughData | null, message: Walk
     case 'walkthrough_step': {
       if (!current) return current
       const { index, total, id, say, state } = message
-      return { ...current, step: { index, total, id, say, state } }
+      // A new step, a replay included, replaces whatever the agent was pointing at.
+      const { pointing: _pointing, ...rest } = current
+      return { ...rest, step: { index, total, id, say, state } }
     }
     case 'walkthrough_status':
       if (!current) return current

@@ -203,6 +203,32 @@ describe('AgentApp', () => {
         expect(figures()).toBe('')
       })
 
+      it('animates a prediction result on that structure and removes the pointing', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'arr', part: 'cell:0' }] }))
+        act(() => ws.receive({
+          type: 'walkthrough_result', object: 'arr',
+          state: { visible: true, kind: 'array', items: [4, 9, 6], last: { op: 'set', index: 1, value: 9, previous: 5 } },
+        }))
+        expect(document.querySelector('[data-structure-part="cell:1"]')).toHaveTextContent('9')
+        expect(document.querySelector('[data-structure-part="cell:1"]')).toHaveAttribute('data-touched', 'true')
+        expect(figures()).toMatch(/^touch:arr:/) // animated like a step; the pointing is gone
+        expect(screen.getByRole('region', { name: 'Walkthrough code src' })).toBeInTheDocument()
+      })
+
+      it('shows a replayed step after the scene ended and stays on it', () => {
+        const ws = finished()
+        act(() => ws.receive({
+          type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'Everything.',
+          state: { ...state, src: { visible: true, lines: [2, 3] } },
+        }))
+        act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+        const pane = screen.getByRole('region', { name: 'Walkthrough code src' })
+        expect(Array.from(pane.querySelectorAll('code > span')).map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, true])
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'flow' }] }))
+        expect(document.querySelectorAll('[data-diagram-node][data-highlighted="true"]')).toHaveLength(2)
+      })
+
       it('lets go of the pointing with the scene', () => {
         const ws = finished()
         act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'src', lines: [1, 1] }] }))

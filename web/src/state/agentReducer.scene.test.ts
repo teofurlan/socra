@@ -109,3 +109,53 @@ describe('agentReducer pointing', () => {
     expect(agentReducer(pointed, { type: 'user_text', text: 'two' }).walkthrough?.pointing).toEqual([target])
   })
 })
+
+describe('agentReducer prediction results and replays', () => {
+  const completed: AgentAction = { type: 'walkthrough_status', status: 'ended', reason: 'completed' }
+  const target = { object: 'src', lines: [1, 2] as [number, number] }
+  const withArray = [
+    ...objects,
+    { id: 'arr', primitive: 'structure', params: { kind: 'array', items: [1, 2] }, hidden: false },
+  ]
+  const arrayScene: AgentAction = { type: 'walkthrough', title: 'Arr', objects: withArray, total: 1 }
+  const arrayStep: AgentAction = {
+    type: 'walkthrough_step', index: 1, total: 1, id: 'only', say: 'Two.',
+    state: { src: { visible: true, lines: null }, arr: { visible: true, kind: 'array', items: [1, 2], last: null } },
+  }
+  const result: AgentAction = {
+    type: 'walkthrough_result', object: 'arr',
+    state: { visible: true, kind: 'array', items: [1, 9], last: { op: 'set', index: 1, value: 9, previous: 2 } },
+  }
+
+  it('applies a result to that object only, on an ended scene', () => {
+    const state = run(arrayScene, arrayStep, completed, result)
+    expect(state.walkthrough?.step?.state.arr).toMatchObject({ items: [1, 9], last: { op: 'set' } })
+    expect(state.walkthrough?.step?.state.src).toEqual({ visible: true, lines: null })
+    expect(state.walkthrough?.status).toBe('ended')
+  })
+
+  it('chains results and removes the pointing', () => {
+    const next: AgentAction = { ...result, state: { ...(result as { state: object }).state, items: [1, 9, 3] } as never }
+    const pointed = run(arrayScene, arrayStep, completed, { type: 'walkthrough_point', targets: [target] })
+    expect(pointed.walkthrough?.pointing).toEqual([target])
+    const state = [result, next].reduce(agentReducer, pointed)
+    expect(state.walkthrough?.pointing).toBeUndefined()
+    expect(state.walkthrough?.step?.state.arr).toMatchObject({ items: [1, 9, 3] })
+  })
+
+  it('ignores a result while the scene plays, with no scene or for an unknown object', () => {
+    const playing = run(arrayScene, arrayStep)
+    expect(agentReducer(playing, result)).toBe(playing)
+    expect(run(result).walkthrough).toBeNull()
+    const ended = run(arrayScene, arrayStep, completed)
+    expect(agentReducer(ended, { ...result, object: 'nope' } as AgentAction)).toBe(ended)
+  })
+
+  it('shows a replayed step after the scene ended, ends on it and drops the pointing', () => {
+    const second: AgentAction = { ...arrayStep, index: 1, id: 'again', say: 'Again.' } as AgentAction
+    const pointed = run(arrayScene, arrayStep, completed, { type: 'walkthrough_point', targets: [target] })
+    const state = [second, completed].reduce(agentReducer, pointed)
+    expect(state.walkthrough).toMatchObject({ status: 'ended', reason: 'completed', step: { id: 'again' } })
+    expect(state.walkthrough?.pointing).toBeUndefined()
+  })
+})

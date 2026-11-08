@@ -67,7 +67,7 @@ async def test_the_present_tool_passes_the_scene_to_the_toolbox():
     async def unused(*_args):
         return ""
 
-    toolbox = CallbackToolbox(switch=unused, record=unused, search=unused, play=present, clear=unused, point=unused)
+    toolbox = CallbackToolbox(switch=unused, record=unused, search=unused, play=present, clear=unused, point=unused, show=unused, replay=unused)
     spec = next(s for s in specs_for(get_mode("mentor")) if s.id == PRESENT)
     assert spec.schema["required"] == ["scene"]
     assert await spec.handler(toolbox, {"scene": SCENE}) == "played"
@@ -284,3 +284,154 @@ async def test_losing_the_page_forgets_the_scene(tmp_path):  # S5
     await app.handle_disconnect()
 
     assert await toolbox.point_at([]) == "No finished scene is on screen."
+
+
+STRUCTURES = {
+    "version": 1,
+    "title": "Tables",
+    "objects": [
+        {"id": "ht", "primitive": "structure", "params": {"kind": "hashTable", "items": [1], "buckets": 5}},
+        {"id": "tr", "primitive": "structure", "params": {"kind": "tree", "items": [5, 3]}},
+        {"id": "src", "primitive": "code", "params": {"code": CODE, "language": "python"}},
+    ],
+    "steps": [{"id": "start", "say": "A table and a tree."}],
+    "cues": [],
+}
+
+
+async def _structures_on_screen(tmp_path):
+    app, channel, _, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(STRUCTURES)), 2)
+    return app, channel, toolbox
+
+
+def _insert(object_id, key):
+    return {"object": object_id, "op": {"action": "insert", "params": {"key": key}}}
+
+
+async def test_show_result_sends_one_result_for_that_object_and_says_the_outcome(tmp_path):  # S7
+    _, channel, toolbox = await _structures_on_screen(tmp_path)
+
+    text = await toolbox.show_result(_insert("ht", 6))  # 6 % 5 == 1, where 1 already is
+
+    sent = channel.of_type("walkthrough_result")
+    assert len(sent) == 1
+    assert sent[0]["type"] == "walkthrough_result" and sent[0]["object"] == "ht"
+    assert sent[0]["state"]["buckets"][1] == [1, 6]
+    assert sent[0]["state"]["last"]["collision"] is True
+    assert "bucket 1" in text and "collision" in text and "no collision" not in text
+
+
+async def test_a_later_show_result_chains_on_the_previous_one(tmp_path):  # S7
+    _, channel, toolbox = await _structures_on_screen(tmp_path)
+
+    await toolbox.show_result(_insert("ht", 6))
+    await toolbox.show_result(_insert("ht", 11))
+
+    assert channel.of_type("walkthrough_result")[-1]["state"]["buckets"][1] == [1, 6, 11]
+
+
+async def test_point_at_validates_against_the_state_a_result_left(tmp_path):  # S7
+    _, channel, toolbox = await _structures_on_screen(tmp_path)
+    assert (await toolbox.point_at([{"object": "tr", "part": "node:4"}])).startswith("targets[0].part: ")
+
+    await toolbox.show_result(_insert("tr", 4))
+
+    assert await toolbox.point_at([{"object": "tr", "part": "node:4"}]) == "Highlighted on screen."
+
+
+async def test_an_invalid_result_sends_nothing_and_leaves_the_state(tmp_path):  # S7
+    _, channel, toolbox = await _structures_on_screen(tmp_path)
+
+    text = await toolbox.show_result({"object": "src", "op": {"action": "insert", "params": {"key": 1}}})
+    again = await toolbox.show_result(_insert("ht", 1))  # already there
+
+    assert text.startswith("object: ") and again.startswith("op: ")
+    assert channel.of_type("walkthrough_result") == []
+    await toolbox.show_result(_insert("ht", 6))
+    assert channel.of_type("walkthrough_result")[0]["state"]["buckets"][1] == [1, 6]
+
+
+async def test_show_result_needs_a_finished_scene_on_screen(tmp_path):  # S7
+    app, channel, _, toolbox = await _opened(tmp_path)
+    assert await toolbox.show_result(_insert("ht", 2)) == "No finished scene is on screen."
+    task = await _play(app, channel, toolbox.present(STRUCTURES), ack=False)
+    await _settle()
+    assert await toolbox.show_result(_insert("ht", 2)) == "No finished scene is on screen."
+    await app.handle_walkthrough_control("stop")
+    await asyncio.wait_for(task, 2)
+    assert channel.of_type("walkthrough_result") == []
+
+
+async def test_a_replayed_step_starts_from_the_scene_again_not_from_a_result(tmp_path):  # S7, S8
+    app, channel, toolbox = await _structures_on_screen(tmp_path)
+    await toolbox.show_result(_insert("ht", 6))
+
+    await asyncio.wait_for(await _play(app, channel, toolbox.replay_step("start")), 2)
+    await toolbox.show_result(_insert("ht", 6))
+
+    assert channel.of_type("walkthrough_result")[-1]["state"]["buckets"][1] == [1, 6]
+
+
+async def test_replay_plays_exactly_that_step_and_ends_on_it(tmp_path):  # S8
+    app, channel, loader, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+    channel.sent.clear()
+    loader.tts.spoken.clear()
+
+    task = await _play(app, channel, toolbox.replay_step("names"))
+    text = await asyncio.wait_for(task, 2)
+
+    clips = [m for m in channel.of_type("tts_audio") if "step" in m]
+    assert [c["step"]["id"] for c in clips] == ["names"]
+    assert clips[0]["step"]["state"]["src"]["lines"] == [1, 2]
+    assert loader.tts.spoken == ["Two names."]
+    assert channel.of_type("walkthrough") == []
+    assert channel.of_type("walkthrough_status")[-1] == {"type": "walkthrough_status", "status": "ended", "reason": "completed"}
+    assert "completed" in text.lower()
+    assert await toolbox.point_at([{"object": "src", "lines": [1, 2]}]) == "Highlighted on screen."
+
+
+async def test_replay_with_an_unknown_step_lists_the_valid_ids(tmp_path):  # S8
+    app, channel, _, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+    channel.sent.clear()
+
+    text = await toolbox.replay_step("nope")
+
+    assert "names" in text and "sum" in text
+    assert channel.of_type("tts_audio") == []
+
+
+async def test_replay_needs_a_finished_scene_on_screen(tmp_path):  # S8
+    app, channel, _, toolbox = await _opened(tmp_path)
+    assert await toolbox.replay_step("names") == "No finished scene is on screen."
+    task = await _play(app, channel, toolbox.present(SCENE), ack=False)
+    await _settle()
+    assert await toolbox.replay_step("names") == "No finished scene is on screen."
+    await app.handle_walkthrough_control("stop")
+    await asyncio.wait_for(task, 2)
+
+
+async def test_replay_ends_when_the_page_goes_away(tmp_path):  # S8
+    app, channel, _, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+
+    task = await _play(app, channel, toolbox.replay_step("sum"), ack=False)
+    await _settle()
+    await app.handle_disconnect()
+
+    assert "page" in (await asyncio.wait_for(task, 2)).lower()
+
+
+async def test_the_user_can_stop_a_replay(tmp_path):  # S8
+    app, channel, _, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+
+    task = await _play(app, channel, toolbox.replay_step("sum"), ack=False)
+    await _settle()
+    await app.handle_walkthrough_control("stop")
+
+    assert "stopped" in (await asyncio.wait_for(task, 2)).lower()
+    assert channel.of_type("walkthrough_status")[-1]["status"] == "ended"
+    assert await toolbox.point_at([]) == "Highlight removed."

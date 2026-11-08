@@ -81,6 +81,14 @@ class SocraToolbox(Protocol):
         """Highlight objects of the finished scene on the page; returns text for the agent."""
         ...
 
+    async def show_result(self, args: Any) -> str:
+        """Apply one structure operation to the finished scene on the page; returns its outcome."""
+        ...
+
+    async def replay_step(self, step: Any) -> str:
+        """Play one step of the finished scene again; returns how it ended."""
+        ...
+
 
 @runtime_checkable
 class AgentBackend(Protocol):

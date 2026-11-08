@@ -154,6 +154,44 @@ class WalkthroughRunner:
             self._scene = None
             self._cursor = None
 
+    async def replay(self, scene: Scene, index: int) -> dict:
+        """Play one step of a scene that already ended again, then end on it; the page keeps the scene."""
+        if self._active:
+            return {"status": "busy"}
+        total = len(scene.steps)
+        self._active = True
+        self._paused = False
+        self._scene = scene
+        self._cursor = StepCursor(total=total, index=index)
+        self._commands = asyncio.Queue()
+        try:
+            event = await self._play_current()
+            while event != "done":
+                if event == "pause":
+                    event = await self._wait_while_paused()
+                if event == _GONE:
+                    await self._end("disconnected")
+                    return {"status": "page_disconnected", "step": index + 1, "total": total}
+                if event in ("repeat", "resume"):
+                    event = await self._play_current()
+                elif event != "done":
+                    await self._end("stopped")
+                    return {"status": "stopped", "step": index + 1, "total": total}
+            await self._end("completed")
+            return {"status": "completed", "step": index + 1, "total": total}
+        except asyncio.CancelledError:
+            await self._end("stopped")
+            raise
+        except Exception as exc:
+            logger.exception("Replay failed at step %d", index + 1)
+            await self._end("error")
+            return {"status": "error", "step": index + 1, "total": total, "message": str(exc)}
+        finally:
+            self._active = False
+            self._paused = False
+            self._scene = None
+            self._cursor = None
+
     async def _end(self, reason: str) -> None:
         await self._send({"type": "walkthrough_status", "status": "ended", "reason": reason})
         await self._set_state("idle")

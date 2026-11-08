@@ -244,6 +244,40 @@ so the agent can fix the call. A valid call sends `walkthrough_point` to the pag
 `clear_scene`, a page disconnect) it returns "No finished scene is on screen." The page applies the
 highlight on top of the last step and drops it with the scene.
 
+### Prediction questions: `show_result`
+
+A check may include one prediction question about a structure: the agent points at it, asks what
+will happen if an operation is applied, waits for the answer, then calls `show_result` and grades
+the answer against the outcome it returns. Arguments:
+
+```json
+{"object": "<structure id>", "op": {"action": "insert", "params": {"key": 12}}}
+```
+
+`op` has the shape of a scene cue's action for that structure kind (`action` plus `params`; see
+the structure operations above). `clear` is not accepted. The server applies it with the same
+reducers the scene uses, to the state on screen now: the step the page shows, or the result of the
+previous `show_result`, so calls chain. A valid call sends `{"type": "walkthrough_result",
+"object": id, "state": <that object's new state>}`; the page animates it like a step change
+(insert, collision, path...) and drops any pointing. The tool returns a factual outcome in words
+(for example the bucket the key landed in and whether it collided, or the tree path) for the agent
+to grade with. Later `point_at` and `show_result` calls validate against the new state.
+
+On any problem (no finished scene on screen, unknown, hidden or non-structure object, invalid
+`op` for its kind) nothing is sent and the tool returns `path: message` lines
+(`object: ...`, `op.action: ...`, `op.params.key: ...`, `op: ...`).
+
+### Replaying a step: `replay_step`
+
+After an incorrect or partial answer the agent offers to replay the related step and, if the user
+accepts, calls `replay_step` with `{"step": "<step id>"}`. The step plays again as the runner
+plays it (its `say` and its visual state, one `tts_audio` with `step`), the scene is ended again
+on that step and stays on screen, so `point_at` keeps working. Any pointing is removed and the
+state goes back to what that step shows (an earlier `show_result` is discarded). The call blocks
+until the audio is played, the user stops it or the page goes away, and returns a short text:
+completed, stopped or page gone. An unknown step id returns the list of valid ids; with no
+finished scene on screen it returns "No finished scene is on screen."
+
 ## Validation
 
 The whole scene is checked before anything is shown or spoken. An invalid scene returns
