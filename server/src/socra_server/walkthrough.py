@@ -48,6 +48,7 @@ class WalkthroughRunner:
         self._paused = False
         self._scene: Scene | None = None
         self._cursor: StepCursor | None = None
+        self._say_override: str | None = None  # what a replay says instead of the step's narration
         self._commands: asyncio.Queue[str] = asyncio.Queue()
         self._seq = 0
         self._done = asyncio.Event()
@@ -154,10 +155,16 @@ class WalkthroughRunner:
             self._scene = None
             self._cursor = None
 
-    async def replay(self, scene: Scene, index: int) -> dict:
-        """Play one step of a scene that already ended again, then end on it; the page keeps the scene."""
+    async def replay(self, scene: Scene, index: int, say: str | None = None, targets: list[dict] | None = None) -> dict:
+        """Play one step of a scene that already ended again, then end on it; the page keeps the scene.
+
+        ``say`` is spoken instead of the step's own narration (and is what the page shows as said);
+        ``targets`` (already validated) are pointed at once the step has played, so the page, which
+        shows a step when its sound begins, does not drop them with the step.
+        """
         if self._active:
             return {"status": "busy"}
+        self._say_override = say
         total = len(scene.steps)
         self._active = True
         self._paused = False
@@ -177,6 +184,8 @@ class WalkthroughRunner:
                 elif event != "done":
                     await self._end("stopped")
                     return {"status": "stopped", "step": index + 1, "total": total}
+            if targets:
+                await self._send({"type": "walkthrough_point", "targets": targets})
             await self._end("completed")
             return {"status": "completed", "step": index + 1, "total": total}
         except asyncio.CancelledError:
@@ -191,6 +200,7 @@ class WalkthroughRunner:
             self._paused = False
             self._scene = None
             self._cursor = None
+            self._say_override = None
 
     async def _end(self, reason: str) -> None:
         await self._send({"type": "walkthrough_status", "status": "ended", "reason": reason})
@@ -202,7 +212,8 @@ class WalkthroughRunner:
         index = self._cursor.index
         step = self._scene.steps[index]
         await self._set_state("speaking")
-        wav = await asyncio.to_thread(self._synthesize, step.say)
+        say = self._say_override or step.say
+        wav = await asyncio.to_thread(self._synthesize, say)
         if not self._commands.empty():  # the user acted while this step was being prepared
             return self._commands.get_nowait()
         self._seq += 1
@@ -211,7 +222,7 @@ class WalkthroughRunner:
             "type": "tts_audio",
             "format": "wav",
             "data": base64.b64encode(wav).decode(),
-            "step": self._step_info(self._scene, index) | {"seq": self._seq},
+            "step": self._step_info(self._scene, index) | {"say": say, "seq": self._seq},
         }
         await self._send(message)
 

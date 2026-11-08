@@ -46,7 +46,9 @@ _SCENE_CHECK = (
     "A check may include one prediction question about a structure in the scene: point at it, "
     "ask what will happen if an operation is applied, wait for the answer, then call show_result "
     "and grade the answer against the outcome it returns. After an incorrect or partial answer, "
-    "offer to replay the related step, and call replay_step if the user accepts. "
+    "offer to go over the related step again; if the user accepts, call replay_step with a new "
+    "short explanation of that step that addresses what they got wrong (never the step's original "
+    "words) and targets on the part they confused. "
     "When the check ends or the user declines, call clear_scene and continue the conversation "
     "normally. "
 )

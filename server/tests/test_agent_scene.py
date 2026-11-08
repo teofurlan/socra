@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from socra_server.domain.modes import PRESENT, get_mode
 from socra_server.socra_tools import CallbackToolbox, specs_for
 from tests.test_agent_mode import Convo, ModeBackend, _make, _started
@@ -367,10 +369,14 @@ async def test_a_replayed_step_starts_from_the_scene_again_not_from_a_result(tmp
     app, channel, toolbox = await _structures_on_screen(tmp_path)
     await toolbox.show_result(_insert("ht", 6))
 
-    await asyncio.wait_for(await _play(app, channel, toolbox.replay_step("start")), 2)
+    await asyncio.wait_for(await _play(app, channel, toolbox.replay_step({"step": "start", "say": "Look at it fresh."})), 2)
     await toolbox.show_result(_insert("ht", 6))
 
     assert channel.of_type("walkthrough_result")[-1]["state"]["buckets"][1] == [1, 6]
+
+
+def _replay(step, say=None, **extra):
+    return {"step": step, "say": say or f"A different take on {step}.", **extra}
 
 
 async def test_replay_plays_exactly_that_step_and_ends_on_it(tmp_path):  # S8
@@ -379,13 +385,13 @@ async def test_replay_plays_exactly_that_step_and_ends_on_it(tmp_path):  # S8
     channel.sent.clear()
     loader.tts.spoken.clear()
 
-    task = await _play(app, channel, toolbox.replay_step("names"))
+    task = await _play(app, channel, toolbox.replay_step(_replay("names", "Both variables come first.")))
     text = await asyncio.wait_for(task, 2)
 
     clips = [m for m in channel.of_type("tts_audio") if "step" in m]
     assert [c["step"]["id"] for c in clips] == ["names"]
     assert clips[0]["step"]["state"]["src"]["lines"] == [1, 2]
-    assert loader.tts.spoken == ["Two names."]
+    assert loader.tts.spoken == ["Both variables come first."]
     assert channel.of_type("walkthrough") == []
     assert channel.of_type("walkthrough_status")[-1] == {"type": "walkthrough_status", "status": "ended", "reason": "completed"}
     assert "completed" in text.lower()
@@ -397,7 +403,7 @@ async def test_replay_with_an_unknown_step_lists_the_valid_ids(tmp_path):  # S8
     await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
     channel.sent.clear()
 
-    text = await toolbox.replay_step("nope")
+    text = await toolbox.replay_step(_replay("nope"))
 
     assert "names" in text and "sum" in text
     assert channel.of_type("tts_audio") == []
@@ -405,10 +411,10 @@ async def test_replay_with_an_unknown_step_lists_the_valid_ids(tmp_path):  # S8
 
 async def test_replay_needs_a_finished_scene_on_screen(tmp_path):  # S8
     app, channel, _, toolbox = await _opened(tmp_path)
-    assert await toolbox.replay_step("names") == "No finished scene is on screen."
+    assert await toolbox.replay_step(_replay("names")) == "No finished scene is on screen."
     task = await _play(app, channel, toolbox.present(SCENE), ack=False)
     await _settle()
-    assert await toolbox.replay_step("names") == "No finished scene is on screen."
+    assert await toolbox.replay_step(_replay("names")) == "No finished scene is on screen."
     await app.handle_walkthrough_control("stop")
     await asyncio.wait_for(task, 2)
 
@@ -417,7 +423,7 @@ async def test_replay_ends_when_the_page_goes_away(tmp_path):  # S8
     app, channel, _, toolbox = await _opened(tmp_path)
     await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
 
-    task = await _play(app, channel, toolbox.replay_step("sum"), ack=False)
+    task = await _play(app, channel, toolbox.replay_step(_replay("sum")), ack=False)
     await _settle()
     await app.handle_disconnect()
 
@@ -428,10 +434,92 @@ async def test_the_user_can_stop_a_replay(tmp_path):  # S8
     app, channel, _, toolbox = await _opened(tmp_path)
     await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
 
-    task = await _play(app, channel, toolbox.replay_step("sum"), ack=False)
+    task = await _play(app, channel, toolbox.replay_step(_replay("sum")), ack=False)
     await _settle()
     await app.handle_walkthrough_control("stop")
 
     assert "stopped" in (await asyncio.wait_for(task, 2)).lower()
     assert channel.of_type("walkthrough_status")[-1]["status"] == "ended"
     assert await toolbox.point_at([]) == "Highlight removed."
+
+
+async def _scene_ready(tmp_path):
+    app, channel, loader, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+    channel.sent.clear()
+    loader.tts.spoken.clear()
+    return app, channel, loader, toolbox
+
+
+async def test_replay_speaks_the_new_explanation_not_the_original(tmp_path):  # S11
+    app, channel, loader, toolbox = await _scene_ready(tmp_path)
+
+    await asyncio.wait_for(await _play(app, channel, toolbox.replay_step(_replay("sum", "  The sum needs both names.  "))), 2)
+
+    assert loader.tts.spoken == ["The sum needs both names."]
+    clips = [m for m in channel.of_type("tts_audio") if "step" in m]
+    assert [c["step"]["say"] for c in clips] == ["The sum needs both names."]
+    assert clips[0]["step"]["state"]["src"]["lines"] == [3, 3]
+
+
+@pytest.mark.parametrize("say", [None, "", "   ", 7])
+async def test_replay_without_a_usable_say_is_rejected_and_nothing_plays(tmp_path, say):  # S11
+    app, channel, loader, toolbox = await _scene_ready(tmp_path)
+    args = {"step": "sum"} if say is None else {"step": "sum", "say": say}
+
+    text = await toolbox.replay_step(args)
+
+    assert text.startswith("say:") and "required" in text
+    assert channel.sent == [] and loader.tts.spoken == []
+
+
+@pytest.mark.parametrize("say", ["Add them.", "  add THEM.  "])
+async def test_replay_repeating_the_original_say_is_rejected(tmp_path, say):  # S11
+    app, channel, loader, toolbox = await _scene_ready(tmp_path)
+
+    text = await toolbox.replay_step({"step": "sum", "say": say})
+
+    assert "differently" in text
+    assert channel.sent == [] and loader.tts.spoken == []
+
+
+async def test_replay_with_a_too_long_say_is_rejected(tmp_path):  # S11
+    app, channel, loader, toolbox = await _scene_ready(tmp_path)
+
+    text = await toolbox.replay_step({"step": "sum", "say": "x" * 601})
+
+    assert "at most 600" in text
+    assert channel.sent == [] and loader.tts.spoken == []
+
+
+async def test_replay_with_invalid_targets_returns_errors_and_nothing_plays(tmp_path):  # S11
+    app, channel, loader, toolbox = await _scene_ready(tmp_path)
+
+    text = await toolbox.replay_step(_replay("sum", targets=[{"object": "nope"}]))
+
+    assert text.startswith("targets[0]")
+    assert channel.sent == [] and loader.tts.spoken == []
+    assert "targets" in await toolbox.replay_step(_replay("sum", targets="src"))
+
+
+async def test_replay_points_once_after_the_step_and_keeps_the_pointing(tmp_path):  # S11
+    app, channel, _, toolbox = await _scene_ready(tmp_path)
+    target = {"object": "src", "lines": [3, 3]}
+
+    task = await _play(app, channel, toolbox.replay_step(_replay("sum", targets=[target])))
+    await asyncio.wait_for(task, 2)
+
+    kinds = [m["type"] for m in channel.sent if m["type"] in ("tts_audio", "walkthrough_point", "walkthrough_status")]
+    assert kinds.index("walkthrough_point") > kinds.index("tts_audio")
+    assert len(channel.of_type("walkthrough_point")) == 1
+    assert channel.of_type("walkthrough_point")[0]["targets"] == [target]
+    assert kinds.index("walkthrough_point") < len(kinds) - 1 and kinds[-1] == "walkthrough_status"
+    assert await toolbox.point_at([target]) == "Highlighted on screen."
+
+
+async def test_replay_without_targets_sends_no_point(tmp_path):  # S11
+    app, channel, _, toolbox = await _scene_ready(tmp_path)
+
+    await asyncio.wait_for(await _play(app, channel, toolbox.replay_step(_replay("sum"))), 2)
+
+    assert channel.of_type("walkthrough_point") == []

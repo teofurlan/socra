@@ -35,8 +35,8 @@ class RecordingToolbox:
         self.calls.append(("show", args))
         return "shown"
 
-    async def replay_step(self, step) -> str:
-        self.calls.append(("replay", step))
+    async def replay_step(self, args) -> str:
+        self.calls.append(("replay", args))
         return "replayed"
 
 
@@ -204,17 +204,19 @@ def test_show_result_schema_and_description_teach_the_prediction_flow():  # S7, 
         assert word in spec.description, word
 
 
-async def test_replay_step_passes_the_step_id_to_the_toolbox():  # S8
+async def test_replay_step_passes_its_arguments_to_the_toolbox():  # S8, S11
     toolbox = RecordingToolbox()
     spec = _spec("replay_step")
+    args = {"step": "sum", "say": "New words.", "targets": [{"object": "src"}]}
 
-    assert await spec.handler(toolbox, {"step": "sum"}) == "replayed"
-    assert toolbox.calls == [("replay", "sum")]
+    assert await spec.handler(toolbox, args) == "replayed"
+    assert toolbox.calls == [("replay", args)]
 
 
 def test_replay_step_schema_and_description_teach_when_to_replay():  # S8, S10
     spec = _spec("replay_step")
 
-    assert spec.schema["required"] == ["step"]
-    for word in ("accepts", "step", "again"):
+    assert spec.schema["required"] == ["step", "say"]
+    assert set(spec.schema["properties"]) == {"step", "say", "targets"}
+    for word in ("accepts", "step", "again", "NEW", "original", "targets"):
         assert word in spec.description, word

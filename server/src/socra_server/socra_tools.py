@@ -80,7 +80,7 @@ async def _show_result(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
 
 
 async def _replay_step(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
-    return await toolbox.replay_step(args.get("step"))
+    return await toolbox.replay_step(args)
 
 
 async def _scene_guide(_toolbox: SocraToolbox, args: dict[str, Any]) -> str:
@@ -216,14 +216,25 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         REPLAY_STEP,
-        "Plays one step of the finished scene again (its narration and its picture) and leaves the "
-        "scene on screen on that step. Use it when the user accepts your offer to see the related "
-        "step again after a miss. step is a step id of the scene; an unknown id comes back with the "
-        "valid ones. Returns once the step has played, or stopped.",
+        "Goes over one step of the finished scene again: its picture is shown again and you say a NEW "
+        "short explanation of it. Use it when the user accepts your offer to see the related step "
+        "again after a miss. step is a step id of the scene (an unknown id comes back with the valid "
+        "ones). say is required: what you will say, written for what this user got wrong, never the "
+        "step's original words (that is rejected). targets, optional, highlights the part they "
+        "confused, same shape as point_at, checked before anything plays. Returns once it has "
+        "played, or stopped.",
         {
             "type": "object",
-            "properties": {"step": {"type": "string", "description": "Id of a step of the scene"}},
-            "required": ["step"],
+            "properties": {
+                "step": {"type": "string", "description": "Id of a step of the scene"},
+                "say": {"type": "string", "description": "Your new short explanation, aimed at the user's mistake"},
+                "targets": {
+                    "type": "array",
+                    "description": "Optional objects to highlight, same shape as point_at targets",
+                    "items": {"type": "object"},
+                },
+            },
+            "required": ["step", "say"],
         },
         _replay_step,
     ),
@@ -268,5 +279,5 @@ class CallbackToolbox:
     async def show_result(self, args: Any) -> str:
         return await self.show(args)
 
-    async def replay_step(self, step: Any) -> str:
-        return await self.replay(step)
+    async def replay_step(self, args: Any) -> str:
+        return await self.replay(args)

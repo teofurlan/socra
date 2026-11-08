@@ -269,14 +269,30 @@ On any problem (no finished scene on screen, unknown, hidden or non-structure ob
 
 ### Replaying a step: `replay_step`
 
-After an incorrect or partial answer the agent offers to replay the related step and, if the user
-accepts, calls `replay_step` with `{"step": "<step id>"}`. The step plays again as the runner
-plays it (its `say` and its visual state, one `tts_audio` with `step`), the scene is ended again
-on that step and stays on screen, so `point_at` keeps working. Any pointing is removed and the
-state goes back to what that step shows (an earlier `show_result` is discarded). The call blocks
+After an incorrect or partial answer the agent offers to go over the related step again and, if the
+user accepts, calls `replay_step`. It does not repeat the step's narration (that did not help the
+first time): the agent writes a new short explanation aimed at the user's mistake. Arguments:
+
+```json
+{"step": "<step id>", "say": "<new explanation>", "targets": [{"object": "src", "lines": [3, 3]}]}
+```
+
+- `say` is required, at most 600 characters. A missing or blank `say`, or one equal to the step's
+  original `say` (ignoring case and surrounding spaces), is rejected with a `say: ...` line.
+- `targets` is optional and has the shape of `point_at` targets. It is validated against that step's
+  state before anything plays.
+- On any problem nothing plays or is sent; the tool returns the `path: message` lines. An unknown
+  step id returns the list of valid ids; with no finished scene on screen it returns "No finished
+  scene is on screen."
+
+The step's picture plays again (one `tts_audio` with `step`, whose `say` is the new explanation so
+the transcript shows what was said), the scene ends again on that step and stays on screen, so
+`point_at` keeps working. Any earlier pointing is removed and the state goes back to what that step
+shows (an earlier `show_result` is discarded). Valid `targets` are sent as one `walkthrough_point`
+once the explanation has played, just before the scene ends: the page shows a step when its sound
+begins and a new step clears the pointing, so a point sent earlier could be dropped. The call blocks
 until the audio is played, the user stops it or the page goes away, and returns a short text:
-completed, stopped or page gone. An unknown step id returns the list of valid ids; with no
-finished scene on screen it returns "No finished scene is on screen."
+completed, stopped or page gone.
 
 ## Validation
 

@@ -68,6 +68,21 @@ NO_AGENT_MODE = (
 )
 
 
+MAX_REPLAY_SAY_CHARS = 600
+
+
+def _replay_say(raw: Any, original: str) -> tuple[str, list[str]]:
+    """The new explanation for a replayed step, or the problem as a ``say: message`` line."""
+    if not isinstance(raw, str) or not raw.strip():
+        return "", ["say: say is required: your new short explanation of this step, aimed at what the user got wrong"]
+    say = raw.strip()
+    if len(say) > MAX_REPLAY_SAY_CHARS:
+        return "", [f"say: say holds at most {MAX_REPLAY_SAY_CHARS} characters, got {len(say)}; make it shorter"]
+    if say.casefold() == original.strip().casefold():
+        return "", ["say: that is the step's original narration; explain it differently, aimed at the user's mistake"]
+    return say, []
+
+
 class AgentApp:
     def __init__(
         self,
@@ -782,18 +797,28 @@ class AgentApp:
         await self.channel.send({"type": "walkthrough_result", "object": result.object, "state": result.state})
         return result.outcome
 
-    async def _tool_replay(self, step: Any) -> str:
+    async def _tool_replay(self, args: Any) -> str:
         if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
             return "No finished scene is on screen."
         scene, _ = self._scene_on_screen
+        args = args if isinstance(args, dict) else {}
+        step = args.get("step")
         ids = [s.id for s in scene.steps]
         if step not in ids:
             return f"step: {step!r} is not a step of the scene on screen (steps: {', '.join(ids)})"
         index = ids.index(step)
+        say, errors = _replay_say(args.get("say"), scene.steps[index].say)
+        raw_targets = args.get("targets")
+        targets: list[dict] = []
+        if raw_targets is not None:
+            targets, target_errors = validate_targets(scene, index, raw_targets, scene.state_at(index))
+            errors += target_errors
+        if errors:
+            return "\n".join(errors)
         await self.loader.ready()
         self._scene_on_screen = (scene, index)
         self._screen_state = None
-        result = await self.walkthrough.replay(scene, index)
+        result = await self.walkthrough.replay(scene, index, say, targets)
         await self._state("thinking" if self._turn_running else "listening")
         status = result.get("status")
         if status == "completed":

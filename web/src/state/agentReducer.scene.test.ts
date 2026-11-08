@@ -151,6 +151,12 @@ describe('agentReducer prediction results and replays', () => {
     expect(agentReducer(ended, { ...result, object: 'nope' } as AgentAction)).toBe(ended)
   })
 
+  it('keeps the pointing a replay sends after its step, through the end of the replay', () => {
+    const second: AgentAction = { ...arrayStep, index: 1, id: 'again', say: 'A new explanation.' } as AgentAction
+    const state = [second, { type: 'walkthrough_point', targets: [target] } as AgentAction, completed].reduce(agentReducer, run(arrayScene, arrayStep, completed))
+    expect(state.walkthrough).toMatchObject({ status: 'ended', reason: 'completed', step: { id: 'again', say: 'A new explanation.' }, pointing: [target] })
+  })
+
   it('shows a replayed step after the scene ended, ends on it and drops the pointing', () => {
     const second: AgentAction = { ...arrayStep, index: 1, id: 'again', say: 'Again.' } as AgentAction
     const pointed = run(arrayScene, arrayStep, completed, { type: 'walkthrough_point', targets: [target] })

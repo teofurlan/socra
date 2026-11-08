@@ -92,3 +92,10 @@ def test_instructions_describe_the_prediction_question_and_the_replay(mode_id): 
     text = get_mode(mode_id).instructions
     assert "show_result" in text and "prediction" in text and "replay_step" in text
     assert "incorrect or partial" in text
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_ask_for_a_new_explanation_aimed_at_the_mistake_on_replay(mode_id):  # S11, S10
+    text = get_mode(mode_id).instructions
+    assert "new short explanation" in text and "never the step's original words" in text
+    assert "targets" in text

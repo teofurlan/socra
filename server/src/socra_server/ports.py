@@ -85,8 +85,8 @@ class SocraToolbox(Protocol):
         """Apply one structure operation to the finished scene on the page; returns its outcome."""
         ...
 
-    async def replay_step(self, step: Any) -> str:
-        """Play one step of the finished scene again; returns how it ended."""
+    async def replay_step(self, args: Any) -> str:
+        """Play one step of the finished scene again with a new explanation; returns how it ended."""
         ...
 
 
