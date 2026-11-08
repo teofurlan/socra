@@ -29,9 +29,11 @@ def _spec(name):
 
 
 def test_specs_for_a_mode_are_exactly_the_tools_it_lists():
-    assert [s.id for s in specs_for(get_mode("mentor"))] == ["switch_mode", "search_transcript", "present"]
+    assert [s.id for s in specs_for(get_mode("mentor"))] == [
+        "switch_mode", "search_transcript", "scene_guide", "present",
+    ]
     assert {s.id for s in specs_for(get_mode("exam"))} == {
-        "switch_mode", "search_transcript", "record_exam_result", "present",
+        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present",
     }
 
 

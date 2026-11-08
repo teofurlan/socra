@@ -399,6 +399,7 @@ async def test_open_in_a_mode_appends_its_instructions_and_exposes_socra_tools(t
     assert sorted(options.allowed_tools) == [
         "mcp__socra__present",
         "mcp__socra__record_exam_result",
+        "mcp__socra__scene_guide",
         "mcp__socra__search_transcript",
         "mcp__socra__switch_mode",
     ]

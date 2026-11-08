@@ -12,6 +12,7 @@ SWITCH_MODE = "switch_mode"
 SEARCH_TRANSCRIPT = "search_transcript"
 RECORD_EXAM_RESULT = "record_exam_result"
 PRESENT = "present"
+SCENE_GUIDE_TOOL = "scene_guide"
 
 
 class UnknownMode(ValueError):
@@ -50,9 +51,12 @@ MODES: dict[str, Mode] = {
         instructions=(
             "You are a mentor. Explain the user's project and the code in it so they "
             "understand it. Read files as needed, but do not edit files or run commands "
-            f"that change anything. {_COMMON}"
+            f"that change anything. When an explanation is about structure, a flow or data (how a "
+            "module or a request works in this project, a data structure or an algorithm), show "
+            "it: call scene_guide, then present a scene; otherwise just talk. "
+            f"{_COMMON}"
         ),
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, PRESENT}),
+        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, SCENE_GUIDE_TOOL, PRESENT}),
         opening=(
             "Now say, in one spoken sentence, what you understand the situation to be, "
             "so the user can correct you. Do not start any work yet."
@@ -66,9 +70,11 @@ MODES: dict[str, Mode] = {
             "time, listen to the spoken answer, give brief spoken feedback, then ask the "
             "next. After grading each answer, call record_exam_result with the question, a "
             "verdict (correct, partial or incorrect) and a short note. Do not edit files. "
+            "To show the code or diagram a question refers to, call scene_guide then present; "
+            "never show the answer. "
             f"{_COMMON}"
         ),
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, PRESENT}),
+        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT}),
         opening=(
             "Start the exam now: ask the first question right away, with at most a very short "
             "lead-in, grounded in the context carried over above. Do not restate the situation."
