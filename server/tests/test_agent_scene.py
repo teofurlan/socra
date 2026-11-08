@@ -6,8 +6,10 @@ import json
 
 import pytest
 
+from socra_server.domain.agent import ReplyDone
 from socra_server.domain.modes import PRESENT, get_mode
 from socra_server.socra_tools import CallbackToolbox, specs_for
+from tests.test_agent_app import _finish_turn
 from tests.test_agent_mode import Convo, ModeBackend, _make, _started
 
 CODE = "a = 1\nb = 2\nc = a + b"
@@ -525,3 +527,51 @@ async def test_replay_without_targets_sends_no_point_or_pointing(tmp_path):  # S
     assert channel.of_type("walkthrough_point") == []
     clips = [m for m in channel.of_type("tts_audio") if "step" in m]
     assert len(clips) == 1 and "pointing" not in clips[0]["step"]
+
+
+async def _scene_then_reply(tmp_path, reply):
+    """A scene has ended on screen; then the agent answers a turn with `reply`."""
+    backend = ModeBackend([Convo([[ReplyDone(reply)]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+    toolbox = backend.opens[0]["toolbox"]
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+    await app.handle_turn_text("show me the code")
+    await _finish_turn(app, channel)
+    return app, channel, toolbox
+
+
+async def test_a_code_reply_makes_the_server_forget_the_ended_scene(tmp_path):  # S4
+    _, channel, toolbox = await _scene_then_reply(tmp_path, "Here:\n```py\na = 1\n```")
+    channel.sent.clear()
+
+    assert await toolbox.point_at([{"object": "src"}]) == "No finished scene is on screen."
+    assert await toolbox.show_result({"object": "src"}) == "No finished scene is on screen."
+    assert await toolbox.replay_step(_replay("names")) == "No finished scene is on screen."
+    assert await toolbox.clear_scene() == "No finished scene is on screen."
+    assert channel.sent == []  # the page already dropped it: no walkthrough_cleared either
+
+
+async def test_a_reply_without_code_keeps_the_ended_scene(tmp_path):  # S4
+    _, channel, toolbox = await _scene_then_reply(tmp_path, "It adds two numbers.")
+
+    assert await toolbox.point_at([{"object": "src"}]) == "Highlighted on screen."
+    assert len(channel.of_type("walkthrough_point")) == 1
+
+
+async def test_a_code_reply_while_a_scene_plays_does_not_forget_it(tmp_path):  # S4
+    backend = ModeBackend([Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+    toolbox = backend.opens[0]["toolbox"]
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+    task = await _play(app, channel, toolbox.replay_step(_replay("names")), ack=False)
+    await _settle()
+    assert app.walkthrough.active
+
+    await app._send_reply("```\ncode\n```")
+
+    assert app._scene_on_screen is not None
+    await app.handle_walkthrough_control("stop")
+    await asyncio.wait_for(task, 2)
+    assert app._scene_on_screen is not None

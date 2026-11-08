@@ -82,8 +82,8 @@ const HEADLINE_HEIGHT = 0.7
 
 function liveState(walkthrough: WalkthroughData | null) {
   if (!walkthrough || !walkthrough.step) return null
-  // A scene that played to its end leaves its last step up until the user speaks; a stopped or
-  // failed one clears at once.
+  // A scene that played to its end leaves its last step up until the agent clears it, another
+  // scene starts or a reply brings code; a stopped or failed one clears at once.
   if (walkthrough.status === 'ended' && walkthrough.reason !== 'completed') return null
   return pointedState(walkthrough)
 }

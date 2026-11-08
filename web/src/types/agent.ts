@@ -131,7 +131,10 @@ export interface AgentState {
   /** The mode being switched to while the handoff runs; null otherwise. */
   switching: AgentMode | null
   modeRequest: ModeSwitchRequest | null
-  /** A narrated scene the mentor or exam agent is playing; kept until the next turn once it ends. */
+  /**
+   * A narrated scene the mentor or exam agent is playing; once it ends it stays until the agent
+   * clears it, another scene starts or a reply brings code.
+   */
   walkthrough: WalkthroughData | null
   /** The reply clip that is playing now (its source text), so the page can highlight it. */
   spoken: SpokenClip | null

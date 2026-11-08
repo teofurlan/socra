@@ -489,7 +489,7 @@ class AgentApp:
                         self._transcript.append("agent", event.text)
                     if not hidden:
                         self._turns.append(Turn(text, event.text))
-                    await self.channel.send({"type": "agent_reply", "text": event.text})
+                    await self._send_reply(event.text)
                     if not speech.fed:
                         speech.feed(event.text)
                     speech.flush()
@@ -766,6 +766,17 @@ class AgentApp:
         # The agent's turn goes on after the scene.
         await self._state("thinking" if self._turn_running else "listening")
         return json.dumps(result)
+
+    def _reply_releases_scene(self, text: str) -> bool:
+        """Whether this reply replaces the scene on screen: code on an ended scene (the page's rule)."""
+        return bool(self._scene_on_screen) and not self.walkthrough.active and "```" in text
+
+    async def _send_reply(self, text: str) -> None:
+        await self.channel.send({"type": "agent_reply", "text": text})
+        if self._reply_releases_scene(text):
+            # The page drops the scene by itself on this reply; forget it as clear_scene does.
+            self._scene_on_screen = None
+            self._screen_state = None
 
     async def _tool_clear(self) -> str:
         if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:

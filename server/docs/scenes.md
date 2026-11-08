@@ -195,8 +195,9 @@ exactly the reported paths and call `present` once more; if it is still invalid,
 
 A scene that plays to the end returns `{"status": "completed", "steps": N, "note": "..."}`.
 The `note` tells the agent the scene is over, that its last step (figures and panel) stays
-on the page until the user speaks, and that it must not narrate the scene as if it were
-appearing now; a brief follow-up question is fine. A stopped scene returns
+on the page until the agent calls `clear_scene`, another scene starts, or a reply brings a code
+block, and that it must not narrate the scene as if it were appearing now; a brief follow-up
+question is fine. A stopped scene returns
 `{"status": "stopped", ...}` and its figures clear at once.
 
 ## The check after a scene
