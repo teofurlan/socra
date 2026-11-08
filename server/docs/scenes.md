@@ -171,6 +171,26 @@ Other kinds: `{"kind": "stack", "items": [1, 2]}` with `push` / `pop` / `peek`;
 New primitives (images, ...) register their params, actions
 and state in `PRIMITIVES` without changing the scene contract.
 
+## Writing a scene: `scene_guide`
+
+The agent does not get the whole format inside `present`. It calls `scene_guide(topic)` first
+(an agent-session tool and an MCP tool) and gets back the authoring rules, advice for the
+topic, the format reference and one example scene as JSON. Topics:
+
+- `code`: explain a module, flow or function of the project. Read only the files needed, show
+  about 30 lines of real code with `focus`, and use a `diagram` for how parts or a request move.
+- `concept`: explain a programming concept. Use a `structure` (arrays, stacks, queues, hash
+  tables, binary search trees), a `diagram` for flows, a `shape` for 3D bodies, a `headline` for
+  the one key term.
+
+An unknown topic returns a message naming the valid topics. The authoring rules: 4 to 10 steps,
+one idea per step, short spoken sentences in the speech language, every visual change in the cue
+of the step that talks about it, few objects at once. Both examples are valid scenes (pinned by
+`tests/test_scene_guide.py`). The mentor and exam modes tell the agent when to use it.
+
+**Retry once.** `present` validates the whole scene and shows nothing when it is invalid. Fix
+exactly the reported paths and call `present` once more; if it is still invalid, explain by voice.
+
 ## When a scene ends
 
 A scene that plays to the end returns `{"status": "completed", "steps": N, "note": "..."}`.

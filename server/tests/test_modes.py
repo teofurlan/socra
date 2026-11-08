@@ -54,3 +54,8 @@ def test_mentor_placeholder_is_a_read_only_explainer():
 def test_unknown_mode_is_rejected():
     with pytest.raises(UnknownMode):
         get_mode("poet")
+
+
+def test_both_modes_offer_scene_guide_alongside_present():  # S1
+    for mode in MODES.values():
+        assert {"scene_guide", "present"} <= mode.tools

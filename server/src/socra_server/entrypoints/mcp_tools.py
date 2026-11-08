@@ -6,7 +6,8 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
-from socra_server.domain.scene import PRESENT_PURPOSE, SCENE_GUIDE
+from socra_server.domain.scene import PRESENT_PURPOSE, PRESENT_SUMMARY
+from socra_server.domain.scene_guide import scene_guide as build_scene_guide
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, format="%(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def create_mcp() -> FastMCP:
         "socra-server",
         instructions=(
             "Local oral exam tools. Start with open_page(). Use say() for spoken feedback, "
-            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, present() to narrate a scene whose visuals change step by step, and call get_answer() "
+            "ask() for questions with optional display-only code, explain() to narrate code while the page highlights the lines being discussed, scene_guide(topic) to learn how to write a scene, present() to narrate a scene whose visuals change step by step, and call get_answer() "
             "repeatedly while it returns listening. Answers are verbatim transcripts, "
             "not cleaned or rewritten. End with finish()."
         ),
@@ -98,7 +99,16 @@ def create_mcp() -> FastMCP:
         """
         return await get_app().explain(code, language, steps)
 
-    @mcp.tool(description=f"{PRESENT_PURPOSE} {SCENE_GUIDE} Also no_client with a URL when no page is open.")
+    @mcp.tool()
+    async def scene_guide(topic: str) -> str:
+        """Use before present: how to write a narrated scene, with an example.
+
+        topic is code (explain a module, flow or function) or concept (explain a
+        programming concept). Returns the authoring rules, the format and an example scene.
+        """
+        return build_scene_guide(topic)
+
+    @mcp.tool(description=f"{PRESENT_PURPOSE} {PRESENT_SUMMARY} Also no_client with a URL when no page is open.")
     async def present(scene: dict) -> dict:
         return await get_app().present(scene)
 

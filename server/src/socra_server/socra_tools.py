@@ -14,11 +14,13 @@ from typing import Any
 from socra_server.domain.modes import (
     PRESENT,
     RECORD_EXAM_RESULT,
+    SCENE_GUIDE_TOOL,
     SEARCH_TRANSCRIPT,
     SWITCH_MODE,
     Mode,
 )
-from socra_server.domain.scene import PRESENT_PURPOSE, SCENE_GUIDE
+from socra_server.domain.scene import PRESENT_PURPOSE, PRESENT_SUMMARY
+from socra_server.domain.scene_guide import TOPICS, scene_guide
 from socra_server.ports import SocraToolbox
 
 VERDICTS = ("correct", "partial", "incorrect")
@@ -61,6 +63,10 @@ async def _present(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
     return await toolbox.present(args.get("scene"))
 
 
+async def _scene_guide(_toolbox: SocraToolbox, args: dict[str, Any]) -> str:
+    return scene_guide(str(args.get("topic", "")))
+
+
 TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         SWITCH_MODE,
@@ -100,8 +106,20 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         _record_exam_result,
     ),
     ToolSpec(
+        SCENE_GUIDE_TOOL,
+        "Call before present. Returns how to write a narrated scene (rules, format, primitives) "
+        "and an example. topic is code to explain a module, flow or function of the project, or "
+        "concept to explain a programming concept.",
+        {
+            "type": "object",
+            "properties": {"topic": {"type": "string", "enum": list(TOPICS)}},
+            "required": ["topic"],
+        },
+        _scene_guide,
+    ),
+    ToolSpec(
         PRESENT,
-        f"{PRESENT_PURPOSE} {SCENE_GUIDE}",
+        f"{PRESENT_PURPOSE} {PRESENT_SUMMARY}",
         {
             "type": "object",
             "properties": {"scene": {"type": "object", "description": "The narrated scene to play."}},
