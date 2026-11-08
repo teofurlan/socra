@@ -183,7 +183,7 @@ topic, the format reference and one example scene as JSON. Topics:
   tables, binary search trees), a `diagram` for flows, a `shape` for 3D bodies, a `headline` for
   the one key term.
 
-An unknown topic returns a message naming the valid topics. The authoring rules: 4 to 10 steps,
+An unknown or missing topic returns a message naming the valid topics. The authoring rules: 4 to 10 steps,
 one idea per step, short spoken sentences in the speech language, every visual change in the cue
 of the step that talks about it, few objects at once. Both examples are valid scenes (pinned by
 `tests/test_scene_guide.py`). The mentor and exam modes tell the agent when to use it.

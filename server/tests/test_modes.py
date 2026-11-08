@@ -56,6 +56,8 @@ def test_unknown_mode_is_rejected():
         get_mode("poet")
 
 
-def test_both_modes_offer_scene_guide_alongside_present():  # S1
-    for mode in MODES.values():
-        assert {"scene_guide", "present"} <= mode.tools
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_both_modes_offer_scene_guide_alongside_present(mode_id):  # S1
+    tools = get_mode(mode_id).tools
+    assert "scene_guide" in tools
+    assert "present" in tools

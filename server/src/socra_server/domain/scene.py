@@ -31,7 +31,7 @@ PRESENT_PURPOSE = "Use to explain something out loud while the page changes what
 PRESENT_SUMMARY = (
     'scene is {"version": 1, "title", "objects", "steps", "cues"}. Call scene_guide first '
     "(topic code or concept) for the format, the primitives and an example. Blocks until the "
-    "scene ends. Returns completed (steps, note), stopped (step, total), invalid (errors: each "
+    "scene ends; the user may pause, repeat, go back, skip or stop meanwhile. Returns completed (steps, note), stopped (step, total), invalid (errors: each "
     "with path and message; nothing was shown, fix them and call present once more), busy, "
     "page_disconnected or error (message)."
 )

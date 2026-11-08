@@ -64,7 +64,8 @@ async def _present(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
 
 
 async def _scene_guide(_toolbox: SocraToolbox, args: dict[str, Any]) -> str:
-    return scene_guide(str(args.get("topic", "")))
+    topic = args.get("topic")
+    return scene_guide(topic if isinstance(topic, str) else "")
 
 
 TOOL_SPECS: tuple[ToolSpec, ...] = (

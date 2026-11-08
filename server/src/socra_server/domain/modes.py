@@ -50,7 +50,8 @@ MODES: dict[str, Mode] = {
         label="Mentor",
         instructions=(
             "You are a mentor. Explain the user's project and the code in it so they "
-            "understand it. Read files as needed, but do not edit files or run commands "
+            "understand it. Read files as needed with the file reading and search tools, "
+            "not shell commands, and do not edit files or run commands "
             f"that change anything. When an explanation is about structure, a flow or data (how a "
             "module or a request works in this project, a data structure or an algorithm), show "
             "it: call scene_guide, then present a scene; otherwise just talk. "
