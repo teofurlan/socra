@@ -139,3 +139,28 @@ async def test_the_mcp_server_exposes_scene_guide():  # S1, S10
     assert "no_client" in tools["present"].description
     result = await mcp.call_tool("scene_guide", {"topic": "code"})
     assert "4 to 10 steps" in str(result)
+
+
+MISSING_TOPIC = "A topic is required. Valid topics: code, concept."
+
+
+def test_an_empty_topic_asks_for_one():
+    assert scene_guide("") == MISSING_TOPIC
+
+
+@pytest.mark.parametrize("args", [{}, {"topic": None}, {"topic": ""}, {"topic": 3}])
+def test_the_tool_without_a_text_topic_asks_for_one(args):
+    import asyncio
+
+    spec = next(s for s in TOOL_SPECS if s.id == SCENE_GUIDE_TOOL)
+    assert asyncio.run(spec.handler(ExplodingToolbox(), args)) == MISSING_TOPIC
+
+
+def test_present_says_the_user_may_control_the_scene_while_it_plays():
+    assert "pause, repeat, go back, skip or stop" in PRESENT_SUMMARY
+
+
+def test_mentor_reads_files_with_file_tools_not_shell_commands():
+    instructions = get_mode("mentor").instructions
+    assert "file reading and search tools" in instructions
+    assert "not shell commands" in instructions

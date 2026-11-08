@@ -127,6 +127,8 @@ EXAMPLES: dict[str, dict[str, Any]] = {"code": _CODE_EXAMPLE, "concept": _CONCEP
 
 def scene_guide(topic: str) -> str:
     """The guide for one entry point: rules, advice, format reference and an example scene."""
+    if not topic:
+        return f"A topic is required. Valid topics: {', '.join(TOPICS)}."
     if topic not in TOPICS:
         return f"Unknown topic {topic!r}. Valid topics: {', '.join(TOPICS)}."
     example = json.dumps(EXAMPLES[topic], separators=(",", ":"))
