@@ -149,7 +149,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         POINT_AT,
         "Highlights objects of the finished scene on the user's screen while you ask about them. "
         "Call it right before asking each check question; an empty list removes the highlight. "
-        "Object ids must be from the scene you presented. Parts: a diagram node id; in a "
+        "Object ids must be code, diagram or structure objects of the scene you presented. Parts: a diagram node id; in a "
         "structure cell:<index>, bucket:<b>, entry:<b>:<pos> or node:<key>; code uses lines "
         "[start, end] (1-based). Invalid targets come back as errors and nothing is highlighted.",
         {

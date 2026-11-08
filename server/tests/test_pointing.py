@@ -35,8 +35,8 @@ def _check(raw, scene=None, index=None):
 
 
 def test_a_bare_object_is_a_valid_target():
-    targets, errors = _check([{"object": "box"}])
-    assert errors == [] and targets == [{"object": "box"}]
+    targets, errors = _check([{"object": "flow"}])
+    assert errors == [] and targets == [{"object": "flow"}]
 
 
 def test_an_empty_list_removes_the_highlight():
@@ -95,9 +95,12 @@ def test_lines_only_apply_to_code_and_parts_not_to_code():
     assert _check([{"object": "src", "part": "x"}])[1][0].startswith("targets[0].part: ")
 
 
-def test_a_primitive_without_parts_accepts_only_the_bare_object():
-    errors = _check([{"object": "box", "part": "top"}])[1]
-    assert errors and errors[0].startswith("targets[0].part: ")
+def test_shapes_and_headlines_cannot_be_pointed_at():
+    headline = {"id": "big", "primitive": "headline", "params": {"text": "Idea"}}
+    for name in ("box", "big"):
+        targets, errors = _check([{"object": name}], scene=_scene(headline))
+        assert targets == [] and len(errors) == 1
+        assert errors[0].startswith("targets[0].object: ") and "cannot be highlighted" in errors[0]
 
 
 def test_an_unknown_object_is_rejected_naming_the_known_ones():
@@ -108,14 +111,14 @@ def test_an_unknown_object_is_rejected_naming_the_known_ones():
 def test_an_object_hidden_in_the_last_state_is_rejected():
     scene = _scene(
         steps=[{"id": "s1", "say": "One."}, {"id": "s2", "say": "Two."}],
-        cues=[{"at": "s2", "do": [{"object": "box", "action": "hide"}]}],
+        cues=[{"at": "s2", "do": [{"object": "flow", "action": "hide"}]}],
     )
-    assert _check([{"object": "box"}], scene)[1][0].startswith("targets[0].object: ")
-    assert _check([{"object": "box"}], scene, index=0)[1] == []
+    assert _check([{"object": "flow"}], scene)[1][0].startswith("targets[0].object: ")
+    assert _check([{"object": "flow"}], scene, index=0)[1] == []
 
 
 def test_every_problem_is_reported_with_its_path():
-    _, errors = _check([{"object": "nope"}, {"object": "src", "lines": [9, 9]}, {"object": "box"}])
+    _, errors = _check([{"object": "nope"}, {"object": "src", "lines": [9, 9]}, {"object": "flow"}])
     assert [e.split(":")[0] for e in errors] == ["targets[0].object", "targets[1].lines"]
 
 

@@ -9,6 +9,8 @@ from typing import Any
 from socra_server.domain.scene import Scene, SceneObject, _line_count, _node_ids_of
 
 MAX_TARGETS = 6
+# The primitives the page can visibly emphasize; a shape or headline has nothing to highlight.
+POINTABLE = ("code", "diagram", "structure")
 _TARGET_FIELDS = {"object", "part", "lines"}
 Targets = list[dict]
 Errors = list[str]
@@ -66,6 +68,8 @@ def _check_target(raw: Any, objects: dict[str, SceneObject], state: dict[str, di
         return None, [f"{path}.object: {name!r} is not an object of the scene on screen (objects: {known})"]
     if not state[name].get("visible", True):
         return None, [f"{path}.object: {name!r} is hidden on screen right now"]
+    if obj.primitive not in POINTABLE:
+        return None, [f"{path}.object: {name!r} is a {obj.primitive}, which cannot be highlighted; point at a code, diagram or structure object"]
     target: dict = {"object": name}
     part, lines = raw.get("part"), raw.get("lines")
     if part is not None:

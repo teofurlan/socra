@@ -230,11 +230,11 @@ step shown:
 
 | Object | Accepted target |
 | --- | --- |
-| any object | the bare `{"object": id}`: the whole object is emphasized |
+| `code`, `diagram`, `structure` | the bare `{"object": id}`: the whole object is emphasized |
 | `diagram` | `part`: a node `id` of that diagram |
 | `structure` | `part`: `cell:<index>` (array, stack, queue), `bucket:<b>` or `entry:<b>:<pos>` (hash table), `node:<key>` (tree); it must exist in the last state |
 | `code` | `lines`: `[start, end]`, 1-based, `start <= end`, inside the code |
-| `headline`, `shape` | only the bare object |
+| `headline`, `shape` | rejected: the page has nothing to highlight on them |
 
 An object that is unknown or hidden in the last state is rejected, and so is `part` on a primitive
 without parts or `lines` on anything but code. On any problem nothing is sent to the page and the
