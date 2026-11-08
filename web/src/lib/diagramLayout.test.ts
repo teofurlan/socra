@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MIN_SCALE, fitScale, layoutDiagram, pickLayout, polylineLength, wrapLabel, type DiagramEdgeInput, type DiagramNodeInput } from '@/lib/diagramLayout'
+import { MIN_SCALE, fitScale, layoutDiagram, pickLayout, placeNote, polylineLength, sizeWithNotes, wrapLabel, type DiagramEdgeInput, type DiagramNodeInput } from '@/lib/diagramLayout'
 
 const node = (id: string, label = id, group = ''): DiagramNodeInput => ({ id, label, group })
 const edge = (from: string, to: string, label = ''): DiagramEdgeInput => ({ from, to, label })
@@ -171,5 +171,44 @@ describe('polylineLength', () => {
   it('adds the segments', () => {
     expect(polylineLength([{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 10 }])).toBe(11)
     expect(polylineLength([{ x: 1, y: 1 }])).toBe(0)
+  })
+})
+
+describe('note geometry', () => {
+  const chain = Array.from({ length: 3 }, (_, i) => node(`n${i}`, `Step ${i}`))
+  const links = chain.slice(1).map((n, i) => edge(`n${i}`, n.id))
+
+  it('places a note below its node, inside the drawing horizontally', () => {
+    const laid = layoutDiagram(chain, links, 'TB')
+    const target = laid.nodes[1]
+    const box = placeNote(target, 'you are here', laid.width)
+    expect(box.y).toBeGreaterThan(target.y + target.height)
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(laid.width)
+    expect(box.lines).toEqual(['you are here'])
+  })
+
+  it('grows the size to hold a note on the bottom row, fully inside', () => {
+    const laid = layoutDiagram(chain, links, 'TB')
+    const last = laid.nodes[2]
+    const box = placeNote(last, 'you are here', laid.width)
+    expect(box.y + box.height).toBeGreaterThan(laid.height)
+    const size = sizeWithNotes(laid, [box])
+    expect(size.height).toBeGreaterThanOrEqual(box.y + box.height)
+    expect(size.width).toBe(laid.width)
+  })
+
+  it('grows the width for a note wider than the drawing', () => {
+    const laid = layoutDiagram([node('a', 'A')], [], 'TB')
+    const box = placeNote(laid.nodes[0], 'a rather long note that wraps over two lines', laid.width)
+    expect(box.lines).toHaveLength(2)
+    expect(sizeWithNotes(laid, [box]).width).toBeGreaterThanOrEqual(box.x + box.width)
+  })
+
+  it('keeps the size when every note already has room below its node', () => {
+    const laid = layoutDiagram(chain, links, 'TB')
+    const box = placeNote(laid.nodes[0], 'start', laid.width)
+    expect(sizeWithNotes(laid, [box])).toEqual({ width: laid.width, height: laid.height })
+    expect(sizeWithNotes(laid, [])).toEqual({ width: laid.width, height: laid.height })
   })
 })
