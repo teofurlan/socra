@@ -1,3 +1,4 @@
+import type { PointTarget } from '@/types/scene'
 import type {
   ConnectionStatus,
   ProtocolState,
@@ -95,6 +96,8 @@ export type AgentServerMessage =
   | WalkthroughMessage
   /** The agent finished with the scene (after the oral check): the page releases it if it ended. */
   | { type: 'walkthrough_cleared' }
+  /** The agent points at objects of the finished scene while it asks about them; empty removes it. */
+  | { type: 'walkthrough_point'; targets: PointTarget[] }
   | VoicesMessage
 
 // Page -> server messages on /ws/agent

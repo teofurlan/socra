@@ -215,6 +215,35 @@ questions can refer to it. When the check ends or is declined, the agent calls `
 a scene that has ended: while one plays it does nothing and returns "No finished scene is on
 screen." A new `present` or a reply with code also releases an ended scene.
 
+### Pointing at the scene: `point_at`
+
+Right before asking each check question, the agent calls `point_at` so the page highlights what the
+question is about. Arguments:
+
+```json
+{"targets": [{"object": "<object id>", "part": "<optional part id>", "lines": [1, 3]}]}
+```
+
+An empty `targets` list removes the highlight (use it when a question is not about anything
+specific). A target is checked against the finished scene still on screen and the state of its last
+step shown:
+
+| Object | Accepted target |
+| --- | --- |
+| any object | the bare `{"object": id}`: the whole object is emphasized |
+| `diagram` | `part`: a node `id` of that diagram |
+| `structure` | `part`: `cell:<index>` (array, stack, queue), `bucket:<b>` or `entry:<b>:<pos>` (hash table), `node:<key>` (tree); it must exist in the last state |
+| `code` | `lines`: `[start, end]`, 1-based, `start <= end`, inside the code |
+| `headline`, `shape` | only the bare object |
+
+An object that is unknown or hidden in the last state is rejected, and so is `part` on a primitive
+without parts or `lines` on anything but code. On any problem nothing is sent to the page and the
+tool returns the problems, one `path: message` line each (for example `targets[0].part: ...`),
+so the agent can fix the call. A valid call sends `walkthrough_point` to the page and returns
+"Highlighted on screen." With no finished scene on screen (none presented, still playing,
+`clear_scene`, a page disconnect) it returns "No finished scene is on screen." The page applies the
+highlight on top of the last step and drops it with the scene.
+
 ## Validation
 
 The whole scene is checked before anything is shown or spoken. An invalid scene returns

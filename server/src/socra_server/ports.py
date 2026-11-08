@@ -77,6 +77,10 @@ class SocraToolbox(Protocol):
         """Remove the finished scene from the page; returns text for the agent."""
         ...
 
+    async def point_at(self, targets: Any) -> str:
+        """Highlight objects of the finished scene on the page; returns text for the agent."""
+        ...
+
 
 @runtime_checkable
 class AgentBackend(Protocol):

@@ -18,7 +18,8 @@ from typing import Any
 
 from socra_server.adapters.turn_audio_log import save_turn_audio
 from socra_server.adapters.whisper_stt import is_valid_answer
-from socra_server.domain.scene import parse_scene
+from socra_server.domain.pointing import validate_targets
+from socra_server.domain.scene import Scene, parse_scene
 from socra_server.domain.walkthrough import parse_command
 from socra_server.walkthrough import WalkthroughRunner
 from socra_server.agent_registry import BackendRegistry, UnknownSelection
@@ -93,10 +94,12 @@ class AgentApp:
         self._toolbox = CallbackToolbox(
             switch=self._tool_switch, record=self._tool_record, search=self._tool_search,
             play=self._tool_present, clear=self._tool_clear,
+            point=self._tool_point,
         )
         self._switch_request: str | None = None
-        # A scene that ended and is still on the page, waiting for the agent to clear it.
-        self._scene_on_screen = False
+        # A scene that ended and is still on the page, waiting for the agent to clear it, and the
+        # index of the step whose state the page shows.
+        self._scene_on_screen: tuple[Scene, int] | None = None
         # What the user said while a switch ran; the session that comes out of it answers it.
         self._switch_turns: list[str] = []
         self.switch_task: asyncio.Task | None = None
@@ -321,7 +324,7 @@ class AgentApp:
 
     async def handle_disconnect(self) -> None:
         self.walkthrough.abort()
-        self._scene_on_screen = False
+        self._scene_on_screen = None
         # The page that owed those acknowledgements is gone; a new page starts clean.
         self._ack_debt = 0
         self._playback_done.set()  # wake a wait for clips nobody can play any more
@@ -733,9 +736,13 @@ class AgentApp:
                 return json.dumps({"status": "stopped", "step": 1, "total": len(parsed.steps)})
             if not self.channel.is_connected:
                 return json.dumps({"status": "page_disconnected"})
-        self._scene_on_screen = False
+        self._scene_on_screen = None
         result = await self.walkthrough.run(parsed)
-        self._scene_on_screen = result.get("status") in ("completed", "stopped", "error")
+        if result.get("status") == "completed":
+            self._scene_on_screen = (parsed, len(parsed.steps) - 1)
+        elif result.get("status") in ("stopped", "error"):
+            # The page keeps the step it stopped at.
+            self._scene_on_screen = (parsed, min(max(result.get("step", 1) - 1, 0), len(parsed.steps) - 1))
         # The agent's turn goes on after the scene.
         await self._state("thinking" if self._turn_running else "listening")
         return json.dumps(result)
@@ -743,9 +750,19 @@ class AgentApp:
     async def _tool_clear(self) -> str:
         if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
             return "No finished scene is on screen."
-        self._scene_on_screen = False
+        self._scene_on_screen = None
         await self.channel.send({"type": "walkthrough_cleared"})
         return "Scene cleared."
+
+    async def _tool_point(self, targets: Any) -> str:
+        if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
+            return "No finished scene is on screen."
+        scene, index = self._scene_on_screen
+        valid, errors = validate_targets(scene, index, targets)
+        if errors:
+            return "\n".join(errors)
+        await self.channel.send({"type": "walkthrough_point", "targets": valid})
+        return "Highlighted on screen." if valid else "Highlight removed."
 
     async def _route_scene_speech(self, text: str) -> None:
         """While a scene plays, what the user says or types steers it instead of starting a turn."""

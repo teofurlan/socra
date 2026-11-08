@@ -13,6 +13,7 @@ from typing import Any
 
 from socra_server.domain.modes import (
     CLEAR_SCENE,
+    POINT_AT,
     PRESENT,
     RECORD_EXAM_RESULT,
     SCENE_GUIDE_TOOL,
@@ -66,6 +67,10 @@ async def _present(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
 
 async def _clear_scene(toolbox: SocraToolbox, _args: dict[str, Any]) -> str:
     return await toolbox.clear_scene()
+
+
+async def _point_at(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
+    return await toolbox.point_at(args.get("targets"))
 
 
 async def _scene_guide(_toolbox: SocraToolbox, args: dict[str, Any]) -> str:
@@ -140,6 +145,37 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         {"type": "object", "properties": {}},
         _clear_scene,
     ),
+    ToolSpec(
+        POINT_AT,
+        "Highlights objects of the finished scene on the user's screen while you ask about them. "
+        "Call it right before asking each check question; an empty list removes the highlight. "
+        "Object ids must be from the scene you presented. Parts: a diagram node id; in a "
+        "structure cell:<index>, bucket:<b>, entry:<b>:<pos> or node:<key>; code uses lines "
+        "[start, end] (1-based). Invalid targets come back as errors and nothing is highlighted.",
+        {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "object": {"type": "string", "description": "Id of an object of the scene"},
+                            "part": {"type": "string", "description": "Optional part of the object"},
+                            "lines": {
+                                "type": "array", "items": {"type": "integer"},
+                                "minItems": 2, "maxItems": 2,
+                                "description": "Code only: [start, end] line range",
+                            },
+                        },
+                        "required": ["object"],
+                    },
+                },
+            },
+            "required": ["targets"],
+        },
+        _point_at,
+    ),
 )
 
 
@@ -156,6 +192,7 @@ class CallbackToolbox:
     search: Callable[[str, int], Awaitable[list[Any]]]
     play: Callable[[Any], Awaitable[str]]
     clear: Callable[[], Awaitable[str]]
+    point: Callable[[Any], Awaitable[str]]
 
     async def switch_mode(self, target: str) -> str:
         return await self.switch(target)
@@ -171,3 +208,6 @@ class CallbackToolbox:
 
     async def clear_scene(self) -> str:
         return await self.clear()
+
+    async def point_at(self, targets: Any) -> str:
+        return await self.point(targets)

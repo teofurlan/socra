@@ -27,6 +27,10 @@ class RecordingToolbox:
         self.calls.append(("clear",))
         return "cleared"
 
+    async def point_at(self, targets) -> str:
+        self.calls.append(("point", targets))
+        return "pointed"
+
 
 def _spec(name):
     return next(s for s in TOOL_SPECS if s.id == name)
@@ -35,9 +39,11 @@ def _spec(name):
 def test_specs_for_a_mode_are_exactly_the_tools_it_lists():
     assert [s.id for s in specs_for(get_mode("mentor"))] == [
         "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present", "clear_scene",
+        "point_at",
     ]
     assert {s.id for s in specs_for(get_mode("exam"))} == {
         "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present", "clear_scene",
+        "point_at",
     }
 
 
@@ -123,11 +129,36 @@ async def test_callback_toolbox_delegates_to_its_callbacks():
         seen.append("clear")
         return "ok"
 
-    toolbox = CallbackToolbox(switch=switch, record=record, search=search, play=play, clear=clear)
+    async def point(targets):
+        seen.append(("point", targets))
+        return "ok"
+
+    toolbox = CallbackToolbox(switch=switch, record=record, search=search, play=play, clear=clear, point=point)
 
     await toolbox.switch_mode("mentor")
     await toolbox.record_exam_result("Q", "correct", "")
     await toolbox.search_transcript("q", 2)
     await toolbox.clear_scene()
+    await toolbox.point_at([])
 
-    assert seen == ["mentor", ("Q", "correct", ""), ("q", 2), "clear"]
+    assert seen == ["mentor", ("Q", "correct", ""), ("q", 2), "clear", ("point", [])]
+
+
+async def test_point_at_passes_the_targets_to_the_toolbox():  # S5
+    toolbox = RecordingToolbox()
+    spec = _spec("point_at")
+
+    assert await spec.handler(toolbox, {"targets": [{"object": "src", "lines": [1, 2]}]}) == "pointed"
+    assert await spec.handler(toolbox, {}) == "pointed"
+    assert toolbox.calls == [("point", [{"object": "src", "lines": [1, 2]}]), ("point", None)]
+
+
+def test_point_at_schema_and_description_teach_targets_and_part_ids():  # S5, S6, S10
+    spec = _spec("point_at")
+    target = spec.schema["properties"]["targets"]["items"]["properties"]
+
+    assert spec.schema["type"] == "object" and "targets" in spec.schema["properties"]
+    assert set(target) == {"object", "part", "lines"}
+    assert target["lines"]["minItems"] == 2 and target["lines"]["maxItems"] == 2
+    for word in ("right before", "cell:", "bucket:", "entry:", "node:", "lines", "empty"):
+        assert word in spec.description, word

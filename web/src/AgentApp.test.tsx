@@ -140,6 +140,77 @@ describe('AgentApp', () => {
       expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
     })
 
+    describe('pointing at the finished scene', () => {
+      const objects = [
+        { id: 'src', primitive: 'code', params: { code: 'one\ntwo\nthree', language: 'python' }, hidden: false },
+        {
+          id: 'flow', primitive: 'diagram', hidden: false,
+          params: { nodes: [{ id: 'api', label: 'API' }, { id: 'db', label: 'DB' }], edges: [{ from: 'api', to: 'db' }] },
+        },
+        {
+          id: 'arr', primitive: 'structure', hidden: false,
+          params: { kind: 'array', items: [4, 5, 6], initial: { kind: 'array', items: [4, 5, 6], last: null } },
+        },
+      ]
+      const state = {
+        src: { visible: true, lines: null },
+        flow: { visible: true, highlighted: [], dimmed: [], revealed: [{ from: 'api', to: 'db' }], trace: [], notes: {} },
+        arr: { visible: true, kind: 'array', items: [4, 5, 6], last: null },
+      }
+      const finished = () => {
+        const { ws } = openPage()
+        startSession(ws)
+        act(() => {
+          ws.receive({ type: 'walkthrough', title: 'All', objects, total: 1 })
+          ws.receive({ type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'Everything.', state })
+          ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' })
+        })
+        return ws
+      }
+      const figures = () => screen.getByTestId('particle-visualizer').getAttribute('data-figures')
+
+      it('highlights a pointed diagram node and the particles ring it', () => {
+        const ws = finished()
+        expect(figures()).toBe('')
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'flow', part: 'db' }] }))
+        expect(document.querySelector('[data-diagram-node="db"]')).toHaveAttribute('data-highlighted', 'true')
+        expect(document.querySelector('[data-diagram-node="api"]')).not.toHaveAttribute('data-highlighted')
+        expect(figures()).toBe('highlight:flow:db')
+      })
+
+      it('marks a pointed structure part and the particles outline it', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'arr', part: 'cell:1' }] }))
+        expect(document.querySelector('[data-structure-part="cell:1"]')).toHaveAttribute('data-touched', 'true')
+        expect(document.querySelector('[data-structure-part="cell:0"]')).not.toHaveAttribute('data-touched')
+        expect(figures()).toBe('point:arr:cell:1')
+      })
+
+      it('focuses a pointed line range and the particles outline it', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'src', lines: [2, 3] }] }))
+        const pane = screen.getByRole('region', { name: 'Walkthrough code src' })
+        expect(Array.from(pane.querySelectorAll('code > span')).map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, true])
+        expect(figures()).toBe('focus:src:2-3')
+      })
+
+      it('emphasizes a whole object for a bare target, and an empty list takes it away', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'flow' }] }))
+        expect(document.querySelectorAll('[data-diagram-node][data-highlighted="true"]')).toHaveLength(2)
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [] }))
+        expect(document.querySelectorAll('[data-diagram-node][data-highlighted="true"]')).toHaveLength(0)
+        expect(figures()).toBe('')
+      })
+
+      it('lets go of the pointing with the scene', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'src', lines: [1, 1] }] }))
+        act(() => ws.receive({ type: 'walkthrough_cleared' }))
+        expect(figures()).toBe('')
+      })
+    })
+
     it('points the particles at nothing without a scene', () => {
       const { ws } = openPage()
       startSession(ws)

@@ -67,7 +67,7 @@ async def test_the_present_tool_passes_the_scene_to_the_toolbox():
     async def unused(*_args):
         return ""
 
-    toolbox = CallbackToolbox(switch=unused, record=unused, search=unused, play=present, clear=unused)
+    toolbox = CallbackToolbox(switch=unused, record=unused, search=unused, play=present, clear=unused, point=unused)
     spec = next(s for s in specs_for(get_mode("mentor")) if s.id == PRESENT)
     assert spec.schema["required"] == ["scene"]
     assert await spec.handler(toolbox, {"scene": SCENE}) == "played"
@@ -205,3 +205,82 @@ async def test_a_new_scene_after_clearing_can_be_cleared_again(tmp_path):  # S4
     for _ in range(2):
         await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
         assert await toolbox.clear_scene() == "Scene cleared."
+
+
+async def _scene_on_screen(tmp_path):
+    app, channel, _, toolbox = await _opened(tmp_path)
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(SCENE)), 2)
+    return app, channel, toolbox
+
+
+async def test_valid_targets_reach_the_page_normalized(tmp_path):  # S5
+    _, channel, toolbox = await _scene_on_screen(tmp_path)
+
+    text = await toolbox.point_at([{"object": "src", "lines": (1, 2)}])
+
+    assert channel.of_type("walkthrough_point") == [
+        {"type": "walkthrough_point", "targets": [{"object": "src", "lines": [1, 2]}]}
+    ]
+    assert text == "Highlighted on screen."
+
+
+async def test_an_empty_list_removes_the_highlight(tmp_path):  # S5
+    _, channel, toolbox = await _scene_on_screen(tmp_path)
+
+    text = await toolbox.point_at([])
+
+    assert channel.of_type("walkthrough_point") == [{"type": "walkthrough_point", "targets": []}]
+    assert "removed" in text.lower()
+
+
+async def test_invalid_targets_send_nothing_and_come_back_as_errors(tmp_path):  # S5, S6
+    _, channel, toolbox = await _scene_on_screen(tmp_path)
+
+    text = await toolbox.point_at([{"object": "nope"}, {"object": "src", "lines": [3, 9]}])
+
+    assert channel.of_type("walkthrough_point") == []
+    lines = text.splitlines()
+    assert lines[0].startswith("targets[0].object: ") and lines[1].startswith("targets[1].lines: ")
+
+
+async def test_pointing_needs_a_finished_scene_on_screen(tmp_path):  # S5
+    _, channel, _, toolbox = await _opened(tmp_path)
+
+    assert await toolbox.point_at([{"object": "src"}]) == "No finished scene is on screen."
+    assert channel.of_type("walkthrough_point") == []
+
+
+async def test_after_clear_scene_pointing_reports_no_scene(tmp_path):  # S5
+    _, channel, toolbox = await _scene_on_screen(tmp_path)
+    await toolbox.clear_scene()
+
+    assert await toolbox.point_at([{"object": "src"}]) == "No finished scene is on screen."
+    assert channel.of_type("walkthrough_point") == []
+
+
+async def test_a_scene_that_still_plays_cannot_be_pointed_at(tmp_path):  # S5
+    app, channel, _, toolbox = await _opened(tmp_path)
+    task = await _play(app, channel, toolbox.present(SCENE), ack=False)
+    await _settle()
+
+    assert await toolbox.point_at([{"object": "src"}]) == "No finished scene is on screen."
+    await app.handle_walkthrough_control("stop")
+    await asyncio.wait_for(task, 2)
+
+
+async def test_pointing_is_checked_against_the_new_scene(tmp_path):  # S5
+    app, channel, toolbox = await _scene_on_screen(tmp_path)
+    other = SCENE | {"objects": [{"id": "other", "primitive": "code", "params": {"code": "x", "language": ""}}],
+                     "cues": []}
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(other)), 2)
+
+    assert (await toolbox.point_at([{"object": "src"}])).startswith("targets[0].object: ")
+    assert await toolbox.point_at([{"object": "other", "lines": [1, 1]}]) == "Highlighted on screen."
+
+
+async def test_losing_the_page_forgets_the_scene(tmp_path):  # S5
+    app, _, toolbox = await _scene_on_screen(tmp_path)
+
+    await app.handle_disconnect()
+
+    assert await toolbox.point_at([]) == "No finished scene is on screen."

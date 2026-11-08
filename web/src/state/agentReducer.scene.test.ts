@@ -74,3 +74,38 @@ describe('agentReducer scenes', () => {
     expect(run(scene, step, completed, next).walkthrough).toMatchObject({ title: 'Next', status: 'playing', step: null })
   })
 })
+
+describe('agentReducer pointing', () => {
+  const completed: AgentAction = { type: 'walkthrough_status', status: 'ended', reason: 'completed' }
+  const point = (...targets: { object: string; part?: string; lines?: [number, number] }[]): AgentAction => ({ type: 'walkthrough_point', targets })
+  const target = { object: 'src', lines: [1, 2] as [number, number] }
+
+  it('stores the targets on an ended scene', () => {
+    expect(run(scene, step, completed, point(target)).walkthrough?.pointing).toEqual([target])
+  })
+
+  it('ignores them while the scene plays and when no scene is shown', () => {
+    const playing = run(scene, step)
+    expect(agentReducer(playing, point(target))).toBe(playing)
+    expect(run(point(target)).walkthrough).toBeNull()
+  })
+
+  it('replaces the previous targets, and an empty list removes them', () => {
+    const other = { object: 'src', lines: [2, 2] as [number, number] }
+    const state = run(scene, step, completed, point(target), point(other))
+    expect(state.walkthrough?.pointing).toEqual([other])
+    expect(agentReducer(state, point()).walkthrough?.pointing).toBeUndefined()
+  })
+
+  it('drops them with the scene: cleared, or replaced by a new scene', () => {
+    const pointed = run(scene, step, completed, point(target))
+    expect(agentReducer(pointed, { type: 'walkthrough_cleared' }).walkthrough).toBeNull()
+    const next = agentReducer(pointed, { type: 'walkthrough', title: 'Next', objects, total: 1 })
+    expect(next.walkthrough?.pointing).toBeUndefined()
+  })
+
+  it('survives the user speaking, like the scene itself', () => {
+    const pointed = run(scene, step, completed, point(target))
+    expect(agentReducer(pointed, { type: 'user_text', text: 'two' }).walkthrough?.pointing).toEqual([target])
+  })
+})

@@ -1,4 +1,4 @@
-import type { SceneObject, SceneState } from '@/types/scene'
+import type { PointTarget, SceneObject, SceneState } from '@/types/scene'
 import type { VoiceMessage, VoicesMessage } from '@/types/voice'
 
 export type ProtocolState = 'idle' | 'speaking' | 'listening' | 'thinking'
@@ -41,6 +41,8 @@ export interface WalkthroughData {
   status: WalkthroughStatus
   /** Why it ended: completed, stopped, disconnected or error. */
   reason: string | null
+  /** What the agent points at in the finished scene; absent when it points at nothing. */
+  pointing?: PointTarget[]
 }
 
 /** The messages that drive a narrated scene, on the exam and the agent page alike. */

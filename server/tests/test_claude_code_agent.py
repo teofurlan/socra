@@ -398,6 +398,7 @@ async def test_open_in_a_mode_appends_its_instructions_and_exposes_socra_tools(t
     # Socra's own tools are pre-approved: they must not raise an Allow / Deny prompt.
     assert sorted(options.allowed_tools) == [
         "mcp__socra__clear_scene",
+        "mcp__socra__point_at",
         "mcp__socra__present",
         "mcp__socra__record_exam_result",
         "mcp__socra__scene_guide",

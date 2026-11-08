@@ -69,3 +69,14 @@ def test_both_modes_offer_scene_guide_alongside_present(mode_id):  # S1
     tools = get_mode(mode_id).tools
     assert "scene_guide" in tools
     assert "present" in tools
+
+
+def test_mentor_and_exam_can_point_at_the_scene():  # S5
+    for mode_id in ("mentor", "exam"):
+        assert "point_at" in get_mode(mode_id).tools
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_tell_the_agent_to_point_before_each_check_question(mode_id):  # S5, S10
+    text = get_mode(mode_id).instructions
+    assert "point_at" in text and "empty list" in text

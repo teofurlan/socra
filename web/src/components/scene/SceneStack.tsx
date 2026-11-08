@@ -1,6 +1,7 @@
 import { Component, useEffect, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Panel } from '@/components/shell/Panel'
+import { pointedState } from '@/lib/scenePointing'
 import { sceneMetrics } from '@/lib/sceneMetrics'
 import type { WalkthroughData } from '@/types/exam'
 import { PRIMITIVE_RENDERERS, panelObjects, type PrimitiveRenderers } from '@/components/scene/registry'
@@ -67,7 +68,7 @@ interface SceneStackProps {
  */
 export function SceneStack({ walkthrough, onClose, codeName = 'walkthrough', renderers = PRIMITIVE_RENDERERS }: SceneStackProps) {
   const { step } = walkthrough
-  const entries = panelObjects(walkthrough.objects, step?.state ?? null, renderers)
+  const entries = panelObjects(walkthrough.objects, pointedState(walkthrough), renderers)
   const say = step?.say ?? ''
   const index = step?.index ?? 0
 
