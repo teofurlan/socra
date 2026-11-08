@@ -23,7 +23,7 @@ _GONE = "gone"
 
 # Said to the agent in the tool result: the page keeps the last step up after the scene ends.
 COMPLETED_NOTE = (
-    "The scene has finished playing. Its last step stays on screen until the user speaks. "
+    "The scene has finished playing. Its last step stays on screen until you call clear_scene. "
     "Do not narrate the scene as if it were appearing now (never say it is on screen now); "
     "it was already narrated step by step. You may briefly ask a follow-up question."
 )

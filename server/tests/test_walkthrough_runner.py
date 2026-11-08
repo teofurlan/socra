@@ -299,7 +299,7 @@ async def test_a_completed_scene_tells_the_agent_it_is_over_and_still_on_screen(
     assert result["status"] == "completed" and result["steps"] == 2
     note = result["note"].lower()
     assert "finished" in note
-    assert "stays on screen until the user speaks" in note
+    assert "stays on screen until you call clear_scene" in note
     assert "do not narrate" in note
 
 

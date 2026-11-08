@@ -103,10 +103,12 @@ describe('AgentApp', () => {
       expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
       expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
       act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
-      // The last step stays up after a completed scene, until the user speaks.
+      // The last step stays up after a completed scene, even when the user speaks, until the agent clears it.
       expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
       expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
       act(() => ws.receive({ type: 'transcript', text: 'why?', final: true }))
+      expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
+      act(() => ws.receive({ type: 'walkthrough_cleared' }))
       expect(visualizer).toHaveAttribute('data-figures', '')
     })
 
@@ -132,6 +134,8 @@ describe('AgentApp', () => {
       expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', 'headline:h:Big idea')
       expect(screen.getByTestId('scene-headline')).toHaveTextContent('Big idea')
       act(() => ws.receive({ type: 'transcript', text: 'ok', final: true }))
+      expect(screen.getByTestId('scene-headline')).toHaveTextContent('Big idea')
+      act(() => ws.receive({ type: 'walkthrough_cleared' }))
       expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
       expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
     })
