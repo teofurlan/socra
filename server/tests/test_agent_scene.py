@@ -575,3 +575,69 @@ async def test_a_code_reply_while_a_scene_plays_does_not_forget_it(tmp_path):  #
     await app.handle_walkthrough_control("stop")
     await asyncio.wait_for(task, 2)
     assert app._scene_on_screen is not None
+
+
+# --- predictions never alter the scene; point_at needs targets (#71) ---------------------------
+
+
+async def test_show_result_leaves_the_scenes_step_states_alone_for_a_replay(tmp_path):  # S7, S8
+    app, channel, toolbox = await _structures_on_screen(tmp_path)
+    scene, index = app._scene_on_screen
+    before = scene.state_at(index)
+    await toolbox.show_result(_insert("ht", 6))
+    await toolbox.show_result(_insert("tr", 4))
+
+    assert scene.state_at(index) == before
+    channel.sent.clear()
+    await asyncio.wait_for(await _play(app, channel, toolbox.replay_step(_replay("start"))), 2)
+
+    clip = [m for m in channel.of_type("tts_audio") if "step" in m][0]["step"]
+    assert clip["state"]["ht"]["buckets"][1] == [1]
+    assert clip["state"]["ht"] == before["ht"] and clip["state"]["tr"] == before["tr"]
+
+
+async def test_show_result_does_not_change_what_a_new_present_of_the_scene_shows(tmp_path):  # S7
+    app, channel, toolbox = await _structures_on_screen(tmp_path)
+    await toolbox.show_result(_insert("ht", 6))
+    channel.sent.clear()
+
+    await asyncio.wait_for(await _play(app, channel, toolbox.present(STRUCTURES)), 2)
+
+    clip = [m for m in channel.of_type("tts_audio") if "step" in m][0]["step"]
+    assert clip["state"]["ht"]["buckets"][1] == [1]
+
+
+async def test_a_rejected_show_result_leaves_no_partial_change(tmp_path):  # S7
+    app, channel, toolbox = await _structures_on_screen(tmp_path)
+    scene, index = app._scene_on_screen
+    before = scene.state_at(index)
+
+    text = await toolbox.show_result({"object": "ht", "op": {"action": "insert", "params": {}}})
+    await toolbox.show_result({"object": "ht", "op": {"action": "nope"}})
+
+    assert text.startswith("op.params")
+    assert app._screen_state is None
+    assert scene.state_at(index) == before
+    assert channel.of_type("walkthrough_result") == []
+
+
+async def test_point_at_without_targets_is_an_error_and_sends_nothing(tmp_path):  # S5
+    app, channel, toolbox = await _structures_on_screen(tmp_path)
+    spec = next(s for s in specs_for(get_mode("mentor")) if s.id == "point_at")
+
+    for args in ({}, {"targets": None}):
+        text = await spec.handler(toolbox, args)
+        assert text.startswith("targets:")
+    assert channel.of_type("walkthrough_point") == []
+
+    assert await spec.handler(toolbox, {"targets": []}) == "Highlight removed."
+    assert channel.of_type("walkthrough_point") == [{"type": "walkthrough_point", "targets": []}]
+
+
+async def test_replay_step_with_null_targets_does_not_crash_and_points_at_nothing(tmp_path):  # S11
+    app, channel, toolbox = await _structures_on_screen(tmp_path)
+
+    text = await asyncio.wait_for(await _play(app, channel, toolbox.replay_step(_replay("start", targets=None))), 2)
+
+    assert "completed" in text.lower()
+    assert all("pointing" not in m["step"] for m in channel.of_type("tts_audio") if "step" in m)

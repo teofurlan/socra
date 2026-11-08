@@ -315,3 +315,93 @@ async def test_a_stopped_scene_carries_no_completed_note():
 
     assert result["status"] == "stopped"
     assert "note" not in result
+
+
+# --- a replay's say and pointing belong to that one clip (#71) ---------------------------------
+
+
+async def _spoken_after(page: Page, runner: WalkthroughRunner) -> list[dict]:
+    page.spoken.clear()
+    page.messages.clear()
+    await runner.run(make_walkthrough(2))
+    return [m for m in page.messages if m["type"] == "tts_audio"]
+
+
+@pytest.mark.asyncio
+async def test_a_replay_without_say_speaks_the_steps_own_narration():
+    page = Page()
+    runner = make_runner(page)
+
+    result = await runner.replay(make_walkthrough(2), 1, None, None)
+
+    assert result["status"] == "completed"
+    assert page.spoken == ["Step 2."]
+    assert "pointing" not in [m for m in page.messages if m["type"] == "tts_audio"][0]["step"]
+
+
+@pytest.mark.asyncio
+async def test_a_replays_say_and_pointing_do_not_reach_a_later_scene_run():
+    page = Page()
+    runner = make_runner(page)
+    pointing = [{"object": "src", "lines": [1, 1]}]
+
+    await runner.replay(make_walkthrough(2), 0, "New words.", pointing)
+    clips = await _spoken_after(page, runner)
+
+    assert page.spoken == ["Step 1.", "Step 2."]
+    assert all("pointing" not in c["step"] and c["step"]["say"] != "New words." for c in clips)
+
+
+@pytest.mark.asyncio
+async def test_a_replays_override_is_cleared_when_the_replay_is_stopped():
+    page = Page()
+    page.hold = True
+    runner = make_runner(page)
+    pointing = [{"object": "src", "lines": [1, 1]}]
+
+    task = asyncio.create_task(runner.replay(make_walkthrough(2), 0, "New words.", pointing))
+    await settle()
+    runner.command("stop")
+    assert (await task)["status"] == "stopped"
+    page.hold = False
+    clips = await _spoken_after(page, runner)
+
+    assert page.spoken == ["Step 1.", "Step 2."]
+    assert all("pointing" not in c["step"] for c in clips)
+
+
+@pytest.mark.asyncio
+async def test_a_replays_override_is_cleared_when_the_page_is_gone():
+    page = Page()
+    page.hold = True
+    runner = make_runner(page)
+
+    task = asyncio.create_task(runner.replay(make_walkthrough(2), 0, "New words.", [{"object": "src", "lines": [1, 1]}]))
+    await settle()
+    runner.abort()
+    assert (await task)["status"] == "page_disconnected"
+    page.hold = False
+    clips = await _spoken_after(page, runner)
+
+    assert page.spoken == ["Step 1.", "Step 2."]
+    assert all("pointing" not in c["step"] for c in clips)
+
+
+@pytest.mark.asyncio
+async def test_a_replays_override_is_cleared_when_the_replay_fails():
+    page = Page()
+    runner = make_runner(page)
+    real = page.synthesize
+
+    def boom(text: str) -> bytes:
+        raise RuntimeError("tts down")
+
+    runner._synthesize = boom
+    result = await runner.replay(make_walkthrough(2), 0, "New words.", [{"object": "src", "lines": [1, 1]}])
+    runner._synthesize = real
+    clips = await _spoken_after(page, runner)
+
+    assert result["status"] == "error"
+    assert page.spoken == ["Step 1.", "Step 2."]
+    assert all("pointing" not in c["step"] for c in clips)
+    assert runner.snapshot() == []
