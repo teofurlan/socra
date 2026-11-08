@@ -85,6 +85,7 @@ async def test_a_scene_plays_on_the_agent_page_and_the_agent_hears_how_it_ended(
     assert result | {"note": None} == {"status": "completed", "steps": 2, "note": None}
     assert channel.of_type("walkthrough")[0]["title"] == "Adding"
     clips = [m for m in channel.of_type("tts_audio") if "step" in m]
+    assert all("pointing" not in c["step"] for c in clips)
     assert [c["step"]["state"]["src"]["lines"] for c in clips] == [[1, 2], [3, 3]]
     assert loader.tts.spoken == ["Two names.", "Add them."]
     assert channel.of_type("walkthrough_status")[-1] == {"type": "walkthrough_status", "status": "ended", "reason": "completed"}
@@ -502,24 +503,25 @@ async def test_replay_with_invalid_targets_returns_errors_and_nothing_plays(tmp_
     assert "targets" in await toolbox.replay_step(_replay("sum", targets="src"))
 
 
-async def test_replay_points_once_after_the_step_and_keeps_the_pointing(tmp_path):  # S11
+async def test_replay_carries_the_pointing_on_its_step_and_sends_no_separate_point(tmp_path):  # S11
     app, channel, _, toolbox = await _scene_ready(tmp_path)
     target = {"object": "src", "lines": [3, 3]}
 
     task = await _play(app, channel, toolbox.replay_step(_replay("sum", targets=[target])))
     await asyncio.wait_for(task, 2)
 
-    kinds = [m["type"] for m in channel.sent if m["type"] in ("tts_audio", "walkthrough_point", "walkthrough_status")]
-    assert kinds.index("walkthrough_point") > kinds.index("tts_audio")
-    assert len(channel.of_type("walkthrough_point")) == 1
-    assert channel.of_type("walkthrough_point")[0]["targets"] == [target]
-    assert kinds.index("walkthrough_point") < len(kinds) - 1 and kinds[-1] == "walkthrough_status"
+    assert channel.of_type("walkthrough_point") == []
+    clips = [m for m in channel.of_type("tts_audio") if "step" in m]
+    assert len(clips) == 1
+    assert clips[0]["step"]["pointing"] == [target]
     assert await toolbox.point_at([target]) == "Highlighted on screen."
 
 
-async def test_replay_without_targets_sends_no_point(tmp_path):  # S11
+async def test_replay_without_targets_sends_no_point_or_pointing(tmp_path):  # S11
     app, channel, _, toolbox = await _scene_ready(tmp_path)
 
     await asyncio.wait_for(await _play(app, channel, toolbox.replay_step(_replay("sum"))), 2)
 
     assert channel.of_type("walkthrough_point") == []
+    clips = [m for m in channel.of_type("tts_audio") if "step" in m]
+    assert len(clips) == 1 and "pointing" not in clips[0]["step"]

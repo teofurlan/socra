@@ -27,6 +27,8 @@ export interface WalkthroughStepInfo {
   id: string
   say: string
   state: SceneState
+  /** What a replayed step highlights while it speaks; absent for a normal step. */
+  pointing?: PointTarget[]
 }
 
 export type WalkthroughStatus = 'playing' | 'paused' | 'ended'

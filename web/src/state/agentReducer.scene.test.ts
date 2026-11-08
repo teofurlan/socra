@@ -127,6 +127,14 @@ describe('agentReducer prediction results and replays', () => {
     state: { visible: true, kind: 'array', items: [1, 9], last: { op: 'set', index: 1, value: 9, previous: 2 } },
   }
 
+  it('keeps the pointing a replayed step arrives with, and a plain step clears it', () => {
+    const replay: AgentAction = { ...(arrayStep as object), pointing: [target] } as AgentAction
+    const pointed = run(arrayScene, arrayStep, completed, replay)
+    expect(pointed.walkthrough?.pointing).toEqual([target])
+    expect(agentReducer(pointed, arrayStep).walkthrough?.pointing).toBeUndefined()
+    expect(pointed.walkthrough?.step).not.toHaveProperty('pointing')
+  })
+
   it('applies a result to that object only, on an ended scene', () => {
     const state = run(arrayScene, arrayStep, completed, result)
     expect(state.walkthrough?.step?.state.arr).toMatchObject({ items: [1, 9], last: { op: 'set' } })

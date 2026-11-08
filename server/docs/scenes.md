@@ -288,9 +288,11 @@ first time): the agent writes a new short explanation aimed at the user's mistak
 The step's picture plays again (one `tts_audio` with `step`, whose `say` is the new explanation so
 the transcript shows what was said), the scene ends again on that step and stays on screen, so
 `point_at` keeps working. Any earlier pointing is removed and the state goes back to what that step
-shows (an earlier `show_result` is discarded). Valid `targets` are sent as one `walkthrough_point`
-once the explanation has played, just before the scene ends: the page shows a step when its sound
-begins and a new step clears the pointing, so a point sent earlier could be dropped. The call blocks
+shows (an earlier `show_result` is discarded). Valid `targets` ride on that same `tts_audio` step as `pointing`
+(same shape as `walkthrough_point.targets`), so the highlight shows while the new explanation is
+spoken: the page shows a step when its sound begins and a plain step clears any pointing, so a
+separate point could not be seen then. No `walkthrough_point` is sent for a replay, and a step
+without targets, like every normal scene step, has no `pointing` key. The call blocks
 until the audio is played, the user stops it or the page goes away, and returns a short text:
 completed, stopped or page gone.
 

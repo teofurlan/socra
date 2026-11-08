@@ -248,6 +248,31 @@ describe('useAgentSocket', () => {
       return hook
     }
 
+    it('shows the pointing a replayed step carries when its sound begins, not before', async () => {
+      const { result, ws } = withScene()
+      const target = { object: 'code', lines: [2, 2] as [number, number] }
+      await act(async () => {
+        ws.receive(sceneClip(1, 7))
+        await vi.runAllTimersAsync()
+      })
+      act(() => FakeAudioContext.latest().sources[0].onended?.())
+      act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+      expect(result.current.state.walkthrough?.pointing).toBeUndefined()
+
+      const replay = sceneClip(1, 8)
+      await act(async () => {
+        ws.receive({ ...replay, step: { ...replay.step, pointing: [target] } })
+        await vi.runAllTimersAsync()
+      })
+      expect(result.current.state.walkthrough?.pointing).toEqual([target])
+
+      await act(async () => {
+        ws.receive(sceneClip(2, 9))
+        await vi.runAllTimersAsync()
+      })
+      expect(result.current.state.walkthrough?.pointing).toBeUndefined()
+    })
+
     it('shows a step once its audio plays and reports the clip by its sequence number', async () => {
       const { result, ws } = withScene()
       await act(async () => {
