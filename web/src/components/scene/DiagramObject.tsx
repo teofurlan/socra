@@ -2,7 +2,7 @@ import { useMemo, useRef, type CSSProperties } from 'react'
 import { X } from 'lucide-react'
 import { Panel } from '@/components/shell/Panel'
 import type { PrimitiveProps } from '@/components/scene/registry'
-import { EDGE_FONT, NODE_FONT, pickLayout, polylineLength, type PlacedEdge, type PlacedNode, type Point } from '@/lib/diagramLayout'
+import { EDGE_FONT, NODE_FONT, NOTE_LINE, pickLayout, placeNote, polylineLength, sizeWithNotes, type NoteBox, type PlacedEdge, type PlacedNode, type Point } from '@/lib/diagramLayout'
 import { visibleDiagramViews, type DiagramView } from '@/lib/sceneDiagram'
 import { useElementSize } from '@/lib/useElementSize'
 import { usePrefersReducedMotion } from '@/lib/useReducedMotion'
@@ -16,8 +16,6 @@ const TRACE_TOTAL_MS = 2400
 const EDGE_MS = 450
 const ARROW_LENGTH = 9
 const ARROW_HALF = 5
-const NOTE_LINE = 16
-const NOTE_WRAP = 28
 
 /** Colours a group can take, in the order groups first appear; ungrouped nodes stay neutral. */
 const GROUP_COLORS = ['var(--accent)', 'var(--violet)', 'var(--live)', 'var(--orange)']
@@ -35,13 +33,6 @@ function arrowHead(points: Point[]): string {
   const bx = tip.x - ux * ARROW_LENGTH
   const by = tip.y - uy * ARROW_LENGTH
   return `${tip.x},${tip.y} ${bx - uy * ARROW_HALF},${by + ux * ARROW_HALF} ${bx + uy * ARROW_HALF},${by - ux * ARROW_HALF}`
-}
-
-function noteLines(text: string): string[] {
-  if (text.length <= NOTE_WRAP) return [text]
-  const cut = text.lastIndexOf(' ', NOTE_WRAP)
-  const at = cut > 8 ? cut : NOTE_WRAP
-  return [text.slice(0, at).trim(), text.slice(at).trim()]
 }
 
 interface TraceTiming {
@@ -135,17 +126,13 @@ function EdgeLine({ edge, view, timing, traced }: { edge: PlacedEdge; view: Diag
   )
 }
 
-function Note({ node, text, width }: { node: PlacedNode; text: string; width: number }) {
-  const lines = noteLines(text)
-  const boxWidth = Math.ceil(Math.max(...lines.map((l) => l.length)) * 6.9 + 16)
-  const boxHeight = lines.length * NOTE_LINE + 8
-  const x = Math.min(Math.max(node.x + node.width / 2 - boxWidth / 2, 2), Math.max(2, width - boxWidth - 2))
-  const y = node.y + node.height + 6
+function Note({ id, box }: { id: string; box: NoteBox }) {
+  const { x, y, width, height, lines } = box
   return (
-    <g data-diagram-note={node.id} className="diagram-note">
-      <rect x={x} y={y} width={boxWidth} height={boxHeight} rx={6} />
+    <g data-diagram-note={id} className="diagram-note">
+      <rect x={x} y={y} width={width} height={height} rx={6} />
       {lines.map((line, i) => (
-        <text key={i} x={x + boxWidth / 2} y={y + 4 + NOTE_LINE * (i + 0.5)} textAnchor="middle" dominantBaseline="central" fontSize={EDGE_FONT}>
+        <text key={i} x={x + width / 2} y={y + 4 + NOTE_LINE * (i + 0.5)} textAnchor="middle" dominantBaseline="central" fontSize={EDGE_FONT}>
           {line}
         </text>
       ))}
@@ -172,12 +159,18 @@ export function DiagramObject({ object, state, siblings, onClose }: PrimitivePro
   const tracedEdges = new Set(view.trace.slice(1).map((id, i) => `${view.trace[i]}>${id}`))
   const groups = [...new Set(view.nodes.map((n) => n.group).filter(Boolean))]
   const tintOf = (group: string) => (group ? GROUP_COLORS[groups.indexOf(group) % GROUP_COLORS.length] : null)
-  const width = Math.round(picked.width * picked.scale)
-  const height = Math.round(picked.height * picked.scale)
+  const nodeAt = new Map(picked.nodes.map((n) => [n.id, n]))
+  const notes = Object.entries(view.notes).flatMap(([id, text]) => {
+    const node = nodeAt.get(id)
+    return node ? [{ id, box: placeNote(node, text, picked.width) }] : []
+  })
+  // The layout leaves room for nodes and edges only; a note on the bottom row extends the drawing.
+  const drawn = sizeWithNotes(picked, notes.map((n) => n.box))
+  const width = Math.round(drawn.width * picked.scale)
+  const height = Math.round(drawn.height * picked.scale)
   const summary = `Diagram: ${view.nodes.map((n) => n.label).join(', ')}. ${view.edges
     .map((e) => `${view.nodes.find((n) => n.id === e.from)?.label} to ${view.nodes.find((n) => n.id === e.to)?.label}`)
     .join('; ')}`
-  const nodeAt = new Map(picked.nodes.map((n) => [n.id, n]))
 
   return (
     <Panel
@@ -214,7 +207,7 @@ export function DiagramObject({ object, state, siblings, onClose }: PrimitivePro
           data-motion={reduced ? 'reduced' : 'full'}
           width={width}
           height={height}
-          viewBox={`0 0 ${picked.width} ${picked.height}`}
+          viewBox={`0 0 ${drawn.width} ${drawn.height}`}
           className="diagram-svg"
         >
           {picked.edges.map((edge) => (
@@ -223,10 +216,9 @@ export function DiagramObject({ object, state, siblings, onClose }: PrimitivePro
           {picked.nodes.map((node) => (
             <NodeBox key={`${node.id}:${timing.nodeDelay.has(node.id) ? traceKey : ''}`} node={node} view={view} tint={tintOf(node.group)} delay={timing.nodeDelay.get(node.id)} />
           ))}
-          {Object.entries(view.notes).map(([id, text]) => {
-            const node = nodeAt.get(id)
-            return node ? <Note key={id} node={node} text={text} width={picked.width} /> : null
-          })}
+          {notes.map(({ id, box }) => (
+            <Note key={id} id={id} box={box} />
+          ))}
         </svg>
       </div>
     </Panel>

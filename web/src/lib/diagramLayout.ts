@@ -150,6 +150,51 @@ export function layoutDiagram(nodes: DiagramNodeInput[], edges: DiagramEdgeInput
   return { direction, width: maxX - minX + MARGIN * 2, height: maxY - minY + MARGIN * 2, nodes: placedNodes, edges: placedEdges }
 }
 
+/** Annotation boxes: one or two lines of the edge font, a fixed gap under their node. */
+export const NOTE_LINE = 16
+const NOTE_WRAP = 28
+const NOTE_CHAR_WIDTH = 6.9
+const NOTE_GAP = 6
+/** Room kept between a note and the side of the drawing. */
+const NOTE_INSET = 2
+
+export interface NoteBox {
+  lines: string[]
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export function noteLines(text: string): string[] {
+  if (text.length <= NOTE_WRAP) return [text]
+  const cut = text.lastIndexOf(' ', NOTE_WRAP)
+  const at = cut > 8 ? cut : NOTE_WRAP
+  return [text.slice(0, at).trim(), text.slice(at).trim()]
+}
+
+/** A note centred under its node, kept inside a drawing ``width`` wide where it fits. */
+export function placeNote(node: PlacedNode, text: string, width: number): NoteBox {
+  const lines = noteLines(text)
+  const boxWidth = Math.ceil(Math.max(...lines.map((l) => l.length)) * NOTE_CHAR_WIDTH + 16)
+  const boxHeight = lines.length * NOTE_LINE + 8
+  const x = Math.min(Math.max(node.x + node.width / 2 - boxWidth / 2, NOTE_INSET), Math.max(NOTE_INSET, width - boxWidth - NOTE_INSET))
+  return { lines, x, y: node.y + node.height + NOTE_GAP, width: boxWidth, height: boxHeight }
+}
+
+/**
+ * The drawing's size once its visible notes are in: a note past the bottom (a node on the last
+ * row) or wider than the drawing grows it; a note that already has room changes nothing.
+ */
+export function sizeWithNotes(size: { width: number; height: number }, notes: NoteBox[]): { width: number; height: number } {
+  let { width, height } = size
+  for (const note of notes) {
+    width = Math.max(width, note.x + note.width + NOTE_INSET)
+    height = Math.max(height, note.y + note.height + MARGIN)
+  }
+  return { width, height }
+}
+
 /** Never enlarge a diagram past this, so a three-node scene does not become giant boxes. */
 export const MAX_SCALE = 1.15
 /** Below this the labels stop being legible; the panel scrolls instead of shrinking further. */

@@ -171,6 +171,30 @@ describe('DiagramObject', () => {
     expect(document.querySelector('[data-diagram-root]')).toHaveAttribute('data-direction', 'TB')
   })
 
+  it('keeps a note on the bottom row inside the drawing, and the size when the note has room', () => {
+    const chain: SceneObject = {
+      ...flow,
+      params: {
+        direction: 'TB',
+        nodes: Array.from({ length: 3 }, (_, i) => ({ id: `n${i}`, label: `Step ${i}`, group: '' })),
+        edges: Array.from({ length: 2 }, (_, i) => ({ from: `n${i}`, to: `n${i + 1}`, label: '', hidden: false })),
+      },
+    }
+    const props = { object: chain, say: '', siblings: 1, name: 'walkthrough', onClose: () => {} }
+    const state = (notes: Record<string, string>) => ({ ...base, revealed: [], notes }) as never
+    const viewBox = () => document.querySelector('[data-diagram-root]')!.getAttribute('viewBox')!.split(' ').map(Number)
+    const { rerender } = render(<DiagramObject {...props} state={state({})} />)
+    const bare = viewBox()
+    rerender(<DiagramObject {...props} state={state({ n0: 'start' })} />)
+    expect(viewBox()).toEqual(bare)
+    rerender(<DiagramObject {...props} state={state({ n2: 'you are here' })} />)
+    const [, , width, height] = viewBox()
+    const rect = document.querySelector('[data-diagram-note="n2"] rect')!
+    expect(Number(rect.getAttribute('y')) + Number(rect.getAttribute('height'))).toBeLessThanOrEqual(height)
+    expect(Number(rect.getAttribute('x')) + Number(rect.getAttribute('width'))).toBeLessThanOrEqual(width)
+    expect(height).toBeGreaterThan(bare[3])
+  })
+
   it('closes from its button', () => {
     const onClose = vi.fn()
     draw(base, onClose)
