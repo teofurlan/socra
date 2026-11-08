@@ -24,3 +24,5 @@ Closes #<!-- issue number -->
 - [ ] `npx vitest run` (web):
 - [ ] `npx tsc -b` and `npx oxlint` (web):
 - [ ] Manual check:
+- [ ] Spec verification (see `AGENTS.md`): <!-- verdict per requirement; fixes made -->
+- [ ] Native review by slices (see `AGENTS.md`): <!-- slices, lenses, outcome; non-blocking findings fixed or filed -->
