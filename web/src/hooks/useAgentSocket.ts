@@ -138,7 +138,10 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
         const onStart = step
           ? () => {
             sceneMetrics.audioStart(step.index)
-            dispatch({ type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state })
+            dispatch({
+              type: 'walkthrough_step', index: step.index, total: step.total, id: step.id, say: step.say, state: step.state,
+              ...(step.pointing ? { pointing: step.pointing } : {}),
+            })
           }
           : text
             ? () => dispatch({ type: 'speech_started', id: clipId, text })

@@ -40,9 +40,17 @@ def test_mode_instructions_tell_the_agent_to_reply_in_english():  # S5
         assert "Spanish" not in mode.instructions
 
 
-def test_only_exam_records_exam_results():
-    assert "record_exam_result" in get_mode("exam").tools
-    assert "record_exam_result" not in get_mode("mentor").tools
+def test_mentor_and_exam_record_results_and_clear_the_scene():  # S3, S4
+    for mode_id in ("mentor", "exam"):
+        assert {"record_exam_result", "clear_scene"} <= get_mode(mode_id).tools
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_describe_the_check_after_a_scene(mode_id):  # S1, S2, S3
+    text = get_mode(mode_id).instructions.lower()
+    assert "check" in text and "never" in text
+    assert "record_exam_result" in text
+    assert "clear_scene" in text
 
 
 def test_mentor_placeholder_is_a_read_only_explainer():
@@ -61,3 +69,33 @@ def test_both_modes_offer_scene_guide_alongside_present(mode_id):  # S1
     tools = get_mode(mode_id).tools
     assert "scene_guide" in tools
     assert "present" in tools
+
+
+def test_mentor_and_exam_can_point_at_the_scene():  # S5
+    for mode_id in ("mentor", "exam"):
+        assert "point_at" in get_mode(mode_id).tools
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_tell_the_agent_to_point_before_each_check_question(mode_id):  # S5, S10
+    text = get_mode(mode_id).instructions
+    assert "point_at" in text and "empty list" in text
+
+
+def test_mentor_and_exam_can_show_results_and_replay_steps():  # S7, S8
+    for mode_id in ("mentor", "exam"):
+        assert {"show_result", "replay_step"} <= get_mode(mode_id).tools
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_describe_the_prediction_question_and_the_replay(mode_id):  # S7, S8, S10
+    text = get_mode(mode_id).instructions
+    assert "show_result" in text and "prediction" in text and "replay_step" in text
+    assert "incorrect or partial" in text
+
+
+@pytest.mark.parametrize("mode_id", ["mentor", "exam"])
+def test_instructions_ask_for_a_new_explanation_aimed_at_the_mistake_on_replay(mode_id):  # S11, S10
+    text = get_mode(mode_id).instructions
+    assert "new short explanation" in text and "never the step's original words" in text
+    assert "targets" in text

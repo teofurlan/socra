@@ -47,6 +47,8 @@ export interface StructureView {
   /** Tree nodes in reading order. */
   nodes: TreeNode[]
   last: LastOp | null
+  /** Parts the agent points at (same ids as `touchedParts`); drawn like touched ones. */
+  pointed: string[]
 }
 
 const KINDS: StructureKind[] = ['array', 'stack', 'queue', 'hashTable', 'tree']
@@ -107,6 +109,7 @@ function viewOf(object: SceneObject, source: Record<string, unknown>): Structure
     hash: source.hash === 'charSum' ? 'charSum' : 'mod',
     nodes: nodesOf(source.nodes),
     last: lastOf(source.last),
+    pointed: Array.isArray(source.pointed) ? source.pointed.filter((p): p is string => typeof p === 'string') : [],
   }
 }
 
@@ -200,6 +203,20 @@ export function touchedParts(view: StructureView): string[] {
       const path = last.path ?? []
       return path.slice(-MAX_TOUCH_OUTLINES).map((key) => `node:${key}`)
     }
+  }
+}
+
+/** Every part the drawing has, as the ids it puts in `data-structure-part`. */
+export function allParts(view: StructureView): string[] {
+  switch (view.kind) {
+    case 'array':
+    case 'stack':
+    case 'queue':
+      return view.items.map((_, i) => `cell:${i}`)
+    case 'hashTable':
+      return view.buckets.flatMap((chain, b) => [`bucket:${b}`, ...chain.map((_, p) => `entry:${b}:${p}`)])
+    case 'tree':
+      return view.nodes.map((n) => `node:${n.key}`)
   }
 }
 

@@ -12,9 +12,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from socra_server.domain.modes import (
+    CLEAR_SCENE,
+    POINT_AT,
     PRESENT,
     RECORD_EXAM_RESULT,
+    REPLAY_STEP,
     SCENE_GUIDE_TOOL,
+    SHOW_RESULT,
     SEARCH_TRANSCRIPT,
     SWITCH_MODE,
     Mode,
@@ -63,6 +67,22 @@ async def _present(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
     return await toolbox.present(args.get("scene"))
 
 
+async def _clear_scene(toolbox: SocraToolbox, _args: dict[str, Any]) -> str:
+    return await toolbox.clear_scene()
+
+
+async def _point_at(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
+    return await toolbox.point_at(args.get("targets"))
+
+
+async def _show_result(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
+    return await toolbox.show_result(args)
+
+
+async def _replay_step(toolbox: SocraToolbox, args: dict[str, Any]) -> str:
+    return await toolbox.replay_step(args)
+
+
 async def _scene_guide(_toolbox: SocraToolbox, args: dict[str, Any]) -> str:
     topic = args.get("topic")
     return scene_guide(topic if isinstance(topic, str) else "")
@@ -94,7 +114,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         RECORD_EXAM_RESULT,
-        "Record the verdict on one exam answer after grading it.",
+        "Record the verdict on one answer to an exam or check question after grading it.",
         {
             "type": "object",
             "properties": {
@@ -128,6 +148,96 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         },
         _present,
     ),
+    ToolSpec(
+        CLEAR_SCENE,
+        "Removes the finished scene from the user's screen. Call it when the check after a "
+        "scene ends or is declined. A scene that is still playing is not removed.",
+        {"type": "object", "properties": {}},
+        _clear_scene,
+    ),
+    ToolSpec(
+        POINT_AT,
+        "Highlights objects of the finished scene on the user's screen while you ask about them. "
+        "Call it right before asking each check question; an empty list removes the highlight. "
+        "Object ids must be code, diagram or structure objects of the scene you presented. Parts: a diagram node id; in a "
+        "structure cell:<index>, bucket:<b>, entry:<b>:<pos> or node:<key>; code uses lines "
+        "[start, end] (1-based). Invalid targets come back as errors and nothing is highlighted.",
+        {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "object": {"type": "string", "description": "Id of an object of the scene"},
+                            "part": {"type": "string", "description": "Optional part of the object"},
+                            "lines": {
+                                "type": "array", "items": {"type": "integer"},
+                                "minItems": 2, "maxItems": 2,
+                                "description": "Code only: [start, end] line range",
+                            },
+                        },
+                        "required": ["object"],
+                    },
+                },
+            },
+            "required": ["targets"],
+        },
+        _point_at,
+    ),
+    ToolSpec(
+        SHOW_RESULT,
+        "Shows the real outcome of one operation on a structure of the finished scene, animated on "
+        "the user's screen, for a prediction question. Ask the question first (point_at the structure, "
+        "say what will be done, e.g. insert 12), wait for the answer, then call this and grade the "
+        "answer against the outcome text it returns. object is the structure's id; op is an "
+        "operation like a scene cue uses for that kind: array set {index, value}, swap or compare "
+        "{indexes}, highlight {indexes}; stack push {value} or pop; queue enqueue {value} or "
+        "dequeue; hashTable and tree insert, lookup {key} (also remove for hashTable, highlight "
+        "for tree). It applies to what is on screen now, so calls chain. Invalid input comes back "
+        "as errors and nothing is shown.",
+        {
+            "type": "object",
+            "properties": {
+                "object": {"type": "string", "description": "Id of a structure object of the scene"},
+                "op": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "description": 'Operation name, e.g. "insert"'},
+                        "params": {"type": "object", "description": 'Its params, e.g. {"key": 12}'},
+                    },
+                    "required": ["action"],
+                },
+            },
+            "required": ["object", "op"],
+        },
+        _show_result,
+    ),
+    ToolSpec(
+        REPLAY_STEP,
+        "Goes over one step of the finished scene again: its picture is shown again and you say a NEW "
+        "short explanation of it. Use it when the user accepts your offer to see the related step "
+        "again after a miss. step is a step id of the scene (an unknown id comes back with the valid "
+        "ones). say is required: what you will say, written for what this user got wrong, never the "
+        "step's original words (that is rejected). targets, optional, highlights the part they "
+        "confused, same shape as point_at, checked before anything plays. Returns once it has "
+        "played, or stopped.",
+        {
+            "type": "object",
+            "properties": {
+                "step": {"type": "string", "description": "Id of a step of the scene"},
+                "say": {"type": "string", "description": "Your new short explanation, aimed at the user's mistake"},
+                "targets": {
+                    "type": "array",
+                    "description": "Optional objects to highlight, same shape as point_at targets",
+                    "items": {"type": "object"},
+                },
+            },
+            "required": ["step", "say"],
+        },
+        _replay_step,
+    ),
 )
 
 
@@ -143,6 +253,10 @@ class CallbackToolbox:
     record: Callable[[str, str, str], Awaitable[str]]
     search: Callable[[str, int], Awaitable[list[Any]]]
     play: Callable[[Any], Awaitable[str]]
+    clear: Callable[[], Awaitable[str]]
+    point: Callable[[Any], Awaitable[str]]
+    show: Callable[[Any], Awaitable[str]]
+    replay: Callable[[Any], Awaitable[str]]
 
     async def switch_mode(self, target: str) -> str:
         return await self.switch(target)
@@ -155,3 +269,15 @@ class CallbackToolbox:
 
     async def present(self, scene: Any) -> str:
         return await self.play(scene)
+
+    async def clear_scene(self) -> str:
+        return await self.clear()
+
+    async def point_at(self, targets: Any) -> str:
+        return await self.point(targets)
+
+    async def show_result(self, args: Any) -> str:
+        return await self.show(args)
+
+    async def replay_step(self, args: Any) -> str:
+        return await self.replay(args)

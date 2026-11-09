@@ -195,9 +195,107 @@ exactly the reported paths and call `present` once more; if it is still invalid,
 
 A scene that plays to the end returns `{"status": "completed", "steps": N, "note": "..."}`.
 The `note` tells the agent the scene is over, that its last step (figures and panel) stays
-on the page until the user speaks, and that it must not narrate the scene as if it were
-appearing now; a brief follow-up question is fine. A stopped scene returns
+on the page until the agent calls `clear_scene`, another scene starts, or a reply brings a code
+block, and that it must not narrate the scene as if it were appearing now; a brief follow-up
+question is fine. A stopped scene returns
 `{"status": "stopped", ...}` and its figures clear at once.
+
+## The check after a scene
+
+In mentor and exam modes, once `present` returns `completed`, the agent offers by voice a short
+check of 2 or 3 questions about what the scene showed. It is never forced:
+
+- **Accepted**: the agent asks one question at a time, gives brief spoken feedback (correct,
+  partial or incorrect) and calls `record_exam_result` after grading each answer. Recording works
+  in mentor mode too.
+- **Declined**: the conversation continues normally.
+
+The finished scene stays on screen while the check runs, even when the user speaks, so the
+questions can refer to it. When the check ends or is declined, the agent calls `clear_scene`
+(no arguments). The page then drops the scene (`walkthrough_cleared`). `clear_scene` only removes
+a scene that has ended: while one plays it does nothing and returns "No finished scene is on
+screen." A new `present` or a reply with code also releases an ended scene.
+
+### Pointing at the scene: `point_at`
+
+Right before asking each check question, the agent calls `point_at` so the page highlights what the
+question is about. Arguments:
+
+```json
+{"targets": [{"object": "<object id>", "part": "<optional part id>", "lines": [1, 3]}]}
+```
+
+An empty `targets` list removes the highlight (use it when a question is not about anything
+specific). A target is checked against the finished scene still on screen and the state of its last
+step shown:
+
+| Object | Accepted target |
+| --- | --- |
+| `code`, `diagram`, `structure` | the bare `{"object": id}`: the whole object is emphasized |
+| `diagram` | `part`: a node `id` of that diagram |
+| `structure` | `part`: `cell:<index>` (array, stack, queue), `bucket:<b>` or `entry:<b>:<pos>` (hash table), `node:<key>` (tree); it must exist in the last state |
+| `code` | `lines`: `[start, end]`, 1-based, `start <= end`, inside the code |
+| `headline`, `shape` | rejected: the page has nothing to highlight on them |
+
+An object that is unknown or hidden in the last state is rejected, and so is `part` on a primitive
+without parts or `lines` on anything but code. On any problem nothing is sent to the page and the
+tool returns the problems, one `path: message` line each (for example `targets[0].part: ...`),
+so the agent can fix the call. A valid call sends `walkthrough_point` to the page and returns
+"Highlighted on screen." With no finished scene on screen (none presented, still playing,
+`clear_scene`, a page disconnect) it returns "No finished scene is on screen." The page applies the
+highlight on top of the last step and drops it with the scene.
+
+### Prediction questions: `show_result`
+
+A check may include one prediction question about a structure: the agent points at it, asks what
+will happen if an operation is applied, waits for the answer, then calls `show_result` and grades
+the answer against the outcome it returns. Arguments:
+
+```json
+{"object": "<structure id>", "op": {"action": "insert", "params": {"key": 12}}}
+```
+
+`op` has the shape of a scene cue's action for that structure kind (`action` plus `params`; see
+the structure operations above). `clear` is not accepted. The server applies it with the same
+reducers the scene uses, to the state on screen now: the step the page shows, or the result of the
+previous `show_result`, so calls chain. A valid call sends `{"type": "walkthrough_result",
+"object": id, "state": <that object's new state>}`; the page animates it like a step change
+(insert, collision, path...) and drops any pointing. The tool returns a factual outcome in words
+(for example the bucket the key landed in and whether it collided, or the tree path) for the agent
+to grade with. Later `point_at` and `show_result` calls validate against the new state.
+
+On any problem (no finished scene on screen, unknown, hidden or non-structure object, invalid
+`op` for its kind) nothing is sent and the tool returns `path: message` lines
+(`object: ...`, `op.action: ...`, `op.params.key: ...`, `op: ...`).
+
+### Replaying a step: `replay_step`
+
+After an incorrect or partial answer the agent offers to go over the related step again and, if the
+user accepts, calls `replay_step`. It does not repeat the step's narration (that did not help the
+first time): the agent writes a new short explanation aimed at the user's mistake. Arguments:
+
+```json
+{"step": "<step id>", "say": "<new explanation>", "targets": [{"object": "src", "lines": [3, 3]}]}
+```
+
+- `say` is required, at most 600 characters. A missing or blank `say`, or one equal to the step's
+  original `say` (ignoring case and surrounding spaces), is rejected with a `say: ...` line.
+- `targets` is optional and has the shape of `point_at` targets. It is validated against that step's
+  state before anything plays.
+- On any problem nothing plays or is sent; the tool returns the `path: message` lines. An unknown
+  step id returns the list of valid ids; with no finished scene on screen it returns "No finished
+  scene is on screen."
+
+The step's picture plays again (one `tts_audio` with `step`, whose `say` is the new explanation so
+the transcript shows what was said), the scene ends again on that step and stays on screen, so
+`point_at` keeps working. Any earlier pointing is removed and the state goes back to what that step
+shows (an earlier `show_result` is discarded). Valid `targets` ride on that same `tts_audio` step as `pointing`
+(same shape as `walkthrough_point.targets`), so the highlight shows while the new explanation is
+spoken: the page shows a step when its sound begins and a plain step clears any pointing, so a
+separate point could not be seen then. No `walkthrough_point` is sent for a replay, and a step
+without targets, like every normal scene step, has no `pointing` key. The call blocks
+until the audio is played, the user stops it or the page goes away, and returns a short text:
+completed, stopped or page gone.
 
 ## Validation
 

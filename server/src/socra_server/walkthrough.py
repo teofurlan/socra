@@ -23,7 +23,7 @@ _GONE = "gone"
 
 # Said to the agent in the tool result: the page keeps the last step up after the scene ends.
 COMPLETED_NOTE = (
-    "The scene has finished playing. Its last step stays on screen until the user speaks. "
+    "The scene has finished playing. Its last step stays on screen until you call clear_scene. "
     "Do not narrate the scene as if it were appearing now (never say it is on screen now); "
     "it was already narrated step by step. You may briefly ask a follow-up question."
 )
@@ -48,6 +48,8 @@ class WalkthroughRunner:
         self._paused = False
         self._scene: Scene | None = None
         self._cursor: StepCursor | None = None
+        self._say_override: str | None = None  # what a replay says instead of the step's narration
+        self._pointing_override: list[dict] | None = None  # what a replay highlights while it speaks
         self._commands: asyncio.Queue[str] = asyncio.Queue()
         self._seq = 0
         self._done = asyncio.Event()
@@ -154,6 +156,54 @@ class WalkthroughRunner:
             self._scene = None
             self._cursor = None
 
+    async def replay(self, scene: Scene, index: int, say: str | None = None, targets: list[dict] | None = None) -> dict:
+        """Play one step of a scene that already ended again, then end on it; the page keeps the scene.
+
+        ``say`` is spoken instead of the step's own narration (and is what the page shows as said);
+        ``targets`` (already validated) travel on the step's own ``tts_audio`` as ``pointing``, so the
+        page highlights them while the new explanation is spoken: it shows a step when its sound begins
+        and a new step clears any earlier pointing, so a separate point could not be seen then.
+        """
+        if self._active:
+            return {"status": "busy"}
+        self._say_override = say
+        self._pointing_override = list(targets) if targets else None
+        total = len(scene.steps)
+        self._active = True
+        self._paused = False
+        self._scene = scene
+        self._cursor = StepCursor(total=total, index=index)
+        self._commands = asyncio.Queue()
+        try:
+            event = await self._play_current()
+            while event != "done":
+                if event == "pause":
+                    event = await self._wait_while_paused()
+                if event == _GONE:
+                    await self._end("disconnected")
+                    return {"status": "page_disconnected", "step": index + 1, "total": total}
+                if event in ("repeat", "resume"):
+                    event = await self._play_current()
+                elif event != "done":
+                    await self._end("stopped")
+                    return {"status": "stopped", "step": index + 1, "total": total}
+            await self._end("completed")
+            return {"status": "completed", "step": index + 1, "total": total}
+        except asyncio.CancelledError:
+            await self._end("stopped")
+            raise
+        except Exception as exc:
+            logger.exception("Replay failed at step %d", index + 1)
+            await self._end("error")
+            return {"status": "error", "step": index + 1, "total": total, "message": str(exc)}
+        finally:
+            self._active = False
+            self._paused = False
+            self._scene = None
+            self._cursor = None
+            self._say_override = None
+            self._pointing_override = None
+
     async def _end(self, reason: str) -> None:
         await self._send({"type": "walkthrough_status", "status": "ended", "reason": reason})
         await self._set_state("idle")
@@ -164,16 +214,20 @@ class WalkthroughRunner:
         index = self._cursor.index
         step = self._scene.steps[index]
         await self._set_state("speaking")
-        wav = await asyncio.to_thread(self._synthesize, step.say)
+        say = self._say_override or step.say
+        wav = await asyncio.to_thread(self._synthesize, say)
         if not self._commands.empty():  # the user acted while this step was being prepared
             return self._commands.get_nowait()
         self._seq += 1
         self._done.clear()
+        info = self._step_info(self._scene, index) | {"say": say, "seq": self._seq}
+        if self._pointing_override:
+            info["pointing"] = self._pointing_override
         message = {
             "type": "tts_audio",
             "format": "wav",
             "data": base64.b64encode(wav).decode(),
-            "step": self._step_info(self._scene, index) | {"seq": self._seq},
+            "step": info,
         }
         await self._send(message)
 

@@ -73,6 +73,22 @@ class SocraToolbox(Protocol):
         """Play a narrated scene on the page; returns how it ended, as text for the agent."""
         ...
 
+    async def clear_scene(self) -> str:
+        """Remove the finished scene from the page; returns text for the agent."""
+        ...
+
+    async def point_at(self, targets: Any) -> str:
+        """Highlight objects of the finished scene on the page; returns text for the agent."""
+        ...
+
+    async def show_result(self, args: Any) -> str:
+        """Apply one structure operation to the finished scene on the page; returns its outcome."""
+        ...
+
+    async def replay_step(self, args: Any) -> str:
+        """Play one step of the finished scene again with a new explanation; returns how it ended."""
+        ...
+
 
 @runtime_checkable
 class AgentBackend(Protocol):

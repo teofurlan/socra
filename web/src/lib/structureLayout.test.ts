@@ -90,7 +90,7 @@ describe('fitScale', () => {
 })
 
 describe('layoutOf', () => {
-  const base: StructureView = { id: 'ds', kind: 'array', items: [1, 2], buckets: [], hash: 'mod', nodes: [], last: null }
+  const base: StructureView = { id: 'ds', kind: 'array', items: [1, 2], buckets: [], hash: 'mod', nodes: [], last: null, pointed: [] }
 
   it('lays each kind out with its own layout', () => {
     expect(layoutOf(base, 400).kind).toBe('array')

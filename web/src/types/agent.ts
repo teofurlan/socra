@@ -1,3 +1,4 @@
+import type { ObjectState, PointTarget } from '@/types/scene'
 import type {
   ConnectionStatus,
   ProtocolState,
@@ -93,6 +94,12 @@ export type AgentServerMessage =
   | { type: 'tts_audio'; format: string; data: string; step?: WalkthroughStepInfo & { seq: number }; text?: string }
   | { type: 'notice'; text: string }
   | WalkthroughMessage
+  /** The agent finished with the scene (after the oral check): the page releases it if it ended. */
+  | { type: 'walkthrough_cleared' }
+  /** The agent points at objects of the finished scene while it asks about them; empty removes it. */
+  | { type: 'walkthrough_point'; targets: PointTarget[] }
+  /** The real outcome of a prediction: one object's new state on the finished scene, animated like a step. */
+  | { type: 'walkthrough_result'; object: string; state: ObjectState }
   | VoicesMessage
 
 // Page -> server messages on /ws/agent
@@ -124,7 +131,10 @@ export interface AgentState {
   /** The mode being switched to while the handoff runs; null otherwise. */
   switching: AgentMode | null
   modeRequest: ModeSwitchRequest | null
-  /** A narrated scene the mentor or exam agent is playing; kept until the next turn once it ends. */
+  /**
+   * A narrated scene the mentor or exam agent is playing; once it ends it stays until the agent
+   * clears it, another scene starts or a reply brings code.
+   */
   walkthrough: WalkthroughData | null
   /** The reply clip that is playing now (its source text), so the page can highlight it. */
   spoken: SpokenClip | null

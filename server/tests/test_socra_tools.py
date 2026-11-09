@@ -23,6 +23,22 @@ class RecordingToolbox:
         self.calls.append(("search", query, limit))
         return self.hits
 
+    async def clear_scene(self) -> str:
+        self.calls.append(("clear",))
+        return "cleared"
+
+    async def point_at(self, targets) -> str:
+        self.calls.append(("point", targets))
+        return "pointed"
+
+    async def show_result(self, args) -> str:
+        self.calls.append(("show", args))
+        return "shown"
+
+    async def replay_step(self, args) -> str:
+        self.calls.append(("replay", args))
+        return "replayed"
+
 
 def _spec(name):
     return next(s for s in TOOL_SPECS if s.id == name)
@@ -30,11 +46,28 @@ def _spec(name):
 
 def test_specs_for_a_mode_are_exactly_the_tools_it_lists():
     assert [s.id for s in specs_for(get_mode("mentor"))] == [
-        "switch_mode", "search_transcript", "scene_guide", "present",
+        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present", "clear_scene",
+        "point_at", "show_result", "replay_step",
     ]
     assert {s.id for s in specs_for(get_mode("exam"))} == {
-        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present",
+        "switch_mode", "search_transcript", "record_exam_result", "scene_guide", "present", "clear_scene",
+        "point_at", "show_result", "replay_step",
     }
+
+
+async def test_clear_scene_takes_no_arguments_and_calls_the_toolbox():  # S4
+    toolbox = RecordingToolbox()
+
+    spec = _spec("clear_scene")
+
+    assert spec.schema == {"type": "object", "properties": {}}
+    assert "removes" in spec.description.lower() and "screen" in spec.description
+    assert await spec.handler(toolbox, {}) == "cleared"
+    assert toolbox.calls == [("clear",)]
+
+
+def test_record_exam_result_covers_exam_and_check_answers():  # S3
+    assert "check" in _spec("record_exam_result").description
 
 
 def test_every_spec_has_a_description_and_an_object_schema():
@@ -100,10 +133,90 @@ async def test_callback_toolbox_delegates_to_its_callbacks():
     async def play(scene):
         return ""
 
-    toolbox = CallbackToolbox(switch=switch, record=record, search=search, play=play)
+    async def clear():
+        seen.append("clear")
+        return "ok"
+
+    async def point(targets):
+        seen.append(("point", targets))
+        return "ok"
+
+    async def show(args):
+        seen.append(("show", args))
+        return "ok"
+
+    async def replay(step):
+        seen.append(("replay", step))
+        return "ok"
+
+    toolbox = CallbackToolbox(
+        switch=switch, record=record, search=search, play=play, clear=clear, point=point, show=show, replay=replay,
+    )
 
     await toolbox.switch_mode("mentor")
     await toolbox.record_exam_result("Q", "correct", "")
     await toolbox.search_transcript("q", 2)
+    await toolbox.clear_scene()
+    await toolbox.point_at([])
+    await toolbox.show_result({"object": "t"})
+    await toolbox.replay_step("s")
 
-    assert seen == ["mentor", ("Q", "correct", ""), ("q", 2)]
+    assert seen == [
+        "mentor", ("Q", "correct", ""), ("q", 2), "clear", ("point", []), ("show", {"object": "t"}), ("replay", "s"),
+    ]
+
+
+async def test_point_at_passes_the_targets_to_the_toolbox():  # S5
+    toolbox = RecordingToolbox()
+    spec = _spec("point_at")
+
+    assert await spec.handler(toolbox, {"targets": [{"object": "src", "lines": [1, 2]}]}) == "pointed"
+    assert await spec.handler(toolbox, {}) == "pointed"
+    assert toolbox.calls == [("point", [{"object": "src", "lines": [1, 2]}]), ("point", None)]
+
+
+def test_point_at_schema_and_description_teach_targets_and_part_ids():  # S5, S6, S10
+    spec = _spec("point_at")
+    target = spec.schema["properties"]["targets"]["items"]["properties"]
+
+    assert spec.schema["type"] == "object" and "targets" in spec.schema["properties"]
+    assert set(target) == {"object", "part", "lines"}
+    assert target["lines"]["minItems"] == 2 and target["lines"]["maxItems"] == 2
+    for word in ("right before", "cell:", "bucket:", "entry:", "node:", "lines", "empty"):
+        assert word in spec.description, word
+
+
+async def test_show_result_passes_object_and_op_to_the_toolbox():  # S7
+    toolbox = RecordingToolbox()
+    spec = _spec("show_result")
+    op = {"action": "insert", "params": {"key": 7}}
+
+    assert await spec.handler(toolbox, {"object": "ht", "op": op}) == "shown"
+    assert toolbox.calls == [("show", {"object": "ht", "op": op})]
+
+
+def test_show_result_schema_and_description_teach_the_prediction_flow():  # S7, S10
+    spec = _spec("show_result")
+
+    assert spec.schema["required"] == ["object", "op"]
+    assert set(spec.schema["properties"]) == {"object", "op"}
+    for word in ("prediction", "answer", "insert", "outcome"):
+        assert word in spec.description, word
+
+
+async def test_replay_step_passes_its_arguments_to_the_toolbox():  # S8, S11
+    toolbox = RecordingToolbox()
+    spec = _spec("replay_step")
+    args = {"step": "sum", "say": "New words.", "targets": [{"object": "src"}]}
+
+    assert await spec.handler(toolbox, args) == "replayed"
+    assert toolbox.calls == [("replay", args)]
+
+
+def test_replay_step_schema_and_description_teach_when_to_replay():  # S8, S10
+    spec = _spec("replay_step")
+
+    assert spec.schema["required"] == ["step", "say"]
+    assert set(spec.schema["properties"]) == {"step", "say", "targets"}
+    for word in ("accepts", "step", "again", "NEW", "original", "targets"):
+        assert word in spec.description, word

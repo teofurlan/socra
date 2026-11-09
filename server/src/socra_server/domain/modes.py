@@ -12,6 +12,10 @@ SWITCH_MODE = "switch_mode"
 SEARCH_TRANSCRIPT = "search_transcript"
 RECORD_EXAM_RESULT = "record_exam_result"
 PRESENT = "present"
+CLEAR_SCENE = "clear_scene"
+POINT_AT = "point_at"
+SHOW_RESULT = "show_result"
+REPLAY_STEP = "replay_step"
 SCENE_GUIDE_TOOL = "scene_guide"
 
 
@@ -32,6 +36,22 @@ class Mode:
     # What to do after answering words the user said during the switch ("" = nothing more).
     after_pending: str = ""
 
+
+_SCENE_CHECK = (
+    "After present returns completed, offer by voice a short check of 2 or 3 questions about "
+    "what the scene showed; never force it. If the user accepts, ask one question at a time, "
+    "give brief spoken feedback (correct, partial or incorrect) and call record_exam_result "
+    "after grading each answer. Before asking each question, call point_at with the scene objects "
+    "it is about; call it with an empty list when the question is not about anything specific. "
+    "A check may include one prediction question about a structure in the scene: point at it, "
+    "ask what will happen if an operation is applied, wait for the answer, then call show_result "
+    "and grade the answer against the outcome it returns. After an incorrect or partial answer, "
+    "offer to go over the related step again; if the user accepts, call replay_step with a new "
+    "short explanation of that step that addresses what they got wrong (never the step's original "
+    "words) and targets on the part they confused. "
+    "When the check ends or the user declines, call clear_scene and continue the conversation "
+    "normally. "
+)
 
 _COMMON = (
     "Socra is a voice layer: your replies are spoken aloud, so keep them short and plain. "
@@ -55,9 +75,12 @@ MODES: dict[str, Mode] = {
             f"that change anything. When an explanation is about structure, a flow or data (how a "
             "module or a request works in this project, a data structure or an algorithm), show "
             "it: call scene_guide, then present a scene; otherwise just talk. "
+            f"{_SCENE_CHECK}"
             f"{_COMMON}"
         ),
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, SCENE_GUIDE_TOOL, PRESENT}),
+        tools=frozenset(
+            {SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT, CLEAR_SCENE, POINT_AT, SHOW_RESULT, REPLAY_STEP}
+        ),
         opening=(
             "Now say, in one spoken sentence, what you understand the situation to be, "
             "so the user can correct you. Do not start any work yet."
@@ -73,9 +96,12 @@ MODES: dict[str, Mode] = {
             "verdict (correct, partial or incorrect) and a short note. Do not edit files. "
             "To show the code or diagram a question refers to, call scene_guide then present; "
             "never show the answer. "
+            f"{_SCENE_CHECK}"
             f"{_COMMON}"
         ),
-        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT}),
+        tools=frozenset(
+            {SWITCH_MODE, SEARCH_TRANSCRIPT, RECORD_EXAM_RESULT, SCENE_GUIDE_TOOL, PRESENT, CLEAR_SCENE, POINT_AT, SHOW_RESULT, REPLAY_STEP}
+        ),
         opening=(
             "Start the exam now: ask the first question right away, with at most a very short "
             "lead-in, grounded in the context carried over above. Do not restate the situation."

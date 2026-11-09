@@ -103,10 +103,12 @@ describe('AgentApp', () => {
       expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
       expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
       act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
-      // The last step stays up after a completed scene, until the user speaks.
+      // The last step stays up after a completed scene, even when the user speaks, until the agent clears it.
       expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
       expect(document.querySelector('pre[data-scene-object="src"]')).toBeInTheDocument()
       act(() => ws.receive({ type: 'transcript', text: 'why?', final: true }))
+      expect(visualizer).toHaveAttribute('data-figures', 'focus:src:2-2')
+      act(() => ws.receive({ type: 'walkthrough_cleared' }))
       expect(visualizer).toHaveAttribute('data-figures', '')
     })
 
@@ -132,8 +134,107 @@ describe('AgentApp', () => {
       expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', 'headline:h:Big idea')
       expect(screen.getByTestId('scene-headline')).toHaveTextContent('Big idea')
       act(() => ws.receive({ type: 'transcript', text: 'ok', final: true }))
+      expect(screen.getByTestId('scene-headline')).toHaveTextContent('Big idea')
+      act(() => ws.receive({ type: 'walkthrough_cleared' }))
       expect(screen.getByTestId('particle-visualizer')).toHaveAttribute('data-figures', '')
       expect(screen.queryByTestId('scene-headline')).not.toBeInTheDocument()
+    })
+
+    describe('pointing at the finished scene', () => {
+      const objects = [
+        { id: 'src', primitive: 'code', params: { code: 'one\ntwo\nthree', language: 'python' }, hidden: false },
+        {
+          id: 'flow', primitive: 'diagram', hidden: false,
+          params: { nodes: [{ id: 'api', label: 'API' }, { id: 'db', label: 'DB' }], edges: [{ from: 'api', to: 'db' }] },
+        },
+        {
+          id: 'arr', primitive: 'structure', hidden: false,
+          params: { kind: 'array', items: [4, 5, 6], initial: { kind: 'array', items: [4, 5, 6], last: null } },
+        },
+      ]
+      const state = {
+        src: { visible: true, lines: null },
+        flow: { visible: true, highlighted: [], dimmed: [], revealed: [{ from: 'api', to: 'db' }], trace: [], notes: {} },
+        arr: { visible: true, kind: 'array', items: [4, 5, 6], last: null },
+      }
+      const finished = () => {
+        const { ws } = openPage()
+        startSession(ws)
+        act(() => {
+          ws.receive({ type: 'walkthrough', title: 'All', objects, total: 1 })
+          ws.receive({ type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'Everything.', state })
+          ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' })
+        })
+        return ws
+      }
+      const figures = () => screen.getByTestId('particle-visualizer').getAttribute('data-figures')
+
+      it('highlights a pointed diagram node and the particles ring it', () => {
+        const ws = finished()
+        expect(figures()).toBe('')
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'flow', part: 'db' }] }))
+        expect(document.querySelector('[data-diagram-node="db"]')).toHaveAttribute('data-highlighted', 'true')
+        expect(document.querySelector('[data-diagram-node="api"]')).not.toHaveAttribute('data-highlighted')
+        expect(figures()).toBe('highlight:flow:db')
+      })
+
+      it('marks a pointed structure part and the particles outline it', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'arr', part: 'cell:1' }] }))
+        expect(document.querySelector('[data-structure-part="cell:1"]')).toHaveAttribute('data-touched', 'true')
+        expect(document.querySelector('[data-structure-part="cell:0"]')).not.toHaveAttribute('data-touched')
+        expect(figures()).toBe('point:arr:cell:1')
+      })
+
+      it('focuses a pointed line range and the particles outline it', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'src', lines: [2, 3] }] }))
+        const pane = screen.getByRole('region', { name: 'Walkthrough code src' })
+        expect(Array.from(pane.querySelectorAll('code > span')).map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, true])
+        expect(figures()).toBe('focus:src:2-3')
+      })
+
+      it('emphasizes a whole object for a bare target, and an empty list takes it away', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'flow' }] }))
+        expect(document.querySelectorAll('[data-diagram-node][data-highlighted="true"]')).toHaveLength(2)
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [] }))
+        expect(document.querySelectorAll('[data-diagram-node][data-highlighted="true"]')).toHaveLength(0)
+        expect(figures()).toBe('')
+      })
+
+      it('animates a prediction result on that structure and removes the pointing', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'arr', part: 'cell:0' }] }))
+        act(() => ws.receive({
+          type: 'walkthrough_result', object: 'arr',
+          state: { visible: true, kind: 'array', items: [4, 9, 6], last: { op: 'set', index: 1, value: 9, previous: 5 } },
+        }))
+        expect(document.querySelector('[data-structure-part="cell:1"]')).toHaveTextContent('9')
+        expect(document.querySelector('[data-structure-part="cell:1"]')).toHaveAttribute('data-touched', 'true')
+        expect(figures()).toMatch(/^touch:arr:/) // animated like a step; the pointing is gone
+        expect(screen.getByRole('region', { name: 'Walkthrough code src' })).toBeInTheDocument()
+      })
+
+      it('shows a replayed step after the scene ended and stays on it', () => {
+        const ws = finished()
+        act(() => ws.receive({
+          type: 'walkthrough_step', index: 1, total: 1, id: 's1', say: 'Everything.',
+          state: { ...state, src: { visible: true, lines: [2, 3] } },
+        }))
+        act(() => ws.receive({ type: 'walkthrough_status', status: 'ended', reason: 'completed' }))
+        const pane = screen.getByRole('region', { name: 'Walkthrough code src' })
+        expect(Array.from(pane.querySelectorAll('code > span')).map((line) => line.hasAttribute('data-focused'))).toEqual([false, true, true])
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'flow' }] }))
+        expect(document.querySelectorAll('[data-diagram-node][data-highlighted="true"]')).toHaveLength(2)
+      })
+
+      it('lets go of the pointing with the scene', () => {
+        const ws = finished()
+        act(() => ws.receive({ type: 'walkthrough_point', targets: [{ object: 'src', lines: [1, 1] }] }))
+        act(() => ws.receive({ type: 'walkthrough_cleared' }))
+        expect(figures()).toBe('')
+      })
     })
 
     it('points the particles at nothing without a scene', () => {

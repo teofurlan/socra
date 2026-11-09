@@ -30,7 +30,8 @@ function Part({ id, view, touched, motion, reduced, children }: {
   reduced: boolean
   children: ReactNode
 }) {
-  const isTouched = touched.has(id)
+  // Parts the agent points at are marked like touched ones, without the operation's animation.
+  const isTouched = touched.has(id) || view.pointed.includes(id)
   const play = motion && !reduced
   const style: CSSProperties & Record<string, string> = {}
   if (play) {

@@ -6,6 +6,7 @@
 import { outlinePoints, solidFigurePoints, textFigure } from '@/lib/particleFigures'
 import { visibleShapeViews, type ShapeView } from '@/lib/scene'
 import { visibleDiagramViews } from '@/lib/sceneDiagram'
+import { pointedState } from '@/lib/scenePointing'
 import { lastKey, touchedParts, visibleStructureViews } from '@/lib/sceneStructure'
 import type { SolidPose } from '@/lib/solidShapes'
 import type { FigureBox, FigurePoint } from '@/lib/particleField'
@@ -33,6 +34,8 @@ export interface FigureSource {
 const MARGIN = 3
 /** A box squeezed thinner than this by scrolling is out of sight. */
 const MIN_SIDE = 12
+/** The most parts of one structure the particles outline when the agent points at it. */
+const MAX_POINTED_OUTLINES = 4
 const OUTLINE_SPACING = 8
 const MAX_OUTLINE_POINTS = 220
 
@@ -79,10 +82,10 @@ const HEADLINE_HEIGHT = 0.7
 
 function liveState(walkthrough: WalkthroughData | null) {
   if (!walkthrough || !walkthrough.step) return null
-  // A scene that played to its end leaves its last step up until the user speaks; a stopped or
-  // failed one clears at once.
+  // A scene that played to its end leaves its last step up until the agent clears it, another
+  // scene starts or a reply brings code; a stopped or failed one clears at once.
   if (walkthrough.status === 'ended' && walkthrough.reason !== 'completed') return null
-  return walkthrough.step.state
+  return pointedState(walkthrough)
 }
 
 /** The first visible headline of the current step, if any; the page draws only this one. */
@@ -297,16 +300,19 @@ export function partBox(objectId: string, part: string): FigureBox | null {
  * Flat pointers; a removed element is gone from the drawing and is not outlined.
  */
 function structureSources(walkthrough: WalkthroughData, state: NonNullable<ReturnType<typeof liveState>>): FigureSource[] {
-  return visibleStructureViews(walkthrough.objects, state).flatMap((view) =>
-    touchedParts(view).map((part): FigureSource => ({
-      id: `touch:${view.id}:${lastKey(view.last)}:${part}`,
-      role: 'pointer',
-      box: () => partBox(view.id, part),
-      // The outline is as big as the part is on screen now: a resize or a zoom builds it again.
-      rebuildKey: (box) => `${Math.round(box.w / 4)}x${Math.round(box.h / 4)}`,
-      build: outline,
-    })),
-  )
+  const source = (id: string, objectId: string, part: string): FigureSource => ({
+    id,
+    role: 'pointer',
+    box: () => partBox(objectId, part),
+    // The outline is as big as the part is on screen now: a resize or a zoom builds it again.
+    rebuildKey: (box) => `${Math.round(box.w / 4)}x${Math.round(box.h / 4)}`,
+    build: outline,
+  })
+  return visibleStructureViews(walkthrough.objects, state).flatMap((view) => [
+    ...touchedParts(view).map((part) => source(`touch:${view.id}:${lastKey(view.last)}:${part}`, view.id, part)),
+    // The parts the agent points at, as the same outlines (a bare object points at all of them).
+    ...view.pointed.slice(0, MAX_POINTED_OUTLINES).map((part) => source(`point:${view.id}:${part}`, view.id, part)),
+  ])
 }
 
 /**

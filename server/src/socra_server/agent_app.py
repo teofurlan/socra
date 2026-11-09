@@ -18,7 +18,9 @@ from typing import Any
 
 from socra_server.adapters.turn_audio_log import save_turn_audio
 from socra_server.adapters.whisper_stt import is_valid_answer
-from socra_server.domain.scene import parse_scene
+from socra_server.domain.pointing import validate_targets
+from socra_server.domain.prediction import predict
+from socra_server.domain.scene import Scene, parse_scene
 from socra_server.domain.walkthrough import parse_command
 from socra_server.walkthrough import WalkthroughRunner
 from socra_server.agent_registry import BackendRegistry, UnknownSelection
@@ -66,6 +68,21 @@ NO_AGENT_MODE = (
 )
 
 
+MAX_REPLAY_SAY_CHARS = 600
+
+
+def _replay_say(raw: Any, original: str) -> tuple[str, list[str]]:
+    """The new explanation for a replayed step, or the problem as a ``say: message`` line."""
+    if not isinstance(raw, str) or not raw.strip():
+        return "", ["say: say is required: your new short explanation of this step, aimed at what the user got wrong"]
+    say = raw.strip()
+    if len(say) > MAX_REPLAY_SAY_CHARS:
+        return "", [f"say: say holds at most {MAX_REPLAY_SAY_CHARS} characters, got {len(say)}; make it shorter"]
+    if say.casefold() == original.strip().casefold():
+        return "", ["say: that is the step's original narration; explain it differently, aimed at the user's mistake"]
+    return say, []
+
+
 class AgentApp:
     def __init__(
         self,
@@ -92,9 +109,15 @@ class AgentApp:
         self._previous_transcript: Any = None
         self._toolbox = CallbackToolbox(
             switch=self._tool_switch, record=self._tool_record, search=self._tool_search,
-            play=self._tool_present,
+            play=self._tool_present, clear=self._tool_clear,
+            point=self._tool_point, show=self._tool_show, replay=self._tool_replay,
         )
         self._switch_request: str | None = None
+        # A scene that ended and is still on the page, waiting for the agent to clear it, and the
+        # index of the step whose state the page shows.
+        self._scene_on_screen: tuple[Scene, int] | None = None
+        # Every object's state on the page: the shown step's, or what the latest show_result left.
+        self._screen_state: dict[str, dict] | None = None
         # What the user said while a switch ran; the session that comes out of it answers it.
         self._switch_turns: list[str] = []
         self.switch_task: asyncio.Task | None = None
@@ -319,6 +342,8 @@ class AgentApp:
 
     async def handle_disconnect(self) -> None:
         self.walkthrough.abort()
+        self._scene_on_screen = None
+        self._screen_state = None
         # The page that owed those acknowledgements is gone; a new page starts clean.
         self._ack_debt = 0
         self._playback_done.set()  # wake a wait for clips nobody can play any more
@@ -464,7 +489,7 @@ class AgentApp:
                         self._transcript.append("agent", event.text)
                     if not hidden:
                         self._turns.append(Turn(text, event.text))
-                    await self.channel.send({"type": "agent_reply", "text": event.text})
+                    await self._send_reply(event.text)
                     if not speech.fed:
                         speech.feed(event.text)
                     speech.flush()
@@ -730,10 +755,90 @@ class AgentApp:
                 return json.dumps({"status": "stopped", "step": 1, "total": len(parsed.steps)})
             if not self.channel.is_connected:
                 return json.dumps({"status": "page_disconnected"})
+        self._scene_on_screen = None
+        self._screen_state = None
         result = await self.walkthrough.run(parsed)
+        if result.get("status") == "completed":
+            self._scene_on_screen = (parsed, len(parsed.steps) - 1)
+        elif result.get("status") in ("stopped", "error"):
+            # The page keeps the step it stopped at.
+            self._scene_on_screen = (parsed, min(max(result.get("step", 1) - 1, 0), len(parsed.steps) - 1))
         # The agent's turn goes on after the scene.
         await self._state("thinking" if self._turn_running else "listening")
         return json.dumps(result)
+
+    def _reply_releases_scene(self, text: str) -> bool:
+        """Whether this reply replaces the scene on screen: code on an ended scene (the page's rule)."""
+        return bool(self._scene_on_screen) and not self.walkthrough.active and "```" in text
+
+    async def _send_reply(self, text: str) -> None:
+        await self.channel.send({"type": "agent_reply", "text": text})
+        if self._reply_releases_scene(text):
+            # The page drops the scene by itself on this reply; forget it as clear_scene does.
+            self._scene_on_screen = None
+            self._screen_state = None
+
+    async def _tool_clear(self) -> str:
+        if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
+            return "No finished scene is on screen."
+        self._scene_on_screen = None
+        self._screen_state = None
+        await self.channel.send({"type": "walkthrough_cleared"})
+        return "Scene cleared."
+
+    async def _tool_point(self, targets: Any) -> str:
+        if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
+            return "No finished scene is on screen."
+        scene, index = self._scene_on_screen
+        valid, errors = validate_targets(scene, index, targets, self._screen_state)
+        if errors:
+            return "\n".join(errors)
+        await self.channel.send({"type": "walkthrough_point", "targets": valid})
+        return "Highlighted on screen." if valid else "Highlight removed."
+
+    async def _tool_show(self, args: Any) -> str:
+        if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
+            return "No finished scene is on screen."
+        scene, index = self._scene_on_screen
+        states = self._screen_state if self._screen_state is not None else scene.state_at(index)
+        result, errors = predict(scene, states, args)
+        if result is None:
+            return "\n".join(errors)
+        self._screen_state = states | {result.object: result.state}
+        await self.channel.send({"type": "walkthrough_result", "object": result.object, "state": result.state})
+        return result.outcome
+
+    async def _tool_replay(self, args: Any) -> str:
+        if self.walkthrough.active or not self._scene_on_screen or not self.channel.is_connected:
+            return "No finished scene is on screen."
+        scene, _ = self._scene_on_screen
+        args = args if isinstance(args, dict) else {}
+        step = args.get("step")
+        ids = [s.id for s in scene.steps]
+        if step not in ids:
+            return f"step: {step!r} is not a step of the scene on screen (steps: {', '.join(ids)})"
+        index = ids.index(step)
+        say, errors = _replay_say(args.get("say"), scene.steps[index].say)
+        raw_targets = args.get("targets")
+        targets: list[dict] = []
+        if raw_targets is not None:
+            targets, target_errors = validate_targets(scene, index, raw_targets, scene.state_at(index))
+            errors += target_errors
+        if errors:
+            return "\n".join(errors)
+        await self.loader.ready()
+        self._scene_on_screen = (scene, index)
+        self._screen_state = None
+        result = await self.walkthrough.replay(scene, index, say, targets)
+        await self._state("thinking" if self._turn_running else "listening")
+        status = result.get("status")
+        if status == "completed":
+            return f"Replay of step {step!r} completed; the scene stays on screen on that step."
+        if status == "stopped":
+            return f"Replay of step {step!r} was stopped by the user; the scene stays on screen."
+        if status == "page_disconnected":
+            return "The page went away during the replay."
+        return f"Replay of step {step!r} failed: {result.get('message') or status}."
 
     async def _route_scene_speech(self, text: str) -> None:
         """While a scene plays, what the user says or types steers it instead of starting a turn."""
