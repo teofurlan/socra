@@ -1,6 +1,8 @@
 """Tests for turning an agent's Markdown reply into text worth speaking."""
 from __future__ import annotations
 
+import time
+
 from socra_server.domain.speakable import SpokenPaths, speakable_text
 
 
@@ -124,3 +126,54 @@ def test_identifiers_numbers_versions_and_slashed_words_stay_unchanged():
     )
 
     assert speakable_text(reply) == reply
+
+
+def test_dotted_abbreviations_around_a_slash_are_not_a_path():
+    assert speakable_text("Usa e.g./i.e. con cuidado.") == "Usa e.g./i.e. con cuidado."
+
+
+# Review follow-ups (#94).
+
+
+def test_slash_pairs_of_dotted_names_stay_unchanged():  # JD-A-001
+    reply = "Usá Node.js/Deno, Next.js/React, ASP.NET/Core, Socket.IO/WebSockets, main.py/utils.py y vite.config.ts/tsconfig.json."
+
+    assert speakable_text(reply) == reply
+
+
+def test_long_whitespace_and_punctuation_runs_stay_fast():  # JD-A-002, JD-A-003
+    started = time.perf_counter()
+
+    spaced = speakable_text(" " * 20000 + "x")
+    dotted = speakable_text("https://x.com/a" + ".," * 20000 + "b")
+
+    assert (spaced, time.perf_counter() - started < 1.0) == ("x", True)
+    assert dotted == "x"
+
+
+def test_a_commit_hash_in_brackets_leaves_no_empty_brackets():  # JD-A-004
+    assert speakable_text("Fixed (93d470c) today.") == "Fixed today."
+
+
+def test_hex_colours_and_scientific_numbers_are_not_commit_hashes():  # JD-A-004
+    reply = "Use color #ff00aa80 and 1000000e7 rows."
+
+    assert speakable_text(reply) == reply
+
+
+def test_paths_differing_only_by_extension_keep_it():  # JD-A-005
+    assert speakable_text("Edité src/index.ts y src/index.css.") == "Edité index.ts y index.css."
+
+
+def test_paths_sharing_name_and_folder_add_folders_until_they_differ():  # JD-A-005
+    assert speakable_text("Edité a/web/app.py y b/web/app.py.") == "Edité a web app y b web app."
+
+
+def test_a_dotfile_is_spoken_by_its_name():  # JD-A-006
+    assert speakable_text("Edit web/.gitignore now.") == "Edit gitignore now."
+
+
+def test_an_emphasised_path_is_spoken_in_one_pass():  # JD-A-007
+    once = speakable_text("Edité _web/app.py_.")
+
+    assert (once, speakable_text(once)) == ("Edité app.", "Edité app.")
