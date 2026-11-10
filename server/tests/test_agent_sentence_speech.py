@@ -548,3 +548,12 @@ async def test_numbered_list_items_keep_their_number_at_a_line_start(tmp_path): 
     for _ in channel.of_type("tts_audio"):
         app.handle_playback_done()
     await asyncio.wait_for(app.turn_task, timeout=2)
+
+
+async def test_a_file_name_clash_across_sentences_of_one_reply_keeps_the_folder(tmp_path):  # #94
+    app, channel, loader, convo = await _live(tmp_path)
+
+    await _clips_apart(convo, channel, "Edité `server/app.py`.", "Ahora `web/app.py`.")
+
+    assert loader.tts.spoken == ["Edité app.", "Ahora web app."]
+    await app.shutdown()

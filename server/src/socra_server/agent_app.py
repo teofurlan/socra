@@ -46,7 +46,7 @@ from socra_server.domain.handoff import (
 )
 from socra_server.domain.modes import DEFAULT_MODE, UnknownMode, get_mode
 from socra_server.domain.sentences import SentenceSplitter
-from socra_server.domain.speakable import speakable_text
+from socra_server.domain.speakable import SpokenPaths, speakable_text
 from socra_server.ports import AgentBackend, AgentConversation
 from socra_server.socra_tools import CallbackToolbox
 
@@ -890,6 +890,7 @@ class _ReplySpeech:
     def __init__(self, app: AgentApp) -> None:
         self._app = app
         self._splitter = SentenceSplitter()
+        self._paths = SpokenPaths()  # file names this reply has spoken, to tell clashes apart
         self._queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
         self._worker: asyncio.Task | None = None
         self._base_acks = app.acknowledged_clips
@@ -967,7 +968,7 @@ class _ReplySpeech:
 
     def _enqueue(self, pieces: list[str]) -> None:
         for piece in pieces:
-            spoken = speakable_text(piece)
+            spoken = speakable_text(piece, self._paths)
             if not spoken:
                 continue
             self._outstanding += 1
