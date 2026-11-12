@@ -92,11 +92,11 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         SWITCH_MODE,
         "Ask to switch this project session to another mode. Use it when the user asks to "
-        "be examined or to be mentored. Socra shows the user a confirmation "
-        "and switches only if they accept, so say you asked and wait.",
+        "be examined or to be mentored, or to go back to coding. Socra shows the user a "
+        "confirmation and switches only if they accept, so say you asked and wait.",
         {
             "type": "object",
-            "properties": {"mode": {"type": "string", "enum": ["mentor", "exam"]}},
+            "properties": {"mode": {"type": "string", "enum": ["agent", "mentor", "exam"]}},
             "required": ["mode"],
         },
         _switch_mode,

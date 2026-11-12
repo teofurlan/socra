@@ -6,7 +6,7 @@ from typing import Literal
 
 from socra_server.domain.speech import SPEECH_LANGUAGE_NAME
 
-ModeId = Literal["mentor", "exam"]
+ModeId = Literal["agent", "mentor", "exam"]
 
 SWITCH_MODE = "switch_mode"
 SEARCH_TRANSCRIPT = "search_transcript"
@@ -58,12 +58,29 @@ _COMMON = (
     f"Always reply in {SPEECH_LANGUAGE_NAME}: Socra listens and speaks only "
     f"{SPEECH_LANGUAGE_NAME}, so a message that reads like another language was misheard; "
     "ask the user to repeat it instead of switching language. "
-    "When the user asks to switch between the mentor and exam modes, call the switch_mode "
+    "When the user asks to switch between the agent, mentor and exam modes, call the switch_mode "
     "tool; Socra asks the user to confirm on screen. If the notes you were given lack a "
     "detail, call search_transcript to look it up in the previous session."
 )
 
 MODES: dict[str, Mode] = {
+    # The coding agent: no read-only rule and no scene tools. Permissions are the backend's own
+    # (Claude Code asks the user on the page before a tool that changes something).
+    "agent": Mode(
+        id="agent",
+        label="Agent",
+        instructions=(
+            "You are working as a coding agent in the user's project. Make the changes the user "
+            "asks for with your normal tools. After a change, say in one or two plain sentences "
+            "what you changed and why; never read code, diffs or command output aloud. "
+            f"{_COMMON}"
+        ),
+        tools=frozenset({SWITCH_MODE, SEARCH_TRANSCRIPT}),
+        opening=(
+            "Say in one spoken sentence what you will work on, grounded in the context carried "
+            "over above, and wait for the user's go-ahead before changing any file."
+        ),
+    ),
     # Placeholder: the real mentor instructions belong to issue #18.
     "mentor": Mode(
         id="mentor",

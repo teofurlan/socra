@@ -136,7 +136,7 @@ async def test_start_opens_in_mentor_mode_with_a_toolbox(tmp_path):
     assert channel.of_type("agent_backends")[-1]["session"]["mode"] == "mentor"
 
 
-async def test_starting_on_a_backend_without_modes_is_rejected(tmp_path):
+async def test_a_backend_without_modes_cannot_start_mentor_or_exam(tmp_path):
     backend = PlainBackend([Convo([])])
     app, channel, _ = _make(backend, tmp_path)
 
@@ -149,7 +149,32 @@ async def test_starting_on_a_backend_without_modes_is_rejected(tmp_path):
     assert app._conversation is None and backend.queue
 
 
-async def test_hello_hides_a_backend_without_modes_and_defaults_to_a_listed_one(tmp_path):
+async def test_a_backend_without_modes_runs_a_plain_agent_session(tmp_path):  # Pi
+    backend = PlainBackend([Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
+
+    await app.handle_start("fake", "small", str(tmp_path), mode="agent")
+    await asyncio.sleep(0.05)
+
+    started = channel.of_type("agent_started")
+    assert started and started[-1]["mode"] == "agent"
+    assert app._conversation is not None and not backend.queue
+    assert not channel.of_type("agent_error")
+
+
+async def test_a_plain_agent_session_cannot_switch_to_a_mode_it_does_not_have(tmp_path):  # Pi
+    backend = PlainBackend([Convo([])])
+    app, channel, _ = _make(backend, tmp_path)
+    await app.handle_start("fake", "small", str(tmp_path), mode="agent")
+    await asyncio.sleep(0.05)
+
+    await app.handle_switch_mode("exam")
+
+    assert any("mentor and exam" in m["message"] for m in channel.of_type("agent_error"))
+    assert app.switch_task is None
+
+
+async def test_hello_offers_a_backend_without_modes_next_to_the_others(tmp_path):  # Pi
     channel = FakeChannel()
     plain = PlainBackend([])
     plain.id = "plain"
@@ -163,11 +188,10 @@ async def test_hello_hides_a_backend_without_modes_and_defaults_to_a_listed_one(
     await app.handle_hello()
 
     message = channel.of_type("agent_backends")[-1]
-    assert [b["id"] for b in message["backends"]] == ["fake"]
-    assert message["default"] == {"backend": "fake", "model": "small"}
+    assert [(b["id"], b["supports_modes"]) for b in message["backends"]] == [("plain", False), ("fake", True)]
 
 
-async def test_hello_has_no_default_when_no_backend_supports_modes(tmp_path):
+async def test_hello_defaults_to_the_first_backend_with_models_even_without_modes(tmp_path):  # Pi
     channel = FakeChannel()
     app = AgentApp(
         channel=channel,
@@ -179,7 +203,8 @@ async def test_hello_has_no_default_when_no_backend_supports_modes(tmp_path):
     await app.handle_hello()
 
     message = channel.of_type("agent_backends")[-1]
-    assert message["backends"] == [] and message["default"] is None
+    assert [b["id"] for b in message["backends"]] == ["fake"]
+    assert message["default"] == {"backend": "fake", "model": "small"}
 
 
 async def test_selector_switch_hands_off_to_a_new_session_and_restates(tmp_path):
@@ -437,22 +462,25 @@ async def test_the_tool_refuses_the_current_or_an_unknown_mode(tmp_path):
     toolbox = backend.opens[0]["toolbox"]
 
     assert "Already" in await toolbox.switch_mode("mentor")
-    assert await toolbox.switch_mode("poet") == "Use mentor or exam."
+    assert await toolbox.switch_mode("poet") == "Use agent, mentor or exam."
     assert not channel.of_type("mode_switch_request")
 
 
-async def test_asking_for_agent_mode_gets_an_explanation_and_no_switch(tmp_path):
-    backend = ModeBackend([Convo([])])
+async def test_asking_for_agent_mode_asks_the_user_to_confirm_like_any_other_mode(tmp_path):  # S3, S4
+    backend = ModeBackend([Convo([[ReplyDone(VALID)]]), Convo([[ReplyDone("ok")]])])
     app, channel, _ = _make(backend, tmp_path)
     await _started(app, tmp_path)
 
-    answer = await backend.opens[0]["toolbox"].switch_mode("agent")
-
-    assert answer == (
-        "Coding agent mode is not available in Socra; it offers mentor and exam modes."
-    )
-    assert not channel.of_type("mode_switch_request")
+    await backend.opens[0]["toolbox"].switch_mode("agent")
+    assert channel.of_type("mode_switch_request") == [
+        {"type": "mode_switch_request", "mode": "agent", "label": "Agent"}
+    ]
     assert app.switch_task is None
+
+    await app.handle_mode_switch_response("agent", True)
+    await asyncio.wait_for(app.switch_task, timeout=3)
+
+    assert backend.opens[1]["mode"].id == "agent"
 
 
 async def test_words_typed_during_a_switch_are_answered_by_the_new_session(tmp_path):

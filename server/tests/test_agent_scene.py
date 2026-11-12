@@ -10,7 +10,7 @@ from socra_server.domain.agent import ReplyDone
 from socra_server.domain.modes import PRESENT, get_mode
 from socra_server.socra_tools import CallbackToolbox, specs_for
 from tests.test_agent_app import _finish_turn
-from tests.test_agent_mode import Convo, ModeBackend, _make, _started
+from tests.test_agent_mode import VALID, Convo, ModeBackend, _make, _started
 
 CODE = "a = 1\nb = 2\nc = a + b"
 SCENE = {
@@ -185,6 +185,39 @@ async def test_clearing_an_ended_scene_tells_the_page(tmp_path):  # S4
     assert text == "Scene cleared."
     assert await toolbox.clear_scene() == "No finished scene is on screen."
     assert len(channel.of_type("walkthrough_cleared")) == 1
+
+
+async def test_a_finished_scene_is_cleared_when_the_session_switches_to_agent(tmp_path):  # review finding
+    # Agent mode has no clear_scene tool, so Socra drops the scene itself; mentor and exam can.
+    backend = ModeBackend([Convo([[ReplyDone(VALID)]]), Convo([[ReplyDone("ok")]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+    toolbox = backend.opens[0]["toolbox"]
+    task = await _play(app, channel, toolbox.present(SCENE))
+    await asyncio.wait_for(task, 2)
+    assert channel.of_type("walkthrough_cleared") == []
+
+    await toolbox.switch_mode("agent")
+    await app.handle_mode_switch_response("agent", True)
+    await asyncio.wait_for(app.switch_task, timeout=3)
+
+    assert channel.of_type("walkthrough_cleared") == [{"type": "walkthrough_cleared"}]
+    assert await backend.opens[1]["toolbox"].clear_scene() == "No finished scene is on screen."
+
+
+async def test_a_finished_scene_survives_a_switch_to_a_mode_that_can_clear_it(tmp_path):  # review finding
+    backend = ModeBackend([Convo([[ReplyDone(VALID)]]), Convo([[ReplyDone("ok")]])])
+    app, channel, _ = _make(backend, tmp_path)
+    await _started(app, tmp_path)
+    toolbox = backend.opens[0]["toolbox"]
+    task = await _play(app, channel, toolbox.present(SCENE))
+    await asyncio.wait_for(task, 2)
+
+    await toolbox.switch_mode("exam")
+    await app.handle_mode_switch_response("exam", True)
+    await asyncio.wait_for(app.switch_task, timeout=3)
+
+    assert channel.of_type("walkthrough_cleared") == []
 
 
 async def test_a_scene_that_still_plays_is_not_cleared(tmp_path):  # S4

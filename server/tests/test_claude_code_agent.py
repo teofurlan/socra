@@ -383,6 +383,16 @@ def test_claude_code_supports_modes():
     assert _backend().supports_modes is True
 
 
+async def test_an_agent_session_pre_approves_only_the_switch_and_search_tools(tmp_path):  # S2
+    from socra_server.domain.modes import get_mode
+
+    await _backend().open("opus", tmp_path, _never_asked, mode=get_mode("agent"), toolbox=_Toolbox())
+
+    options = FakeClient.instances[-1].options
+    assert sorted(options.allowed_tools) == ["mcp__socra__search_transcript", "mcp__socra__switch_mode"]
+    assert options.system_prompt["append"] == get_mode("agent").instructions
+
+
 async def test_open_in_a_mode_appends_its_instructions_and_exposes_socra_tools(tmp_path):
     from socra_server.domain.modes import get_mode
 

@@ -4,13 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { ModeSelector } from './ModeSelector'
 
 describe('ModeSelector', () => {
-  it('offers only mentor and exam with the current mode checked', () => {
+  it('offers agent, mentor and exam with the current mode checked', () => {
     render(<ModeSelector mode="mentor" onChange={vi.fn()} />)
 
     const group = screen.getByRole('radiogroup', { name: /mode/i })
     expect(group).toBeInTheDocument()
-    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mentor', 'Exam'])
+    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Agent', 'Mentor', 'Exam'])
     expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Agent' })).not.toBeChecked()
     expect(screen.getByRole('radio', { name: 'Exam' })).not.toBeChecked()
   })
 

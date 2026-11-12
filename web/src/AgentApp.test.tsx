@@ -577,13 +577,14 @@ describe('AgentApp', () => {
   })
 
   describe('project modes', () => {
-    it('offers the two modes next to the folder and model once a session runs', () => {
+    it('offers agent, mentor and exam next to the folder and model once a session runs', () => {
       const { ws } = openPage()
       startSession(ws)
 
       expect(screen.getByRole('radiogroup', { name: /mode/i })).toBeInTheDocument()
-      expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mentor', 'Exam'])
+      expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Agent', 'Mentor', 'Exam'])
       expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Agent' })).toBeEnabled()
       expect(screen.getByRole('radio', { name: 'Exam' })).toBeEnabled()
     })
 
@@ -597,6 +598,21 @@ describe('AgentApp', () => {
 
       expect(ws.sent()).toContainEqual(
         { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
+      )
+    })
+
+    it('starts a backend without modes in agent mode, with the mode selector locked on Agent', async () => {
+      const user = userEvent.setup()
+      window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
+      const { ws } = openPage()
+      act(() => ws.receive({ ...backends, default: { backend: 'pi', model: 'anthropic/sonnet' } }))
+
+      expect(screen.getByRole('radio', { name: 'Agent' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeDisabled()
+      await user.type(screen.getByLabelText('Message Socra'), 'fix the build{Enter}')
+
+      expect(ws.sent()).toContainEqual(
+        { type: 'start_agent', backend: 'pi', model: 'anthropic/sonnet', cwd: 'C:\\work\\socra', mode: 'agent' },
       )
     })
 

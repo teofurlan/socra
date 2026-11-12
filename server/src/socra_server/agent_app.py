@@ -44,7 +44,7 @@ from socra_server.domain.handoff import (
     render_seed,
     retry_prompt,
 )
-from socra_server.domain.modes import DEFAULT_MODE, UnknownMode, get_mode
+from socra_server.domain.modes import CLEAR_SCENE, DEFAULT_MODE, UnknownMode, get_mode
 from socra_server.domain.sentences import SentenceSplitter
 from socra_server.domain.speakable import SpokenPaths, speakable_text
 from socra_server.ports import AgentBackend, AgentConversation
@@ -62,9 +62,8 @@ FIRST_CLIP_MAX_CHARS = 120
 CLIP_MAX_CHARS = 300
 # One request plus two retries for a summary that lacks fields.
 SUMMARY_ATTEMPTS = 3
-NEEDS_CLAUDE_CODE = "Socra sessions need a backend with mentor and exam modes, such as Claude Code."
-NO_AGENT_MODE = (
-    "Coding agent mode is not available in Socra; it offers mentor and exam modes."
+NEEDS_CLAUDE_CODE = (
+    "Sessions in mentor and exam modes need a backend such as Claude Code; this one runs in agent mode."
 )
 
 
@@ -154,11 +153,9 @@ class AgentApp:
             await self.channel.send(message)
 
     async def _send_hello(self) -> None:
-        # Only backends that can host the mentor and exam modes are offered.
-        infos = [info for info in await self.registry.describe() if info.supports_modes]
-        default = next(
-            (AgentSelection(info.id, info.models[0].id) for info in infos if info.models), None
-        )
+        # Every backend is offered; one without modes (Pi) runs plain agent sessions only.
+        infos = await self.registry.describe()
+        default = self.registry.default_selection()
         await self.channel.send({
             "type": "agent_backends",
             "backends": [
@@ -194,7 +191,7 @@ class AgentApp:
         except (UnknownSelection, UnknownMode) as exc:
             await self._error(str(exc))
             return
-        if not backend.supports_modes:
+        if mode != "agent" and not backend.supports_modes:
             await self._error(NEEDS_CLAUDE_CODE)
             return
         await self._cancel_switch()
@@ -394,6 +391,9 @@ class AgentApp:
         return True
 
     async def _open_conversation(self, backend, model: str, folder: Path, mode_id: str):
+        if not backend.supports_modes:
+            # A plain agent session (Pi): no Socra instructions or tools, only the agent itself.
+            return await backend.open(model, folder, self._decide_permission)
         return await backend.open(
             model, folder, self._decide_permission,
             mode=get_mode(mode_id), toolbox=self._toolbox,
@@ -576,6 +576,9 @@ class AgentApp:
         if self._backend is None or self._conversation is None or self._session is None:
             await self._error("Choose a folder and start a session first.")
             return "no session"
+        if not self._backend.supports_modes:
+            await self._error(NEEDS_CLAUDE_CODE)
+            return NEEDS_CLAUDE_CODE
         if target == self._session["mode"]:
             text = f"Already in {mode.label} mode."
             await self.channel.send({"type": "notice", "text": text})
@@ -639,6 +642,9 @@ class AgentApp:
         self._previous_transcript = self._transcript
         self._transcript = self._transcripts.start(session["cwd"]) if self._transcripts else None
         await self.channel.send({"type": "agent_mode_changed", **self._session})
+        if CLEAR_SCENE not in get_mode(target).tools:
+            # The new mode cannot clear a finished scene itself, so it would stay on screen.
+            await self._tool_clear()
         try:
             await old.close()
         except Exception as exc:
@@ -711,12 +717,10 @@ class AgentApp:
     # The Socra tools the agent can call (see socra_tools).
 
     async def _tool_switch(self, target: str) -> str:
-        if target == "agent":
-            return NO_AGENT_MODE
         try:
             mode = get_mode(target)
         except UnknownMode:
-            return "Use mentor or exam."
+            return "Use agent, mentor or exam."
         if self._session is not None and target == self._session["mode"]:
             return f"Already in {mode.label} mode."
         if self._switching:
