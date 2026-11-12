@@ -557,3 +557,27 @@ async def test_a_file_name_clash_across_sentences_of_one_reply_keeps_the_folder(
 
     assert loader.tts.spoken == ["Edité app.", "Ahora web app."]
     await app.shutdown()
+
+
+async def test_chunks_are_spoken_early_and_their_block_is_shown_but_not_spoken_again(tmp_path):  # live S3
+    from socra_server.domain.agent import TextChunk
+
+    app, channel, loader, convo = await _live(tmp_path)
+
+    await convo.events.put(TextChunk("Hola. Ya "))
+    await _until(lambda: len(channel.of_type("tts_audio")) == 1)
+    assert channel.of_type("agent_text") == []  # the page gets the whole block, not each chunk
+
+    await convo.events.put(TextChunk("miro."))
+    await convo.events.put(TextDelta("Hola. Ya miro."))
+    await convo.events.put(TextDelta("Listo."))  # a later block that came without chunks is still spoken
+    await convo.events.put(ReplyDone("Listo."))
+    await _until(lambda: " ".join(loader.tts.spoken).endswith("Listo."))
+    await _settle()
+    for _ in channel.of_type("tts_audio"):
+        app.handle_playback_done()
+    await asyncio.wait_for(app.turn_task, timeout=2)
+
+    assert [m["text"] for m in channel.of_type("agent_text")] == ["Hola. Ya miro.", "Listo."]
+    # Clips may group finished sentences; each sentence is spoken exactly once.
+    assert " ".join(loader.tts.spoken) == "Hola. Ya miro. Listo."

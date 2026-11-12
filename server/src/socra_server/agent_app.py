@@ -30,6 +30,7 @@ from socra_server.domain.agent import (
     AgentSelection,
     PermissionRequest,
     ReplyDone,
+    TextChunk,
     TextDelta,
     ToolActivity,
 )
@@ -479,11 +480,20 @@ class AgentApp:
         if not hidden and self._transcript is not None:
             self._transcript.append("user", text)
         speech = self._speech = _ReplySpeech(self)
+        chunked = False  # the current block was already fed to speech chunk by chunk
         try:
             async for event in conversation.send(text):
-                if isinstance(event, TextDelta):
-                    await self.channel.send({"type": "agent_text", "text": event.text})
+                if isinstance(event, TextChunk):
+                    chunked = True
                     speech.feed(event.text)
+                elif isinstance(event, TextDelta):
+                    await self.channel.send({"type": "agent_text", "text": event.text})
+                    if chunked:
+                        # The block is complete: its last sentence must not run into the next block.
+                        speech.flush()
+                    else:
+                        speech.feed(event.text)
+                    chunked = False
                 elif isinstance(event, ToolActivity):
                     self._facts.record_tool(event)
                     # Words before a tool call sound now, not after the tool finishes.

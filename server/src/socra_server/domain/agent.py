@@ -66,6 +66,15 @@ class TextDelta:
 
 
 @dataclasses.dataclass(frozen=True)
+class TextChunk:
+    """Part of a text block still being written, in order; only for speaking early.
+
+    The whole block still follows as a TextDelta, which the page shows."""
+
+    text: str
+
+
+@dataclasses.dataclass(frozen=True)
 class ToolActivity:
     """The agent is using a tool; shown on the page, never spoken."""
 
@@ -89,4 +98,4 @@ class AgentError:
     message: str
 
 
-AgentEvent = TextDelta | ToolActivity | ReplyDone | AgentError
+AgentEvent = TextChunk | TextDelta | ToolActivity | ReplyDone | AgentError
