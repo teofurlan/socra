@@ -31,6 +31,14 @@ def test_agent_is_a_coding_agent_that_speaks_briefly_and_keeps_the_voice_rules()
     assert mode.tools == {"switch_mode", "search_transcript"}
 
 
+def test_every_mode_shares_the_voice_rules_with_plain_agent_sessions():  # S2
+    from socra_server.domain.modes import PLAIN_AGENT_INSTRUCTIONS, VOICE_RULES
+
+    assert PLAIN_AGENT_INSTRUCTIONS.startswith(VOICE_RULES)
+    for mode in MODES.values():
+        assert VOICE_RULES in mode.instructions
+
+
 def test_agent_waits_for_the_go_ahead_after_a_handoff():  # S4
     opening = get_mode("agent").opening.lower()
     assert "one spoken sentence" in opening and "go-ahead" in opening

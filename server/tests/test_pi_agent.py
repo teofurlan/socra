@@ -18,6 +18,7 @@ from socra_server.domain.agent import (
     TextDelta,
     ToolActivity,
 )
+from socra_server.domain.modes import PLAIN_AGENT_INSTRUCTIONS
 from socra_server.ports import AgentBackend, AgentConversation
 
 GPT = {"provider": "openai-codex", "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol"}
@@ -299,11 +300,38 @@ async def test_open_starts_pi_in_rpc_mode_with_provider_model_and_folder(tmp_pat
     assert isinstance(conversation, AgentConversation)
     assert pi.args == [
         "pi-test.cmd", "--mode", "rpc",
+        "--append-system-prompt", PLAIN_AGENT_INSTRUCTIONS,
         "--provider", "google", "--model", "gemini-3.5-flash-lite",
     ]
     assert Path(pi.cwd) == tmp_path
     # open() returns only once Pi has answered, so the first turn is not lost.
     assert pi.commands("get_state")
+
+
+def test_the_pi_instruction_asks_for_short_spoken_replies_in_the_speech_language():  # S2
+    from socra_server.domain.speech import SPEECH_LANGUAGE_NAME
+
+    assert f"Always reply in {SPEECH_LANGUAGE_NAME}" in PLAIN_AGENT_INSTRUCTIONS
+    assert "spoken aloud" in PLAIN_AGENT_INSTRUCTIONS and "short" in PLAIN_AGENT_INSTRUCTIONS
+    assert "never read code" in PLAIN_AGENT_INSTRUCTIONS
+    # Pi has no Socra tools or modes, so the text must not mention them.
+    assert "switch_mode" not in PLAIN_AGENT_INSTRUCTIONS and "search_transcript" not in PLAIN_AGENT_INSTRUCTIONS
+
+
+def test_the_pi_instruction_survives_the_windows_cmd_shim():  # S2
+    # pi.cmd passes its arguments on with %*, so the text must hold nothing cmd.exe reads.
+    assert not set('"%^&|<>\r\n') & set(PLAIN_AGENT_INSTRUCTIONS)
+    assert PLAIN_AGENT_INSTRUCTIONS == PLAIN_AGENT_INSTRUCTIONS.strip()
+
+
+async def test_discovery_does_not_carry_the_instruction(tmp_path):  # S2
+    backend = _backend(tmp_path)
+    before = len(FakePi.instances)
+
+    await backend.check()
+
+    probes = FakePi.instances[before:]
+    assert probes and all("--append-system-prompt" not in pi.args for pi in probes)
 
 
 async def test_open_splits_provider_from_a_model_id_that_has_a_slash(tmp_path):

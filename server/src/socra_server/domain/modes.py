@@ -53,11 +53,23 @@ _SCENE_CHECK = (
     "normally. "
 )
 
-_COMMON = (
+# What every spoken reply must follow, in a project session and in a plain agent session (Pi).
+VOICE_RULES = (
     "Socra is a voice layer: your replies are spoken aloud, so keep them short and plain. "
     f"Always reply in {SPEECH_LANGUAGE_NAME}: Socra listens and speaks only "
     f"{SPEECH_LANGUAGE_NAME}, so a message that reads like another language was misheard; "
     "ask the user to repeat it instead of switching language. "
+)
+
+# Appended to a backend without modes (Pi): it has no Socra tools, so this holds only the voice
+# rules. Plain characters only: the Windows pi.cmd shim passes it on through cmd.exe.
+PLAIN_AGENT_INSTRUCTIONS = (
+    f"{VOICE_RULES}When you change code, say in one or two plain sentences what you changed and "
+    "why; never read code, diffs or command output aloud, and skip tables and long lists."
+)
+
+_COMMON = (
+    f"{VOICE_RULES}"
     "When the user asks to switch between the agent, mentor and exam modes, call the switch_mode "
     "tool; Socra asks the user to confirm on screen. If the notes you were given lack a "
     "detail, call search_transcript to look it up in the previous session."
