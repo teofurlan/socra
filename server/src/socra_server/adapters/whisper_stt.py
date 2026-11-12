@@ -14,6 +14,7 @@ import numpy as np
 import soundfile as sf
 
 from socra_server.domain.speech import SILENCE_HALLUCINATIONS, SPEECH_LANGUAGE
+from socra_server.domain.vocabulary import correct_terms
 
 DEFAULT_WHISPER_MODEL = "large-v3-turbo"
 PRODUCT_NAME = "Socra"
@@ -262,9 +263,13 @@ class WhisperSTT:
     ) -> str:
         """Transcribe with base terms + optional extra glossary as initial_prompt."""
         prompt = self._build_prompt(extra_glossary)
-        return self.transcribe(wav_bytes, prompt=prompt)
+        return self._with_known_terms(self.transcribe(wav_bytes, prompt=prompt), extra_glossary)
 
     def transcribe_partial(self, wav_bytes: bytes, extra_glossary: list[str] | None = None) -> str:
         """A quick, greedy decode of an utterance still being spoken, for the live transcript."""
         prompt = self._build_prompt(extra_glossary)
-        return self.transcribe(wav_bytes, prompt=prompt, beam_size=1)
+        return self._with_known_terms(self.transcribe(wav_bytes, prompt=prompt, beam_size=1), extra_glossary)
+
+    def _with_known_terms(self, text: str, extra_glossary: list[str] | None) -> str:
+        """Write near misses of known terms as the terms; project words and the product name win."""
+        return correct_terms(text, [*(extra_glossary or []), PRODUCT_NAME, *self._base_terms])

@@ -69,3 +69,16 @@ def test_warm_up_failure_never_raises():
     stt._transcriber = SimpleNamespace(device="cuda", model=SimpleNamespace(transcribe=broken))
     stt.warm_up()  # the first real turn falls back to CPU as before
     WhisperSTT().warm_up()  # not loaded: nothing to warm
+
+
+def test_final_and_partial_transcripts_fix_near_misses_of_known_terms():  # live S2
+    class Model:
+        def transcribe(self, audio, **kwargs):
+            return iter([SimpleNamespace(text="Abrí socrá en dog ear con web socket")]), None
+
+    stt = WhisperSTT(["WebSocket"])
+    stt._transcriber = SimpleNamespace(device="cpu", model=Model())
+
+    expected = "Abrí Socra en dogear con WebSocket"
+    assert stt.transcribe_with_glossary(make_wav_bytes(), ["dogear"]) == expected
+    assert stt.transcribe_partial(make_wav_bytes(), ["dogear"]) == expected
