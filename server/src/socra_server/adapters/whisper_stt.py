@@ -139,8 +139,8 @@ class WhisperSTT:
         # Base glossary terms from the voice stack (set by the loader)
         self._base_terms: list[str] = glossary_terms or []
         self._model_size: str = DEFAULT_WHISPER_MODEL
-        # One decode at a time: a live partial and the final never share the model.
-        # Reentrant because the CPU fallback calls transcribe() again.
+        # One decode at a time: a live partial and the final never share the model, and
+        # the CPU fallback swaps the model only once. Reentrant: the fallback decodes again.
         self._decode_lock = threading.RLock()
 
     def set_base_terms(self, terms: list[str]) -> None:
@@ -210,17 +210,21 @@ class WhisperSTT:
         # initial_prompt, language, and vad_filter (S4: never call Ollama cleaner).
         initial_prompt = prompt if prompt else self._build_prompt(None)
 
+        with self._decode_lock:
+            return self._decode(audio_array, initial_prompt, beam_size)
+
+    def _decode(self, audio_array: np.ndarray, initial_prompt: str, beam_size: int | None) -> str:
+        """Decode under the lock held by transcribe(), falling back to CPU once if CUDA fails."""
         try:
-            with self._decode_lock:
-                options = {} if beam_size is None else {"beam_size": beam_size}
-                segments, _info = self._transcriber.model.transcribe(
-                    audio_array,
-                    language=SPEECH_LANGUAGE,
-                    vad_filter=True,
-                    initial_prompt=initial_prompt or None,
-                    **options,
-                )
-                segments = list(segments)  # the decode is lazy; finish it inside the lock
+            options = {} if beam_size is None else {"beam_size": beam_size}
+            segments, _info = self._transcriber.model.transcribe(
+                audio_array,
+                language=SPEECH_LANGUAGE,
+                vad_filter=True,
+                initial_prompt=initial_prompt or None,
+                **options,
+            )
+            segments = list(segments)  # the decode is lazy: finish it while the lock is held
             parts = []
             for seg in segments:
                 text = seg.text.strip()
@@ -256,7 +260,7 @@ class WhisperSTT:
                     compute_type="int8",
                     download_root=self._transcriber.download_root,
                 )
-            return self.transcribe(wav_bytes, prompt=initial_prompt, beam_size=beam_size)
+            return self._decode(audio_array, initial_prompt, beam_size)
 
     def transcribe_with_glossary(
         self, wav_bytes: bytes, extra_glossary: list[str] | None = None

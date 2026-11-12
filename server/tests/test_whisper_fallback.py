@@ -82,3 +82,41 @@ def test_final_and_partial_transcripts_fix_near_misses_of_known_terms():  # live
     expected = "Abrí Socra en dogear con WebSocket"
     assert stt.transcribe_with_glossary(make_wav_bytes(), ["dogear"]) == expected
     assert stt.transcribe_partial(make_wav_bytes(), ["dogear"]) == expected
+
+
+def test_two_decodes_failing_on_cuda_at_once_rebuild_the_cpu_model_only_once():  # review R3-cpu-fallback
+    import threading
+    import time
+
+    built = []
+
+    class Transcriber:
+        def __init__(self, device="cuda", compute_type="float16", download_root="cached", model_size=None):
+            if device == "cpu":
+                time.sleep(0.05)  # a slow rebuild leaves room for the other decode to start
+                built.append(device)
+            self.device = device
+            self.download_root = download_root
+            self.model = self
+
+        def transcribe(self, audio, **kwargs):
+            def segments():
+                if self.device == "cuda":
+                    raise RuntimeError("cublas64_12.dll missing")
+                yield SimpleNamespace(text="Hola.")
+            return segments(), None
+
+    stt = WhisperSTT()
+    stt._transcriber = Transcriber()
+    results = []
+    threads = [
+        threading.Thread(target=lambda: results.append(stt.transcribe_with_glossary(make_wav_bytes())))
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert results == ["Hola.", "Hola."]
+    assert built == ["cpu"]

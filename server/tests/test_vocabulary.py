@@ -48,3 +48,8 @@ def test_the_longest_match_wins():
 
 def test_no_terms_means_no_change():
     assert correct_terms("socrá", []) == "socrá"
+
+
+def test_a_real_word_with_the_same_sound_as_a_short_term_is_kept():  # review R3-vocabulary
+    # 'caza' and 'casa' share a key; single words with keys under five sounds are too ambiguous.
+    assert correct_terms("salimos de caza", ["casa"]) == "salimos de caza"

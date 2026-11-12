@@ -14,6 +14,9 @@ from collections.abc import Iterable
 
 MAX_WORDS = 3
 MIN_KEY_LENGTH = 4  # shorter keys ("pr", "pi") match too many ordinary words
+# One heard word is rewritten only for longer keys: short real words often share a key
+# ("caza" and "casa"), while words joined into a term ("so cra") are rarely ordinary speech.
+MIN_SINGLE_WORD_KEY_LENGTH = 5
 
 # Mishearings no phonetic rule can bridge (an English name heard as another English word).
 ALIASES: dict[str, str] = {
@@ -76,7 +79,10 @@ def _longest_match(text: str, words: list[re.Match[str]], i: int, index: dict[st
         # Words join only across plain spaces, never across punctuation.
         if any(text[a.end():b.start()].strip() for a, b in zip(run, run[1:])):
             continue
-        term = index.get(sound_key("".join(w.group() for w in run)))
+        key = sound_key("".join(w.group() for w in run))
+        if count == 1 and len(key) < MIN_SINGLE_WORD_KEY_LENGTH:
+            continue
+        term = index.get(key)
         if term is not None:
             return count, term
     return None
