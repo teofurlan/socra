@@ -35,6 +35,12 @@ _BARE_URL = re.compile(
 _URL_TRAILING = ".,;:!?)]"
 _SECOND_LEVEL = frozenset({"ac", "co", "com", "edu", "gov", "net", "org"})
 
+# Names joined by arrows, as an editor shows where a file is: src > components > App.tsx.
+_BREADCRUMB_SEPARATOR = re.compile(r"[ \t]*[>›»→][ \t]*")
+_BREADCRUMB = re.compile(
+    r"(?<![\w@./\\>›»→-])[\w@+.-]+(?:[ \t]*[>›»→][ \t]*[\w@+.-]+)+(?![\w@+.\\/-])"
+)
+
 _SEPARATOR = re.compile(r"[\\/]")
 _PATH = re.compile(
     r"(?<![\w@./\\:-])(?P<root>[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])?[\w@+.-]*(?:[\\/][\w@+.-]*)*"
@@ -102,9 +108,19 @@ def speakable_text(markdown: str, paths: SpokenPaths | None = None) -> str:
         text = pattern.sub(r"\1", text)
     text = _URL.sub(_spoken_url, text)
     text = _BARE_URL.sub(_spoken_url, text)
+    text = _BREADCRUMB.sub(_breadcrumb_as_path, text)
     text = _speak_paths(text, SpokenPaths() if paths is None else paths)
     text = _COMMIT_HASH.sub("", text)
     return " ".join(text.split())
+
+
+def _breadcrumb_as_path(match: re.Match[str]) -> str:
+    """A breadcrumb that ends in a file (src > components > App.tsx) is read as that file's path."""
+    trail = match[0].rstrip(".")  # dots after it end the sentence
+    segments = _BREADCRUMB_SEPARATOR.split(trail)
+    if not _EXTENSION.search(segments[-1]):
+        return match[0]  # a menu trail (Settings > Voice) or a comparison (x > 3 > y)
+    return "/".join(segments) + match[0][len(trail):]
 
 
 def _spoken_url(match: re.Match[str]) -> str:
