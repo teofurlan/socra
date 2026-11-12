@@ -601,6 +601,21 @@ describe('AgentApp', () => {
       )
     })
 
+    it('starts a backend without modes in agent mode, with the mode selector locked on Agent', async () => {
+      const user = userEvent.setup()
+      window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\\work\\socra')
+      const { ws } = openPage()
+      act(() => ws.receive({ ...backends, default: { backend: 'pi', model: 'anthropic/sonnet' } }))
+
+      expect(screen.getByRole('radio', { name: 'Agent' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Mentor' })).toBeDisabled()
+      await user.type(screen.getByLabelText('Message Socra'), 'fix the build{Enter}')
+
+      expect(ws.sent()).toContainEqual(
+        { type: 'start_agent', backend: 'pi', model: 'anthropic/sonnet', cwd: 'C:\\work\\socra', mode: 'agent' },
+      )
+    })
+
     it('falls back to mentor when a resynced session reports no mode', () => {
       const { ws } = openPage()
       act(() => ws.receive({

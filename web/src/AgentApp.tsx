@@ -135,7 +135,9 @@ export const AgentApp: React.FC = () => {
     const pendingMatches = pending?.selection.backend === next.backend && pending.selection.model === next.model && folderKey(pending.cwd) === folderKey(cwd)
     if (!sessionMatches && !pendingMatches) {
       pendingStartRef.current = { selection: next, cwd }
-      socket.start(next, cwd, startMode)
+      // A backend without modes (Pi) only runs a plain agent session.
+      const supportsModes = state.backends.find((backend) => backend.id === next.backend)?.supports_modes === true
+      socket.start(next, cwd, supportsModes ? startMode : 'agent')
     }
   }
 
@@ -208,7 +210,7 @@ export const AgentApp: React.FC = () => {
   const modeBackend = session ? sessionBackend : state.backends.find((backend) => backend.id === selection?.backend)
   const modesSupported = modeBackend?.supports_modes === true
   const modeControl = {
-    mode: session?.mode ?? startMode,
+    mode: session?.mode ?? (modesSupported ? startMode : 'agent'),
     onChange: session ? socket.switchMode : setStartMode,
     disabled: !modesSupported,
     reason: modeBackend && !modesSupported ? 'Mode switching needs Claude Code' : undefined,
