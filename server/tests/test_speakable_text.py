@@ -177,3 +177,24 @@ def test_an_emphasised_path_is_spoken_in_one_pass():  # JD-A-007
     once = speakable_text("Edité _web/app.py_.")
 
     assert (once, speakable_text(once)) == ("Edité app.", "Edité app.")
+
+
+def test_a_breadcrumb_ending_in_a_file_is_spoken_by_the_file_name_in_any_language():  # S7
+    assert speakable_text("See src > components > App.tsx now.") == "See App now."
+    assert speakable_text("En Home › src › App.tsx está.") == "En App está."
+
+
+def test_a_menu_trail_or_a_comparison_is_not_a_breadcrumb():  # S7
+    assert speakable_text("Open Settings > Voice and try it.") == "Open Settings > Voice and try it."
+    assert speakable_text("if x > 3 > y then stop") == "if x > 3 > y then stop"
+
+
+def test_prose_with_an_arrow_and_a_file_name_is_not_a_breadcrumb():  # review finding 1
+    for prose in (
+        "if a > b.py then",
+        "what does foo > bar.md mean",
+        "x > 3 > y.py",
+        "version 1.2 > 1.3 > y.py",
+        "x -> y.py",
+    ):
+        assert speakable_text(prose) == prose

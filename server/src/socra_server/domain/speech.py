@@ -85,7 +85,7 @@ LANGUAGES: dict[str, Language] = {
             ("back", ("atras", "anterior", "vuelve", "volver", "paso anterior")),
             ("next", ("siguiente", "adelante", "salta", "paso siguiente")),
             ("resume", ("continua", "continuar", "sigue", "seguir", "reanuda")),
-            ("stop", ("para", "parar", "detente", "basta", "ya esta", "ya basta", "termina")),
+            ("stop", ("para", "parar", "detente", "basta", "ya basta")),
         ),
         polite_words=("por", "favor"),
         abbreviations=("sr", "sra", "srta", "dra", "pág", "pag", "núm", "ej"),

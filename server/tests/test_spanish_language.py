@@ -141,3 +141,46 @@ def test_spanish_speakable_text_still_speaks_paths_by_file_name_and_drops_breadc
     """)
     assert out == ["Abrí App ahora", "Mirá App y listo", "En App está", "Entrá a Ajustes > Voz y probá",
                    "si x > 3 > y entonces"]
+
+
+def test_ya_esta_and_termina_are_answers_not_stop_commands():  # review finding 2
+    out = _run_in("es", """
+        import json
+        from socra_server.domain.walkthrough import parse_command
+        print(json.dumps([parse_command(t) for t in ["ya está", "termina", "basta", "ya basta", "detente"]]))
+    """)
+    assert out == [None, None, "stop", "stop", "stop"]
+
+
+def _piper_texts(reply: str, phonemes) -> list[str]:
+    return _run_in("es", f"""
+        import json, tempfile, pathlib
+        from socra_server.adapters.piper_tts import PiperTTS
+
+        class Voice:
+            def __init__(self): self.texts = []
+            def synthesize_wav(self, text, wav_file, syn_config=None):
+                self.texts.append(text)
+                wav_file.setnchannels(1); wav_file.setsampwidth(2); wav_file.setframerate(22050)
+                wav_file.writeframes(b"\\x00\\x00" * 10)
+
+        class Phonemizer:
+            def phonemize(self, lang, text): return {phonemes!r}
+
+        glossary = pathlib.Path(tempfile.mkdtemp()) / "terms.json"
+        glossary.write_text(json.dumps({{"version": 1, "terms": {{"README": "read me"}}}}), encoding="utf-8")
+        voice = Voice()
+        tts = PiperTTS(voice_loader=lambda spec: voice, phonemizer=Phonemizer(), glossary_path=glossary)
+        tts.load()
+        tts.synthesize({reply!r})
+        print(json.dumps(voice.texts))
+    """)
+
+
+def test_raw_phoneme_brackets_in_a_reply_never_reach_the_voice():  # review finding 3
+    (text,) = _piper_texts("mira [[ k æ t ]] aquí", [list("x")])
+    assert "[[" not in text and "aquí" in text
+
+
+def test_a_phonemizer_that_returns_nothing_falls_back_to_the_written_term():  # review finding 4
+    assert _piper_texts("Abrí el README ahora", None) == ["Abrí el README ahora"]

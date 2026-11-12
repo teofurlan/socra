@@ -152,11 +152,12 @@ class PiperTTS:
                 phonemes = self._phonemes(segment["spoken"])
                 parts.append(f"[[ {phonemes} ]]" if phonemes else segment["text"])
             else:
-                parts.append(segment["text"])
+                # Piper reads [[ ... ]] as raw phonemes: only the glossary may use it.
+                parts.append(segment["text"].replace("[[", ""))
         return "".join(parts)
 
     def _phonemes(self, spoken: str) -> str:
-        sentences = self._phonemizer.phonemize(TERM_PHONEME_LANGUAGE, spoken)
+        sentences = self._phonemizer.phonemize(TERM_PHONEME_LANGUAGE, spoken) or []
         return " ".join("".join(sentence) for sentence in sentences).strip()
 
 
