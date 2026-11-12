@@ -492,7 +492,7 @@ async def test_partial_text_streams_as_chunks_before_the_whole_block(tmp_path): 
     assert events == [
         TextChunk("Hola. "),
         TextChunk("Ya miro."),
-        TextDelta("Hola. Ya miro."),
+        TextDelta("Hola. Ya miro.", spoken=True),
         ReplyDone("Hola. Ya miro."),
     ]
 

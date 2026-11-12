@@ -15,6 +15,7 @@ from socra_server.domain.agent import (
     ModelOption,
     PermissionRequest,
     ReplyDone,
+    TextChunk,
     TextDelta,
     ToolActivity,
 )
@@ -378,9 +379,10 @@ async def test_send_streams_tools_text_blocks_and_final_reply(tmp_path):
     events = await _collect(conversation, "what is in note.txt?")
 
     assert [p["message"] for p in pi.commands("prompt")] == ["what is in note.txt?"]
-    # Token deltas are not forwarded (the page adds one entry per text);
+    # Token deltas come as chunks for speech only (the page adds one entry per text);
     # blank text blocks are skipped.
     assert events == [
+        TextChunk("he"),
         ToolActivity("read", "note.txt"),
         TextDelta("hello"),
         ReplyDone("hello"),
@@ -672,3 +674,29 @@ def test_agent_mode_offers_claude_code_and_pi():
     from socra_server.__main__ import agent_backends
 
     assert [backend.id for backend in agent_backends()] == ["claude-code", "pi"]
+
+
+def _delta(text, kind="text_delta"):
+    return {"type": "message_update", "assistantMessageEvent": {"type": kind, "delta": text}}
+
+
+async def test_text_deltas_stream_as_chunks_and_mark_their_block_spoken(tmp_path):  # live S3
+    turn = [
+        _delta("plan", kind="thinking_delta"),
+        _delta("Hola. "),
+        _delta("Ya miro."),
+        _assistant(_text("Hola. Ya miro.")),
+        _assistant(_text("Listo.")),  # a message without deltas is not marked spoken
+        _settled(),
+    ]
+    conversation, _ = await _open(tmp_path, turns=[turn])
+
+    events = await _collect(conversation)
+
+    assert events == [
+        TextChunk("Hola. "),
+        TextChunk("Ya miro."),
+        TextDelta("Hola. Ya miro.", spoken=True),
+        TextDelta("Listo."),
+        ReplyDone("Listo."),
+    ]

@@ -137,20 +137,23 @@ class ClaudeCodeConversation:
     async def send(self, text: str) -> AsyncIterator[AgentEvent]:
         self._interrupted = False
         last_text = ""
+        streamed = False  # text chunks arrived since the last whole message
         try:
             await self._client.query(text)
             async for message in self._client.receive_response():
                 if isinstance(message, StreamEvent):
                     chunk = _text_chunk(message)
                     if chunk:
+                        streamed = True
                         yield TextChunk(chunk)
                 elif isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock) and block.text:
                             last_text = block.text
-                            yield TextDelta(block.text)
+                            yield TextDelta(block.text, spoken=streamed)
                         elif isinstance(block, ToolUseBlock):
                             yield ToolActivity(block.name, _summarize(block.input), tool_path(block.input))
+                    streamed = False
                 elif isinstance(message, ResultMessage):
                     if self._interrupted or _is_interrupted_result(message):
                         yield AgentError("The turn was interrupted.")

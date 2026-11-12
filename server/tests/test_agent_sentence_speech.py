@@ -569,7 +569,7 @@ async def test_chunks_are_spoken_early_and_their_block_is_shown_but_not_spoken_a
     assert channel.of_type("agent_text") == []  # the page gets the whole block, not each chunk
 
     await convo.events.put(TextChunk("miro."))
-    await convo.events.put(TextDelta("Hola. Ya miro."))
+    await convo.events.put(TextDelta("Hola. Ya miro.", spoken=True))
     await convo.events.put(TextDelta("Listo."))  # a later block that came without chunks is still spoken
     await convo.events.put(ReplyDone("Listo."))
     await _until(lambda: " ".join(loader.tts.spoken).endswith("Listo."))

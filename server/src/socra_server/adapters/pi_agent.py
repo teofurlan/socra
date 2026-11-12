@@ -31,6 +31,7 @@ from socra_server.domain.agent import (
     ModelOption,
     PermissionRequest,
     ReplyDone,
+    TextChunk,
     TextDelta,
     ToolActivity,
 )
@@ -200,6 +201,13 @@ def _readable_error(raw: str) -> str:
     return text if len(text) <= _ERROR_MAX else text[: _ERROR_MAX - 1] + "…"
 
 
+def _text_chunk(record: dict[str, Any]) -> str:
+    """Reply text Pi just wrote, from a message_update ('' for thinking and tool-call deltas)."""
+    update = record.get("assistantMessageEvent") or {}
+    text = update.get("delta") if update.get("type") == "text_delta" else None
+    return text if isinstance(text, str) else ""
+
+
 class PiConversation:
     def __init__(self, rpc: PiRpc, decide_permission: PermissionDecider) -> None:
         self._rpc = rpc
@@ -257,9 +265,15 @@ class PiConversation:
                 return
             reply = ""
             error: str | None = None
+            streamed = False  # text deltas arrived since the last finished message
             while (record := await events.get()) is not None:
                 kind = record.get("type")
-                if kind == "message_end":
+                if kind == "message_update":
+                    chunk = _text_chunk(record)
+                    if chunk:
+                        streamed = True
+                        yield TextChunk(chunk)
+                elif kind == "message_end":
                     message = record.get("message") or {}
                     if message.get("role") != "assistant":
                         continue
@@ -269,7 +283,8 @@ class PiConversation:
                         and isinstance(block.get("text"), str) and block["text"].strip()
                     ]
                     for block_text in texts:
-                        yield TextDelta(block_text)
+                        yield TextDelta(block_text, spoken=streamed)
+                    streamed = False
                     if texts:
                         reply = "\n\n".join(texts)
                     # A later message (an automatic retry) clears an earlier error.
