@@ -46,3 +46,33 @@ describe('PromptLine dictation draft', () => {
     expect(input()).toHaveValue('')
   })
 })
+
+describe('PromptLine live transcript', () => {
+  const renderLive = (liveTranscript: string | null) =>
+    render(<PromptLine label="Message Socra" placeholder="Say it" disabled={false} onSend={vi.fn()} liveTranscript={liveTranscript} />)
+
+  it('shows the provisional text beside the field, announced politely, without touching the field', () => {
+    renderLive('list the files in')
+
+    expect(screen.getByTestId('live-transcript')).toHaveTextContent('list the files in')
+    expect(screen.getByTestId('live-transcript')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByLabelText('Message Socra')).toHaveValue('')
+  })
+
+  it('shows nothing without a provisional transcript', () => {
+    renderLive(null)
+
+    expect(screen.queryByTestId('live-transcript')).not.toBeInTheDocument()
+  })
+
+  it('never sends the provisional text', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(<PromptLine label="Message Socra" placeholder="Say it" disabled={false} onSend={onSend} liveTranscript="hello there" />)
+
+    await user.click(screen.getByLabelText('Message Socra'))
+    await user.keyboard('{Enter}')
+
+    expect(onSend).not.toHaveBeenCalled()
+  })
+})

@@ -113,6 +113,8 @@ export type AgentClientMessage =
   | { type: 'switch_mode'; mode: AgentMode }
   | { type: 'mode_switch_response'; mode: AgentMode; allow: boolean }
   | { type: 'turn_audio'; format: 'wav'; data: string; review?: boolean }
+  /** The whole utterance so far, resent about every second while the user speaks. */
+  | { type: 'turn_audio_partial'; format: 'wav'; data: string }
   | { type: 'turn_text'; text: string }
   | { type: 'permission_response'; id: string; allow: boolean }
   | { type: 'interrupt' }
@@ -131,6 +133,8 @@ export interface AgentState {
   timeline: TimelineEntry[]
   permissions: PermissionPrompt[]
   notice: string | null
+  /** What Whisper hears of the utterance still being spoken; provisional, never sent. */
+  liveTranscript: string | null
   /** The mode being switched to while the handoff runs; null otherwise. */
   switching: AgentMode | null
   modeRequest: ModeSwitchRequest | null
@@ -158,6 +162,8 @@ export type AgentAction =
   | { type: 'permission_answered'; id: string }
   | { type: 'mode_switch_answered' }
   | { type: 'clear_notice' }
+  /** The utterance ended without being sent (too short, silent or cancelled). */
+  | { type: 'live_transcript_discarded' }
   /** A reply clip began playing. */
   | { type: 'speech_started'; id: number; text: string }
   /** A clip ended (``id``), or all speech stopped (no ``id``). */

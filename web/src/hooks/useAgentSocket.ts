@@ -78,6 +78,11 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
       : { type: 'turn_audio', format: 'wav', data: base64 })
   }, [send])
 
+  /** The utterance so far, for the provisional transcript; the final still goes through sendAudio. */
+  const sendAudioPartial = useCallback((base64: string) => {
+    send({ type: 'turn_audio_partial', format: 'wav', data: base64 })
+  }, [send])
+
   const answerPermission = useCallback((id: string, allow: boolean) => {
     dispatch({ type: 'permission_answered', id })
     send({ type: 'permission_response', id, allow })
@@ -130,6 +135,7 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     const handle = (message: AgentServerMessage) => {
       if (message.type === 'transcript_draft') {
         setDraft((current) => ({ id: (current?.id ?? 0) + 1, text: message.text }))
+        dispatch(message) // also clears the provisional transcript
         return
       }
       if (message.type === 'voices') {
@@ -238,6 +244,7 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     answerModeSwitch,
     sendText,
     sendAudio,
+    sendAudioPartial,
     answerPermission,
     interrupt,
     controlWalkthrough,

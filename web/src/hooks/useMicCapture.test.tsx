@@ -25,6 +25,7 @@ type VADCallbacks = {
   onSpeechStart?: () => void
   onSpeechEnd?: (audio: Float32Array) => void
   onVADMisfire?: () => void
+  onFrameProcessed?: (probabilities: { isSpeech: number; notSpeech: number }, frame: Float32Array) => void
 }
 
 let lastVADCallbacks: VADCallbacks = {}
@@ -37,6 +38,7 @@ vi.mock('@ricky0123/vad-web', () => ({
         onSpeechStart: opts.onSpeechStart,
         onSpeechEnd: opts.onSpeechEnd,
         onVADMisfire: opts.onVADMisfire,
+        onFrameProcessed: opts.onFrameProcessed,
       }
       return { start: vi.fn(async () => {}), destroy: vadDestroyFn }
     }),
@@ -146,6 +148,7 @@ beforeEach(() => {
       onSpeechStart: opts.onSpeechStart,
       onSpeechEnd: opts.onSpeechEnd,
       onVADMisfire: opts.onVADMisfire,
+      onFrameProcessed: opts.onFrameProcessed,
     }
     return { start: vi.fn(async () => {}), destroy: vadDestroyFn }
   })
@@ -841,5 +844,176 @@ describe('#9 — microphone selection', () => {
     await act(async () => {})
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce()
     expect(result.current.micError).toContain('denied')
+  })
+})
+
+// ─── Live partials: the growing utterance, resent about every second ────────────
+
+describe('live partials', () => {
+  const frame = () => new Float32Array(1536).fill(0.3)
+  const speechFrame = () => lastVADCallbacks.onFrameProcessed?.({ isSpeech: 0.9, notSpeech: 0.1 }, frame())
+  const wavBytes = (b64: string) => atob(b64).length
+
+  it('auto mode sends the speech heard so far every second while the user speaks', async () => {
+    const onPartial = vi.fn()
+    renderHook(() => useMicCapture({ ...makeOpts('listening', 'auto'), onPartial }))
+    await act(async () => {})
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      speechFrame()
+      vi.advanceTimersByTime(1000)
+    })
+    expect(onPartial).toHaveBeenCalledOnce()
+    const first = wavBytes(onPartial.mock.calls[0][0] as string)
+
+    act(() => {
+      speechFrame()
+      vi.advanceTimersByTime(1000)
+    })
+    expect(onPartial).toHaveBeenCalledTimes(2)
+    expect(wavBytes(onPartial.mock.calls[1][0] as string)).toBeGreaterThan(first)
+  })
+
+  it('auto mode keeps earlier segments of the same answer in the partial', async () => {
+    const onPartial = vi.fn()
+    renderHook(() => useMicCapture({ ...makeOpts('listening', 'auto'), onPartial }))
+    await act(async () => {})
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      lastVADCallbacks.onSpeechEnd?.(new Float32Array(16000).fill(0.3))
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      vi.advanceTimersByTime(1000)
+    })
+
+    // 1 s segment + one 1536-sample frame, 16 kHz PCM16 mono, 44-byte header
+    expect(wavBytes(onPartial.mock.calls[0][0] as string)).toBe(44 + (16000 + 1536) * 2)
+  })
+
+  it('sends nothing while nobody speaks or when the audio did not grow', async () => {
+    const onPartial = vi.fn()
+    renderHook(() => useMicCapture({ ...makeOpts('listening', 'auto'), onPartial }))
+    await act(async () => {})
+
+    act(() => vi.advanceTimersByTime(3000))
+    expect(onPartial).not.toHaveBeenCalled()
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      vi.advanceTimersByTime(3000)
+    })
+    expect(onPartial).toHaveBeenCalledOnce()
+  })
+
+  it('caps the partial at the last 30 seconds', async () => {
+    const onPartial = vi.fn()
+    renderHook(() => useMicCapture({ ...makeOpts('listening', 'auto'), onPartial }))
+    await act(async () => {})
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      lastVADCallbacks.onSpeechEnd?.(new Float32Array(16000 * 40).fill(0.3))
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      vi.advanceTimersByTime(1000)
+    })
+
+    expect(wavBytes(onPartial.mock.calls[0][0] as string)).toBe(44 + 16000 * 30 * 2)
+  })
+
+  it('stops sending partials once the answer is finalized', async () => {
+    const onFinalize = vi.fn()
+    const onPartial = vi.fn()
+    renderHook(() => useMicCapture({ ...makeOpts('listening', 'auto', onFinalize), onPartial }))
+    await act(async () => {})
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      lastVADCallbacks.onSpeechEnd?.(new Float32Array([0.3]))
+      vi.advanceTimersByTime(3000)
+    })
+    expect(onFinalize).toHaveBeenCalledOnce()
+    onPartial.mockClear()
+
+    act(() => {
+      speechFrame()
+      vi.advanceTimersByTime(5000)
+    })
+    expect(onPartial).not.toHaveBeenCalled()
+  })
+
+  it('push-to-talk sends the held audio every second and stops on release', async () => {
+    const onFinalize = vi.fn()
+    const onPartial = vi.fn()
+    const { result } = renderHook(() =>
+      useMicCapture({ ...makeOpts('listening', 'push-to-talk', onFinalize), onPartial }),
+    )
+    await act(async () => {})
+    act(() => result.current.onTalkingChange(true))
+    await act(async () => {})
+    const chunk = () => activeScriptProcessor!.onaudioprocess?.({
+      inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.3) },
+    })
+
+    act(() => { chunk(); vi.advanceTimersByTime(1000) })
+    expect(onPartial).toHaveBeenCalledOnce()
+    act(() => { chunk(); vi.advanceTimersByTime(1000) })
+    expect(onPartial).toHaveBeenCalledTimes(2)
+
+    await act(async () => { result.current.onTalkingChange(false) })
+    expect(onFinalize).toHaveBeenCalledOnce()
+    onPartial.mockClear()
+    act(() => vi.advanceTimersByTime(5000))
+    expect(onPartial).not.toHaveBeenCalled()
+  })
+
+  it('works without an onPartial handler (the exam page)', async () => {
+    renderHook(() => useMicCapture(makeOpts('listening', 'auto')))
+    await act(async () => {})
+    expect(() => act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      vi.advanceTimersByTime(2000)
+    })).not.toThrow()
+  })
+
+  it('tells the page to drop the provisional text when a held key sent nothing', async () => {
+    const onFinalize = vi.fn()
+    const onPartialDiscard = vi.fn()
+    const { result } = renderHook(() =>
+      useMicCapture({ ...makeOpts('listening', 'push-to-talk', onFinalize), onPartial: vi.fn(), onPartialDiscard }),
+    )
+    await act(async () => {})
+    act(() => result.current.onTalkingChange(true))
+    await act(async () => {})
+
+    await act(async () => { result.current.onTalkingChange(false) }) // released at once: too short
+
+    expect(onFinalize).not.toHaveBeenCalled()
+    expect(onPartialDiscard).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the provisional text when the answer is sent, so the final replaces it', async () => {
+    const onPartialDiscard = vi.fn()
+    const { result } = renderHook(() =>
+      useMicCapture({ ...makeOpts('listening', 'push-to-talk'), onPartial: vi.fn(), onPartialDiscard }),
+    )
+    await act(async () => {})
+    act(() => result.current.onTalkingChange(true))
+    await act(async () => {})
+    act(() => {
+      activeScriptProcessor!.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.3) } })
+      vi.advanceTimersByTime(400)
+    })
+
+    await act(async () => { result.current.onTalkingChange(false) })
+
+    expect(onPartialDiscard).not.toHaveBeenCalled()
   })
 })

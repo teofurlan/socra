@@ -12,6 +12,7 @@ export const initialAgentState: AgentState = {
   timeline: [],
   permissions: [],
   notice: null,
+  liveTranscript: null,
   switching: null,
   modeRequest: null,
   walkthrough: null,
@@ -113,6 +114,7 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       // Once the agent listens or idles, nothing is being said any more.
       return {
         ...state,
+        liveTranscript: null,
         protocolState: action.state,
         spoken: action.state === 'listening' || action.state === 'idle' ? null : state.spoken,
       }
@@ -123,7 +125,13 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       if (!state.spoken || (action.id !== undefined && state.spoken.id !== action.id)) return state
       return { ...state, spoken: null }
     case 'transcript':
-      return action.final ? userTurn(state, action.text) : state
+      if (action.final) return userTurn({ ...state, liveTranscript: null }, action.text)
+      // A reply being prepared or spoken means the utterance is over: a late partial is stale.
+      if (state.protocolState === 'thinking' || state.protocolState === 'speaking') return state
+      return { ...state, liveTranscript: action.text }
+    case 'transcript_draft':
+    case 'live_transcript_discarded':
+      return state.liveTranscript === null ? state : { ...state, liveTranscript: null }
     case 'user_text':
       return userTurn(state, action.text)
     case 'walkthrough':
@@ -164,7 +172,7 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
       return release(append(state, { kind: 'reply', text: action.text }))
     }
     case 'agent_error':
-      return append(state, { kind: 'error', text: action.message })
+      return append({ ...state, liveTranscript: null }, { kind: 'error', text: action.message })
     case 'permission_request':
       if (state.permissions.some((prompt) => prompt.id === action.id)) return state
       return {
@@ -178,14 +186,14 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
     case 'permission_closed':
       return { ...state, permissions: state.permissions.filter((prompt) => prompt.id !== action.id) }
     case 'notice':
-      return { ...state, notice: action.text }
+      return { ...state, notice: action.text, liveTranscript: null }
     case 'clear_notice':
       return { ...state, notice: null }
     case 'set_status':
       // The server denies pending prompts when the page goes away; drop them here too.
       return action.status === 'connected'
         ? { ...state, connectionStatus: action.status }
-        : { ...state, connectionStatus: action.status, permissions: [], modeRequest: null, switching: null }
+        : { ...state, connectionStatus: action.status, permissions: [], modeRequest: null, switching: null, liveTranscript: null }
     default:
       return state
   }

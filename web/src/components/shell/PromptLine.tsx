@@ -17,10 +17,12 @@ interface PromptLineProps {
   contextControls?: ReactNode
   /** Dictated text to review: each new id is added to the field, which takes the focus. */
   draft?: { id: number; text: string } | null
+  /** What is heard of the words still being spoken: shown muted above the field, never sent. */
+  liveTranscript?: string | null
 }
 
 /** The composer floating near the bottom of the conversation: typing is always one click away. */
-export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls, draft = null }: PromptLineProps) {
+export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls, draft = null, liveTranscript = null }: PromptLineProps) {
   const [text, setText] = useState('')
   const [seenDraft, setSeenDraft] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -44,6 +46,16 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
   return (
     <div className="composer-dock">
       <div className="composer-stack">
+        {liveTranscript && (
+          <p
+            data-testid="live-transcript"
+            aria-live="polite"
+            className="t-ui m-0 px-3 italic"
+            style={{ color: 'var(--label-2)' }}
+          >
+            {liveTranscript}
+          </p>
+        )}
         <form onSubmit={submit} className="composer">
           <input
             ref={inputRef}

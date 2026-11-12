@@ -9,6 +9,9 @@ const PTT_MIN_HOLD_MS = 300
 const VAD_SAMPLE_RATE = 16_000
 // The legacy model's default 1400 ms redemption rounds down to 14 frames of 96 ms.
 const VAD_REDEMPTION_MS = 1344
+// Live transcript: the utterance so far is resent this often, capped to its latest seconds.
+const PARTIAL_INTERVAL_MS = 1000
+const PARTIAL_MAX_SECONDS = 30
 
 export interface UseMicCaptureOptions {
   protocolState: ProtocolState
@@ -19,6 +22,13 @@ export interface UseMicCaptureOptions {
   /** Selected microphone; '' or undefined uses the system default. */
   deviceId?: string
   onFinalize: (base64: string) => void
+  /**
+   * Receives a WAV of the whole utterance so far about every second while the user speaks,
+   * until the answer is finalized. Without it nothing partial is captured or encoded.
+   */
+  onPartial?: (base64: string) => void
+  /** The utterance ended without being sent, so whatever it showed provisionally is stale. */
+  onPartialDiscard?: () => void
 }
 
 export interface UseMicCaptureResult {
@@ -103,7 +113,7 @@ function micErrorMessage(error: unknown): string {
 }
 
 export function useMicCapture({
-  protocolState, mode, silenceTimeoutMs, listeningEpoch = 0, deviceId = '', onFinalize,
+  protocolState, mode, silenceTimeoutMs, listeningEpoch = 0, deviceId = '', onFinalize, onPartial, onPartialDiscard,
 }: UseMicCaptureOptions): UseMicCaptureResult {
   const [micError, setMicError] = useState<string | null>(null)
   const [fallbackFor, setFallbackFor] = useState<string | null>(null)
@@ -123,6 +133,13 @@ export function useMicCapture({
   const pttPressTimeRef = useRef(0)
   const pttChunksRef = useRef<Float32Array[]>([])
   const pttProcessorRef = useRef<ScriptProcessorNode | null>(null)
+  const partialTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const speechFramesRef = useRef<Float32Array[]>([])
+  const speechActiveRef = useRef(false)
+  const onPartialRef = useRef(onPartial)
+  useEffect(() => { onPartialRef.current = onPartial }, [onPartial])
+  const onPartialDiscardRef = useRef(onPartialDiscard)
+  useEffect(() => { onPartialDiscardRef.current = onPartialDiscard }, [onPartialDiscard])
   const onFinalizeRef = useRef(onFinalize)
   useEffect(() => { onFinalizeRef.current = onFinalize }, [onFinalize])
   const silenceTimeoutRef = useRef(silenceTimeoutMs)
@@ -147,8 +164,38 @@ export function useMicCapture({
     setSilenceCountdownMs(0)
   }, [])
 
+  const stopPartials = useCallback(() => {
+    if (partialTimerRef.current !== null) clearInterval(partialTimerRef.current)
+    partialTimerRef.current = null
+    speechFramesRef.current = []
+    speechActiveRef.current = false
+  }, [])
+
+  /** Resends the utterance so far each interval, only when it grew; never after stopCapture. */
+  const startPartials = useCallback((
+    collect: () => { chunks: Float32Array[]; sampleRate: number },
+    isCurrent: () => boolean,
+  ) => {
+    if (partialTimerRef.current !== null || !onPartialRef.current) return
+    let sentLength = 0
+    partialTimerRef.current = setInterval(() => {
+      const emit = onPartialRef.current
+      if (!emit || !isCurrent()) return
+      const { chunks, sampleRate } = collect()
+      const merged = AnswerSegmenter.merge(chunks)
+      if (merged.length <= sentLength) return
+      sentLength = merged.length
+      const tail = merged.length > sampleRate * PARTIAL_MAX_SECONDS
+        ? merged.slice(merged.length - sampleRate * PARTIAL_MAX_SECONDS)
+        : merged
+      const base64 = encodeWAVBase64(tail, sampleRate)
+      if (base64) emit(base64)
+    }, PARTIAL_INTERVAL_MS)
+  }, [])
+
   const stopCapture = useCallback(() => {
     clearSilenceTimer()
+    stopPartials()
     pttPressedRef.current = false
     ++pttRequestRef.current
     const proc = pttProcessorRef.current
@@ -166,7 +213,7 @@ export function useMicCapture({
     void teardownCapture(capture)
     if (vad) void vad.destroy().catch(() => {})
     segmenterRef.current.send({ kind: 'reset' })
-  }, [clearSilenceTimer])
+  }, [clearSilenceTimer, stopPartials])
 
   const doFinalize = useCallback((segments: Float32Array[]) => {
     clearSilenceTimer()
@@ -174,6 +221,7 @@ export function useMicCapture({
     const merged = AnswerSegmenter.merge(segments)
     if (!hasSpeech(merged)) {
       segmenterRef.current.send({ kind: 'reset' })
+      onPartialDiscardRef.current?.()
       return
     }
     const base64 = encodeWAVBase64(merged, VAD_SAMPLE_RATE)
@@ -239,12 +287,31 @@ export function useMicCapture({
         startOnLoad: true,
         redemptionMs: VAD_REDEMPTION_MS,
         onSpeechStart: () => {
-          if (isCurrent()) handleSegmenterAction(segmenterRef.current.send({ kind: 'speechStart' }))
+          if (!isCurrent()) return
+          speechActiveRef.current = true
+          speechFramesRef.current = []
+          startPartials(
+            () => ({
+              chunks: [...segmenterRef.current.segments, ...speechFramesRef.current],
+              sampleRate: VAD_SAMPLE_RATE,
+            }),
+            isCurrent,
+          )
+          handleSegmenterAction(segmenterRef.current.send({ kind: 'speechStart' }))
+        },
+        // The segment only arrives when speech ends, so the frames in between feed the partials.
+        onFrameProcessed: (_probabilities: unknown, frame: Float32Array) => {
+          if (speechActiveRef.current && onPartialRef.current) speechFramesRef.current.push(new Float32Array(frame))
         },
         onSpeechEnd: (audio: Float32Array) => {
-          if (isCurrent()) handleSegmenterAction(segmenterRef.current.send({ kind: 'speechEnd', audio }))
+          if (!isCurrent()) return
+          speechActiveRef.current = false
+          handleSegmenterAction(segmenterRef.current.send({ kind: 'speechEnd', audio }))
+          speechFramesRef.current = []
         },
         onVADMisfire: () => {
+          speechActiveRef.current = false
+          speechFramesRef.current = []
           if (isCurrent()) handleSegmenterAction(segmenterRef.current.send({ kind: 'speechMisfire' }))
         },
       })
@@ -264,7 +331,7 @@ export function useMicCapture({
       }
       if (isCurrent()) setMicError('Voice activity detection could not start. Check console for details.')
     }
-  }, [handleSegmenterAction])
+  }, [handleSegmenterAction, startPartials])
 
   const finalizePTT = useCallback(() => {
     const chunks = pttChunksRef.current
@@ -272,9 +339,15 @@ export function useMicCapture({
     const holdMs = Date.now() - pttPressTimeRef.current
     const sampleRate = capture?.context.sampleRate ?? 44100
     stopCapture() // Also release short and empty captures.
-    if (holdMs < PTT_MIN_HOLD_MS || sentRef.current) return
+    if (holdMs < PTT_MIN_HOLD_MS || sentRef.current) {
+      if (!sentRef.current) onPartialDiscardRef.current?.()
+      return
+    }
     const merged = AnswerSegmenter.merge(chunks)
-    if (!hasSpeech(merged)) return
+    if (!hasSpeech(merged)) {
+      onPartialDiscardRef.current?.()
+      return
+    }
     const base64 = encodeWAVBase64(merged, sampleRate)
     if (base64) {
       sentRef.current = true
@@ -313,6 +386,7 @@ export function useMicCapture({
         }
         sourceNode.connect(proc)
         proc.connect(context.destination)
+        startPartials(() => ({ chunks: pttChunksRef.current, sampleRate: context.sampleRate }), isCurrent)
       } catch (error) {
         stream.getTracks().forEach((track) => track.stop())
         throw error
@@ -320,9 +394,10 @@ export function useMicCapture({
     }).catch((error) => {
       if (!isCurrent()) return
       stopCapture()
+      onPartialDiscardRef.current?.()
       setMicError(micErrorMessage(error))
     })
-  }, [finalizePTT, mode, protocolState, stopCapture])
+  }, [finalizePTT, mode, protocolState, startPartials, stopCapture])
 
   // A new deviceId restarts listening on that microphone; unsent audio of the turn is dropped.
   useEffect(() => {
@@ -339,6 +414,8 @@ export function useMicCapture({
     if (mode === 'auto' && !sentRef.current) void startAutoVAD(generation)
     return () => {
       ++generationRef.current
+      // Capture cancelled (new device, mode or state): an unsent utterance leaves no stale text.
+      if (!sentRef.current) onPartialDiscardRef.current?.()
       stopCapture()
     }
   }, [protocolState, mode, listeningEpoch, deviceId, startAutoVAD, stopCapture])
