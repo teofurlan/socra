@@ -125,6 +125,11 @@ class AgentApp:
         self._start_task: asyncio.Task | None = None
         self._start_generation = 0
         self._queued_turn: str | None = None
+        # Live transcript: the utterance being spoken, the newest partial audio waiting for the
+        # model, and the task decoding partials one at a time.
+        self._utterance = 0
+        self._pending_partial: bytes | None = None
+        self._partial_task: asyncio.Task | None = None
         self._playback_done = asyncio.Event()
         self.turn_task: asyncio.Task | None = None
         self.acknowledged_clips = 0
@@ -241,9 +246,47 @@ class AgentApp:
         name = Path(self._session["cwd"]).name
         return [name] if name else None
 
+    def _hears_partials(self) -> bool:
+        """Whether the final of this utterance would be transcribed; partials ask silently."""
+        if self._turn_running or self._queued_turn is not None:
+            return False
+        return (self.walkthrough.active or self._switching or self._conversation is not None
+                or self._startup_pending)
+
+    async def handle_turn_audio_partial(self, b64_data: str) -> None:
+        """Audio of the utterance so far. Only the newest one waits for the model, and nothing
+        here ever reaches the page as an error: the final decode is the one that counts."""
+        if not self._hears_partials():
+            return
+        try:
+            self._pending_partial = base64.b64decode(b64_data, validate=True)
+        except (binascii.Error, ValueError):
+            return
+        if self._partial_task is None or self._partial_task.done():
+            self._partial_task = asyncio.create_task(self._decode_partials())
+
+    async def _decode_partials(self) -> None:
+        while self._pending_partial is not None:
+            wav_bytes, self._pending_partial = self._pending_partial, None
+            utterance = self._utterance
+            try:
+                await self.loader.ready()
+                text = await asyncio.to_thread(
+                    self.loader.stt.transcribe_partial, wav_bytes, self._stt_terms()
+                )
+            except Exception as exc:
+                logger.warning("Live transcript decode failed: %s", exc)
+                continue
+            # The final may have started while the model was busy; it is never overtaken.
+            if text and utterance == self._utterance:
+                await self.channel.send({"type": "transcript", "text": text, "final": False})
+
     async def handle_turn_audio(self, b64_data: str, review: bool = False) -> None:
         """A spoken turn. With ``review`` the text goes back to the page as a draft the user
         sends themselves; scene steering and speech during a switch are never drafts."""
+        # The utterance is over: no partial of it may be decoded or shown from here on.
+        self._utterance += 1
+        self._pending_partial = None
         scene_playing = self.walkthrough.active
         if not scene_playing and not self._switching and not await self._can_take_turn():
             return

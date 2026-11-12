@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from collections import Counter
 from pathlib import Path
 
@@ -137,6 +138,9 @@ class WhisperSTT:
         # Base glossary terms from the voice stack (set by the loader)
         self._base_terms: list[str] = glossary_terms or []
         self._model_size: str = DEFAULT_WHISPER_MODEL
+        # One decode at a time: a live partial and the final never share the model.
+        # Reentrant because the CPU fallback calls transcribe() again.
+        self._decode_lock = threading.RLock()
 
     def set_base_terms(self, terms: list[str]) -> None:
         self._base_terms = terms
@@ -187,7 +191,7 @@ class WhisperSTT:
         combined.append(PRODUCT_NAME)
         return ", ".join(combined)
 
-    def transcribe(self, wav_bytes: bytes, prompt: str = "") -> str:
+    def transcribe(self, wav_bytes: bytes, prompt: str = "", beam_size: int | None = None) -> str:
         """Transcribe WAV bytes to text.
 
         ``prompt`` is used as the Whisper initial_prompt when provided;
@@ -206,12 +210,16 @@ class WhisperSTT:
         initial_prompt = prompt if prompt else self._build_prompt(None)
 
         try:
-            segments, _info = self._transcriber.model.transcribe(
-                audio_array,
-                language=SPEECH_LANGUAGE,
-                vad_filter=True,
-                initial_prompt=initial_prompt or None,
-            )
+            with self._decode_lock:
+                options = {} if beam_size is None else {"beam_size": beam_size}
+                segments, _info = self._transcriber.model.transcribe(
+                    audio_array,
+                    language=SPEECH_LANGUAGE,
+                    vad_filter=True,
+                    initial_prompt=initial_prompt or None,
+                    **options,
+                )
+                segments = list(segments)  # the decode is lazy; finish it inside the lock
             parts = []
             for seg in segments:
                 text = seg.text.strip()
@@ -247,7 +255,7 @@ class WhisperSTT:
                     compute_type="int8",
                     download_root=self._transcriber.download_root,
                 )
-            return self.transcribe(wav_bytes, prompt=initial_prompt)
+            return self.transcribe(wav_bytes, prompt=initial_prompt, beam_size=beam_size)
 
     def transcribe_with_glossary(
         self, wav_bytes: bytes, extra_glossary: list[str] | None = None
@@ -255,3 +263,8 @@ class WhisperSTT:
         """Transcribe with base terms + optional extra glossary as initial_prompt."""
         prompt = self._build_prompt(extra_glossary)
         return self.transcribe(wav_bytes, prompt=prompt)
+
+    def transcribe_partial(self, wav_bytes: bytes, extra_glossary: list[str] | None = None) -> str:
+        """A quick, greedy decode of an utterance still being spoken, for the live transcript."""
+        prompt = self._build_prompt(extra_glossary)
+        return self.transcribe(wav_bytes, prompt=prompt, beam_size=1)

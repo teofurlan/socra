@@ -193,6 +193,12 @@ async def _handle_agent(ws: ServerConnection) -> None:
                         logger.warning("Malformed turn_audio (expected base64 WAV)")
                         continue
                     spawn(agent.handle_turn_audio(data, review=msg.get("review") is True), msg_type)
+                elif msg_type == "turn_audio_partial":
+                    data = _agent_text(msg, "data")
+                    if msg.get("format") != "wav" or data is None:
+                        logger.warning("Malformed turn_audio_partial (expected base64 WAV)")
+                        continue
+                    await agent.handle_turn_audio_partial(data)
                 elif msg_type == "permission_response":
                     request_id = _agent_text(msg, "id")
                     if request_id is None:
