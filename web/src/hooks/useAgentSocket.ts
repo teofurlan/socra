@@ -26,6 +26,8 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
   const [state, dispatch] = useReducer(agentReducer, initialAgentState)
   const [listeningEpoch, setListeningEpoch] = useState(0)
   const [voices, setVoices] = useState<VoiceCatalog>(EMPTY_VOICE_CATALOG)
+  // The latest dictated text sent back for review; the id changes on every draft.
+  const [draft, setDraft] = useState<{ id: number; text: string } | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { playAudio, stopAudio: silenceAudio, getOutputVolume } = useExamAudio()
@@ -70,8 +72,10 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     send({ type: 'turn_text', text })
   }, [send])
 
-  const sendAudio = useCallback((base64: string) => {
-    send({ type: 'turn_audio', format: 'wav', data: base64 })
+  const sendAudio = useCallback((base64: string, review = false) => {
+    send(review
+      ? { type: 'turn_audio', format: 'wav', data: base64, review: true }
+      : { type: 'turn_audio', format: 'wav', data: base64 })
   }, [send])
 
   const answerPermission = useCallback((id: string, allow: boolean) => {
@@ -124,6 +128,10 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     }
 
     const handle = (message: AgentServerMessage) => {
+      if (message.type === 'transcript_draft') {
+        setDraft((current) => ({ id: (current?.id ?? 0) + 1, text: message.text }))
+        return
+      }
       if (message.type === 'voices') {
         setVoices({ voices: message.voices, current: message.current })
         return
@@ -235,5 +243,6 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     controlWalkthrough,
     voices,
     setVoice,
+    draft,
   }
 }

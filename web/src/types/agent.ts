@@ -86,6 +86,8 @@ export type AgentServerMessage =
   | { type: 'mode_switch_failed'; mode: AgentMode }
   | { type: 'state'; state: ProtocolState }
   | { type: 'transcript'; text: string; final: boolean }
+  /** A spoken turn sent for review: the text goes to the composer, not to the agent. */
+  | { type: 'transcript_draft'; text: string }
   | { type: 'agent_text'; text: string }
   | { type: 'agent_tool'; tool: string; summary: string }
   | { type: 'agent_reply'; text: string }
@@ -110,7 +112,7 @@ export type AgentClientMessage =
   | { type: 'start_agent'; backend: string; model: string; cwd: string; mode?: AgentMode }
   | { type: 'switch_mode'; mode: AgentMode }
   | { type: 'mode_switch_response'; mode: AgentMode; allow: boolean }
-  | { type: 'turn_audio'; format: 'wav'; data: string }
+  | { type: 'turn_audio'; format: 'wav'; data: string; review?: boolean }
   | { type: 'turn_text'; text: string }
   | { type: 'permission_response'; id: string; allow: boolean }
   | { type: 'interrupt' }

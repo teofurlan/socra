@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { CornerDownLeft, Square } from 'lucide-react'
 
 interface PromptLineProps {
@@ -15,11 +15,23 @@ interface PromptLineProps {
   aside?: ReactNode
   /** Context selectors positioned in a quiet row below the input. */
   contextControls?: ReactNode
+  /** Dictated text to review: each new id is added to the field, which takes the focus. */
+  draft?: { id: number; text: string } | null
 }
 
 /** The composer floating near the bottom of the conversation: typing is always one click away. */
-export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls }: PromptLineProps) {
+export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls, draft = null }: PromptLineProps) {
   const [text, setText] = useState('')
+  const [seenDraft, setSeenDraft] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // A new draft joins what is already typed (adjusting state while rendering, not in an effect).
+  if (draft && draft.id !== seenDraft) {
+    setSeenDraft(draft.id)
+    setText((current) => (current.trim() ? `${current.trimEnd()} ${draft.text}` : draft.text))
+  }
+  useEffect(() => {
+    if (draft) inputRef.current?.focus()
+  }, [draft])
   const trimmed = text.trim()
   const canSend = !disabled && !busy && trimmed.length > 0
 
@@ -34,6 +46,7 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
       <div className="composer-stack">
         <form onSubmit={submit} className="composer">
           <input
+            ref={inputRef}
             type="text"
             value={text}
             onChange={(event) => setText(event.target.value)}

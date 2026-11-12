@@ -48,6 +48,26 @@ describe('useAgentSocket', () => {
     }
   })
 
+  it('asks for a draft only when told to, and keeps each draft the server returns', () => {  // S3
+    const { result, ws } = connected()
+
+    act(() => {
+      result.current.sendAudio('UklGRg==', true)
+      result.current.sendAudio('AAAA')
+    })
+
+    expect(ws.sent().slice(2)).toEqual([
+      { type: 'turn_audio', format: 'wav', data: 'UklGRg==', review: true },
+      { type: 'turn_audio', format: 'wav', data: 'AAAA' },
+    ])
+    expect(result.current.draft).toBeNull()
+    act(() => ws.receive({ type: 'transcript_draft', text: 'list the files' }))
+    expect(result.current.draft).toEqual({ id: 1, text: 'list the files' })
+    act(() => ws.receive({ type: 'transcript_draft', text: 'list the files' }))
+    expect(result.current.draft).toEqual({ id: 2, text: 'list the files' })
+    expect(result.current.state.timeline).toEqual([])
+  })
+
   it('sends every page action in the agent protocol', () => {
     const { result, ws } = connected()
 

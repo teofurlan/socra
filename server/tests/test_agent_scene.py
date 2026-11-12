@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 
 import pytest
@@ -9,7 +10,7 @@ import pytest
 from socra_server.domain.agent import ReplyDone
 from socra_server.domain.modes import PRESENT, get_mode
 from socra_server.socra_tools import CallbackToolbox, specs_for
-from tests.test_agent_app import _finish_turn
+from tests.test_agent_app import _finish_turn, _wav
 from tests.test_agent_mode import VALID, Convo, ModeBackend, _make, _started
 
 CODE = "a = 1\nb = 2\nc = a + b"
@@ -120,6 +121,18 @@ async def test_the_page_controls_steer_the_scene(tmp_path):
     await app.handle_walkthrough_control("explode")  # ignored
     await app.handle_walkthrough_control("stop")
     assert json.loads(await asyncio.wait_for(task, 2)) == {"status": "stopped", "step": 1, "total": 2}
+
+
+async def test_a_review_turn_during_a_scene_is_still_a_scene_command_not_a_draft(tmp_path):  # S4
+    app, channel, loader, toolbox = await _opened(tmp_path)
+    task = await _play(app, channel, toolbox.present(SCENE), ack=False)
+    await _settle()
+    loader.stt.text = "stop"
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode(), review=True)
+
+    assert json.loads(await asyncio.wait_for(task, 2))["status"] == "stopped"
+    assert channel.of_type("transcript_draft") == []
 
 
 async def test_what_the_user_says_during_a_scene_is_a_command_not_a_turn(tmp_path):

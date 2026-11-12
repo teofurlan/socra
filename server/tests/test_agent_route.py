@@ -47,7 +47,9 @@ class FakeAgentApp:
     async def handle_turn_text(self, text):
         self._record("turn_text", text)
 
-    async def handle_turn_audio(self, data):
+    async def handle_turn_audio(self, data, review=False):
+        if review:
+            self._record("turn_audio_review", data)
         self._record("turn_audio_started", data)
         await self.audio_gate.wait()
         self._record("turn_audio_done", data)
@@ -137,6 +139,19 @@ async def test_agent_route_dispatches_every_page_message(server):
     assert ("permission", "req-1", True) in agent.calls
     assert ("playback_done", None) in agent.calls and ("playback_done", 4) in agent.calls
     assert ("walkthrough_control", "pause") in agent.calls
+
+
+async def test_turn_audio_asks_for_a_draft_only_when_the_page_says_so(server):  # S3
+    base, agent = server
+    async with connect(f"{base}/ws/agent") as ws:
+        await ws.send(json.dumps({"type": "turn_audio", "format": "wav", "data": "AAAA"}))
+        await ws.send(json.dumps({"type": "turn_audio", "format": "wav", "data": "BBBB", "review": True}))
+        await ws.send(json.dumps({"type": "turn_audio", "format": "wav", "data": "CCCC", "review": "yes"}))
+        await _wait_for(agent, lambda: ("turn_audio_done", "CCCC") in agent.calls)
+
+    assert ("turn_audio_review", "BBBB") in agent.calls
+    assert ("turn_audio_review", "AAAA") not in agent.calls
+    assert ("turn_audio_review", "CCCC") not in agent.calls
 
 
 async def test_permission_answer_is_not_blocked_by_a_running_transcription(server):

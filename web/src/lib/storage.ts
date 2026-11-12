@@ -12,6 +12,7 @@ export const STORAGE_KEY_MODE = 'oral_exam_turn_mode'
 export const STORAGE_KEY_SILENCE_TIMEOUT = 'oral_exam_silence_timeout_ms'
 
 export const STORAGE_KEY_ORB_PALETTE = 'socra_orb_palette'
+export const STORAGE_KEY_REVIEW_DICTATION = 'socra_review_dictation'
 
 export const DEFAULT_SILENCE_TIMEOUT_MS = 3000
 export const MIN_SILENCE_TIMEOUT_MS = 500
@@ -192,6 +193,25 @@ export function setStoredVoice(id: string): void {
   sharePreference(STORAGE_KEY_VOICE, id)
 }
 
+/** Whether a spoken turn is shown in the composer for the user to send, not sent at once. */
+export function getStoredReviewDictation(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY_REVIEW_DICTATION) === 'true'
+  } catch (err) {
+    console.warn('Failed to read review dictation from localStorage:', err)
+  }
+  return false
+}
+
+export function setStoredReviewDictation(review: boolean): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY_REVIEW_DICTATION, String(review))
+  } catch (err) {
+    console.warn('Failed to write review dictation to localStorage:', err)
+  }
+  sharePreference(STORAGE_KEY_REVIEW_DICTATION, String(review))
+}
+
 /**
  * Preferences kept by the Socra server for every page origin (#27). The
  * microphone stays per origin: browsers give each origin its own device ids.
@@ -205,4 +225,5 @@ export const SHARED_PREFERENCE_KEYS: readonly string[] = [
   STORAGE_KEY_AGENT_FOLDER,
   STORAGE_KEY_VOICE,
   STORAGE_KEY_THEME,
+  STORAGE_KEY_REVIEW_DICTATION,
 ]
