@@ -23,9 +23,10 @@ export interface AgentModelOption {
 export type BackendState = 'ready' | 'not_configured' | 'unreachable'
 
 /** The two modes of a project session; the server owns what each one means. */
-export type AgentMode = 'mentor' | 'exam'
+export type AgentMode = 'agent' | 'mentor' | 'exam'
 
 export const AGENT_MODES: readonly { id: AgentMode; label: string }[] = [
+  { id: 'agent', label: 'Agent' },
   { id: 'mentor', label: 'Mentor' },
   { id: 'exam', label: 'Exam' },
 ]

@@ -577,13 +577,14 @@ describe('AgentApp', () => {
   })
 
   describe('project modes', () => {
-    it('offers the two modes next to the folder and model once a session runs', () => {
+    it('offers agent, mentor and exam next to the folder and model once a session runs', () => {
       const { ws } = openPage()
       startSession(ws)
 
       expect(screen.getByRole('radiogroup', { name: /mode/i })).toBeInTheDocument()
-      expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Mentor', 'Exam'])
+      expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Agent', 'Mentor', 'Exam'])
       expect(screen.getByRole('radio', { name: 'Mentor' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Agent' })).toBeEnabled()
       expect(screen.getByRole('radio', { name: 'Exam' })).toBeEnabled()
     })
 

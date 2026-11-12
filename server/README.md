@@ -121,7 +121,8 @@ as the exam MCP server), it only opens the page. The page talks to
 - **Modes.** A project session has a mode: agent, mentor or exam. Pick one in
   the prompt bar (next to the folder and model), or ask for it by voice: the
   agent calls Socra's `switch_mode` tool and the page asks you to confirm, so a
-  misheard phrase never switches. Mentor is a read-only explainer placeholder
+  misheard phrase never switches. Agent is the coding agent: it edits files and runs commands under your Claude Code permission
+  settings and says in a sentence or two what it changed; it has no scene tools. Mentor is a read-only explainer placeholder
   (the real mentor instructions belong to issue #18); in exam mode the agent
   asks spoken questions and records each verdict with `record_exam_result`.
   Mentor and exam can also call `present` to play a

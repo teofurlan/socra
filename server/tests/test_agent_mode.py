@@ -437,22 +437,25 @@ async def test_the_tool_refuses_the_current_or_an_unknown_mode(tmp_path):
     toolbox = backend.opens[0]["toolbox"]
 
     assert "Already" in await toolbox.switch_mode("mentor")
-    assert await toolbox.switch_mode("poet") == "Use mentor or exam."
+    assert await toolbox.switch_mode("poet") == "Use agent, mentor or exam."
     assert not channel.of_type("mode_switch_request")
 
 
-async def test_asking_for_agent_mode_gets_an_explanation_and_no_switch(tmp_path):
-    backend = ModeBackend([Convo([])])
+async def test_asking_for_agent_mode_asks_the_user_to_confirm_like_any_other_mode(tmp_path):  # S3, S4
+    backend = ModeBackend([Convo([[ReplyDone(VALID)]]), Convo([[ReplyDone("ok")]])])
     app, channel, _ = _make(backend, tmp_path)
     await _started(app, tmp_path)
 
-    answer = await backend.opens[0]["toolbox"].switch_mode("agent")
-
-    assert answer == (
-        "Coding agent mode is not available in Socra; it offers mentor and exam modes."
-    )
-    assert not channel.of_type("mode_switch_request")
+    await backend.opens[0]["toolbox"].switch_mode("agent")
+    assert channel.of_type("mode_switch_request") == [
+        {"type": "mode_switch_request", "mode": "agent", "label": "Agent"}
+    ]
     assert app.switch_task is None
+
+    await app.handle_mode_switch_response("agent", True)
+    await asyncio.wait_for(app.switch_task, timeout=3)
+
+    assert backend.opens[1]["mode"].id == "agent"
 
 
 async def test_words_typed_during_a_switch_are_answered_by_the_new_session(tmp_path):

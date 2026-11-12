@@ -62,10 +62,7 @@ FIRST_CLIP_MAX_CHARS = 120
 CLIP_MAX_CHARS = 300
 # One request plus two retries for a summary that lacks fields.
 SUMMARY_ATTEMPTS = 3
-NEEDS_CLAUDE_CODE = "Socra sessions need a backend with mentor and exam modes, such as Claude Code."
-NO_AGENT_MODE = (
-    "Coding agent mode is not available in Socra; it offers mentor and exam modes."
-)
+NEEDS_CLAUDE_CODE = "Socra sessions need a backend with agent, mentor and exam modes, such as Claude Code."
 
 
 MAX_REPLAY_SAY_CHARS = 600
@@ -711,12 +708,10 @@ class AgentApp:
     # The Socra tools the agent can call (see socra_tools).
 
     async def _tool_switch(self, target: str) -> str:
-        if target == "agent":
-            return NO_AGENT_MODE
         try:
             mode = get_mode(target)
         except UnknownMode:
-            return "Use mentor or exam."
+            return "Use agent, mentor or exam."
         if self._session is not None and target == self._session["mode"]:
             return f"Already in {mode.label} mode."
         if self._switching:

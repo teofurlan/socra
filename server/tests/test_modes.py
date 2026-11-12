@@ -6,19 +6,34 @@ import pytest
 from socra_server.domain.modes import DEFAULT_MODE, MODES, UnknownMode, get_mode
 
 
-def test_two_modes_with_mentor_as_the_default():
-    assert list(MODES) == ["mentor", "exam"]
+def test_three_modes_with_mentor_as_the_default():  # S1
+    assert list(MODES) == ["agent", "mentor", "exam"]
     assert DEFAULT_MODE == "mentor"
     with pytest.raises(UnknownMode):
-        get_mode("agent")
+        get_mode("poet")
 
 
-def test_the_switch_mode_tool_offers_only_mentor_and_exam():
+def test_the_switch_mode_tool_offers_agent_mentor_and_exam():  # S3
     from socra_server.socra_tools import TOOL_SPECS
 
     spec = next(s for s in TOOL_SPECS if s.id == "switch_mode")
-    assert spec.schema["properties"]["mode"]["enum"] == ["mentor", "exam"]
-    assert "coding" not in spec.description
+    assert spec.schema["properties"]["mode"]["enum"] == ["agent", "mentor", "exam"]
+    assert "coding" in spec.description
+
+
+def test_agent_is_a_coding_agent_that_speaks_briefly_and_keeps_the_voice_rules():  # S2
+    mode = get_mode("agent")
+    text = mode.instructions.lower()
+    assert mode.label == "Agent"
+    assert "coding agent" in text and "do not edit" not in text
+    assert "never read code" in text
+    assert "always reply in english" in text and "switch_mode" in mode.instructions
+    assert mode.tools == {"switch_mode", "search_transcript"}
+
+
+def test_agent_waits_for_the_go_ahead_after_a_handoff():  # S4
+    opening = get_mode("agent").opening.lower()
+    assert "one spoken sentence" in opening and "go-ahead" in opening
 
 
 def test_every_mode_can_switch_and_search_the_previous_session():
