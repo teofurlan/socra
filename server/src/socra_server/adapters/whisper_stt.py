@@ -158,6 +158,22 @@ class WhisperSTT:
             compute_type=compute_type,
         )
 
+    def warm_up(self) -> None:
+        """Decode one second of silence so the first spoken turn does not pay model start-up.
+
+        VAD is off on purpose: it would drop the silence and skip the decoder. Failures are
+        logged only; the first real turn still has the CPU fallback."""
+        if self._transcriber is None:
+            return
+        try:
+            segments, _info = self._transcriber.model.transcribe(
+                np.zeros(16000, dtype=np.float32), language=SPEECH_LANGUAGE, vad_filter=False, beam_size=1,
+            )
+            for _segment in segments:
+                pass
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Whisper warm-up failed: %s", exc)
+
     def _build_prompt(self, extra_glossary: list[str] | None) -> str:
         """Combine base terms and any per-call extra terms into an initial_prompt string."""
         combined = list(self._base_terms)
