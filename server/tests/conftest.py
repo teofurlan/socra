@@ -4,12 +4,17 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import os
 import socket
 import struct
 import wave
 
 import pytest
 import pytest_asyncio
+
+# The suite asserts the default language; a developer's own SOCRA_LANGUAGE must not leak in.
+# This runs before the first socra_server import, which reads the variable once.
+os.environ.pop("SOCRA_LANGUAGE", None)
 
 from socra_server.app import ExamApp, ModelLoader, PageChannel
 from socra_server.adapters.whisper_stt import WhisperSTT

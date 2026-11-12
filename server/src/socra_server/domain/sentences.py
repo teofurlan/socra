@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 
+from socra_server.domain.speech import SPEECH_ABBREVIATIONS
+
 _TERMINATORS = ".!?…"
 _CLOSERS = "\"'”’)]»*_`"
 _FENCES = ("```", "~~~")
@@ -22,6 +24,7 @@ _BLOCK_START = re.compile(r"\n[ \t]*(?:[-*+]|\d{1,3}[.)]|#{1,6})[ \t]")
 _ABBREVIATIONS = frozenset({
     "mr", "mrs", "ms", "dr", "prof", "vs", "e.g", "i.e", "fig", "approx", "cf", "st", "jr",
     "no", "inc", "ltd", "corp", "dept", "mt", "sen", "gen", "capt", "rev",
+    *SPEECH_ABBREVIATIONS,
 })
 # Ends a sentence only when a capitalised word follows; otherwise it is mid-sentence.
 _SOFT_STOPS = frozenset({"etc"})

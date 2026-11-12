@@ -182,6 +182,7 @@ instead, so exam and agent mode can run at the same time.
 | Variable | Default | Description |
 |---|---|---|
 | `VOICE_STACK_DIR` | `voice/` (relative to repo root) | Absolute path to the voice stack directory |
+| `SOCRA_LANGUAGE` | `en` | Language Socra listens, reasons and speaks in: `en` (LibriTTS-R voice) or `es` (Piper Daniela, Argentina). Read once at server start; an unknown value falls back to `en` with a warning. In `es`, glossary terms such as `README` keep English pronunciation, and the Spanish voice commands (pausa, siguiente, repite...) work next to the English ones. Spoken replies read a file path or a breadcrumb such as `src > components > App.tsx` by the file name only |
 | `SOCRA_TTS_LENGTH_SCALE` | voice default (`1.0` for LibriTTS-R) | Piper speech pace: above 1 is slower, below 1 faster |
 | `SOCRA_WHISPER_MODEL` | `large-v3-turbo` | Faster-whisper model (`base`, `small`, `large-v3-turbo`, etc.) |
 | `SOCRA_WHISPER_DEVICE` | `auto` | Execution device: `auto` (CUDA float16 if available, else CPU int8), `cuda`, or `cpu` |

@@ -1,4 +1,4 @@
-"""Piper TTS adapter: speaks the reply as plain text with the catalogue voice."""
+"""Piper TTS adapter: speaks the reply with the catalogue voice (glossary terms in English phonemes when the language asks)."""
 from __future__ import annotations
 
 import io
@@ -10,8 +10,9 @@ import wave
 from pathlib import Path
 from typing import Any, Callable
 
-from socra_server.domain.glossary import load_glossary
+from socra_server.domain.glossary import load_glossary, speech_segments
 from socra_server.domain.speakable import speakable_text
+from socra_server.domain.speech import SPEECH_ENGLISH_TERMS, TERM_PHONEME_LANGUAGE
 from socra_server.domain.voices import DEFAULT_VOICE_ID, Voice, get_voice
 
 logger = logging.getLogger(__name__)
@@ -70,9 +71,11 @@ class PiperTTS:
     def __init__(
         self,
         voice_loader: Callable[[Voice], Any] | None = None,
+        phonemizer: Any | None = None,
         glossary_path: Path | str | None = None,
     ) -> None:
         self._voice_loader = voice_loader or _download_voice
+        self._phonemizer = phonemizer
         self._glossary_path = glossary_path
         self._glossary: dict[str, str] = {}
         self._voice_id: str = DEFAULT_VOICE_ID
@@ -82,6 +85,10 @@ class PiperTTS:
 
     def load(self) -> None:
         """Load the current voice and the glossary.  Must be called from a background thread."""
+        if SPEECH_ENGLISH_TERMS and self._phonemizer is None:
+            from piper.phonemize_espeak import EspeakPhonemizer
+
+            self._phonemizer = EspeakPhonemizer()
         path = self._glossary_path or _voice_stack_dir() / "pi_voice" / "terms.json"
         self._glossary = load_glossary(path)
         self._piper_voice(self._current_voice())
@@ -120,7 +127,7 @@ class PiperTTS:
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             piper_voice.synthesize_wav(
-                spoken,
+                self._with_english_phonemes(spoken) if SPEECH_ENGLISH_TERMS else spoken,
                 wav_file,
                 syn_config=SynthesisConfig(length_scale=_length_scale(voice), speaker_id=voice.speaker),
             )
@@ -136,6 +143,22 @@ class PiperTTS:
             if voice.id not in self._voices:
                 self._voices[voice.id] = self._voice_loader(voice)
             return self._voices[voice.id]
+
+    def _with_english_phonemes(self, text: str) -> str:
+        """Keep the text as written and inline each glossary match as Piper raw phonemes."""
+        parts = []
+        for segment in speech_segments(text, self._glossary):
+            if segment["language"] == TERM_PHONEME_LANGUAGE:
+                phonemes = self._phonemes(segment["spoken"])
+                parts.append(f"[[ {phonemes} ]]" if phonemes else segment["text"])
+            else:
+                # Piper reads [[ ... ]] as raw phonemes: only the glossary may use it.
+                parts.append(segment["text"].replace("[[", ""))
+        return "".join(parts)
+
+    def _phonemes(self, spoken: str) -> str:
+        sentences = self._phonemizer.phonemize(TERM_PHONEME_LANGUAGE, spoken) or []
+        return " ".join("".join(sentence) for sentence in sentences).strip()
 
 
 def _with_lead_in(wav_bytes: bytes) -> bytes:

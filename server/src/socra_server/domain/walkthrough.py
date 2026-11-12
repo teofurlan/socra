@@ -10,6 +10,8 @@ import re
 import unicodedata
 from typing import Any, Literal
 
+from socra_server.domain.speech import SPEECH_COMMAND_PHRASES, SPEECH_POLITE_WORDS
+
 Command = Literal["pause", "resume", "repeat", "back", "next", "stop"]
 # What the cursor does after a command: play the (new) current step, or end.
 Outcome = Literal["play", "finished", "stopped"]
@@ -101,7 +103,10 @@ _PHRASES: dict[Command, tuple[str, ...]] = {
 }
 
 
-_POLITE = {"please"}
+_POLITE = {"please", *SPEECH_POLITE_WORDS}
+
+for _command, _extra in SPEECH_COMMAND_PHRASES:
+    _PHRASES[_command] = (*_PHRASES[_command], *_extra)
 
 
 def _normalize(text: str) -> str:
