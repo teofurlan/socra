@@ -240,7 +240,9 @@ class AgentApp:
         name = Path(self._session["cwd"]).name
         return [name] if name else None
 
-    async def handle_turn_audio(self, b64_data: str) -> None:
+    async def handle_turn_audio(self, b64_data: str, review: bool = False) -> None:
+        """A spoken turn. With ``review`` the text goes back to the page as a draft the user
+        sends themselves; scene steering and speech during a switch are never drafts."""
         scene_playing = self.walkthrough.active
         if not scene_playing and not self._switching and not await self._can_take_turn():
             return
@@ -278,6 +280,11 @@ class AgentApp:
             await self.channel.send({
                 "type": "notice", "text": "Wait for the current reply or interrupt it.",
             })
+            return
+        if review:
+            # The text is Whisper's, as heard; the user edits it and sends it with Enter.
+            await self.channel.send({"type": "transcript_draft", "text": text})
+            await self._state("listening")
             return
         await self.channel.send({"type": "transcript", "text": text, "final": True})
         if self._conversation is None and starting and self._startup_pending:

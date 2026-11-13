@@ -148,3 +148,25 @@ describe('SettingsMenu — voice', () => {
     expect(screen.queryByTestId('voice-control')).toBeNull()
   })
 })
+
+describe('SettingsMenu — dictation review', () => {
+  it('offers a switch to review dictation before sending, and reports a change', () => {  // S3
+    const props = renderMenu({ reviewDictation: false, onReviewDictationChange: vi.fn() })
+    const toggle = screen.getByRole('checkbox', { name: 'Review dictation before sending' })
+    expect(toggle).not.toBeChecked()
+
+    fireEvent.click(toggle)
+
+    expect(props.onReviewDictationChange).toHaveBeenCalledWith(true)
+  })
+
+  it('shows the switch on when dictation is reviewed', () => {
+    renderMenu({ reviewDictation: true, onReviewDictationChange: vi.fn() })
+    expect(screen.getByRole('checkbox', { name: 'Review dictation before sending' })).toBeChecked()
+  })
+
+  it('leaves the switch out when the page does not offer it', () => {
+    renderMenu()
+    expect(screen.queryByRole('checkbox', { name: 'Review dictation before sending' })).toBeNull()
+  })
+})

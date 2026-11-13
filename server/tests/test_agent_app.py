@@ -523,6 +523,39 @@ async def test_audio_turn_gives_the_stt_the_project_folder_name(tmp_path):
     assert loader.stt.glossaries == [["socra"]]
 
 
+async def test_a_review_turn_returns_the_text_as_a_draft_and_starts_no_turn(tmp_path):  # S3
+    app, channel, backend, _ = _app(heard="list the files")
+    await app.handle_start("fake", "small", str(tmp_path))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode(), review=True)
+
+    assert channel.of_type("transcript_draft") == [{"type": "transcript_draft", "text": "list the files"}]
+    assert channel.of_type("transcript") == []
+    assert app.turn_task is None and backend.conversations[0].turns == []
+    assert channel.of_type("state")[-1]["state"] == "listening"
+
+
+async def test_a_draft_is_sent_by_typing_it_back_as_a_turn(tmp_path):  # S3
+    app, channel, backend, _ = _app(heard="list the files")
+    await app.handle_start("fake", "small", str(tmp_path))
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode(), review=True)
+
+    await app.handle_turn_text("list the files in src")
+    await _finish_turn(app, channel)
+
+    assert backend.conversations[0].turns == ["list the files in src"]
+
+
+async def test_a_review_turn_that_is_not_understood_asks_to_repeat_and_sends_no_draft(tmp_path):  # S4
+    app, channel, backend, _ = _app(heard="")
+    await app.handle_start("fake", "small", str(tmp_path))
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode(), review=True)
+
+    assert channel.of_type("transcript_draft") == []
+    assert len(channel.of_type("notice")) == 1
+
+
 async def test_unclear_audio_asks_to_repeat_without_a_turn(tmp_path):
     app, channel, backend, _ = _app(heard="")
     await app.handle_start("fake", "small", str(tmp_path))

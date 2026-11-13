@@ -31,6 +31,7 @@ import {
   getStoredAgentSelection,
   getStoredMicDeviceId,
   getStoredOrbPalette,
+  getStoredReviewDictation,
   getStoredSilenceTimeout,
   getStoredTurnMode,
   getStoredShape,
@@ -38,6 +39,7 @@ import {
   setStoredAgentSelection,
   setStoredMicDeviceId,
   setStoredOrbPalette,
+  setStoredReviewDictation,
   setStoredSilenceTimeout,
   setStoredTurnMode,
   setStoredShape,
@@ -67,6 +69,7 @@ export const AgentApp: React.FC = () => {
   const pendingStartRef = useRef<{ selection: AgentSelection; cwd: string } | null>(null)
   const folderPickerBaselineRef = useRef<{ cwd: string | null } | null>(null)
   const [mode, setMode] = useState<TurnMode>(() => getStoredTurnMode('auto'))
+  const [reviewDictation, setReviewDictation] = useState(getStoredReviewDictation)
   const [silenceTimeoutMs, setSilenceTimeoutMs] = useState<number>(getStoredSilenceTimeout)
   const [paletteId, setPaletteId] = useState<string>(getStoredOrbPalette)
   // Shared with the exam page: one preference for the whole app.
@@ -153,7 +156,7 @@ export const AgentApp: React.FC = () => {
     }
     ensureSessionStarted(selection, state.folder)
     setStartNotice(null)
-    socket.sendAudio(audio)
+    socket.sendAudio(audio, reviewDictation)
   }
 
   const { micError, micFallback, getInputVolume, silenceCountdownMs, onTalkingChange } = useMicCapture({
@@ -267,6 +270,11 @@ export const AgentApp: React.FC = () => {
       themePref={themePref}
       onThemeChange={setThemePref}
       voicePicker={<VoicePicker voices={socket.voices.voices} current={socket.voices.current} onChange={socket.setVoice} />}
+      reviewDictation={reviewDictation}
+      onReviewDictationChange={(review) => {
+        setReviewDictation(review)
+        setStoredReviewDictation(review)
+      }}
     />
   )
 
@@ -374,6 +382,7 @@ export const AgentApp: React.FC = () => {
               busy={busy}
               onSend={handleSendText}
               onStop={socket.interrupt}
+              draft={socket.draft}
               aside={mode === 'push-to-talk' ? <PushToTalkControl onTalkingChange={onTalkingChange} /> : undefined}
               contextControls={
                 <AgentComposerControls

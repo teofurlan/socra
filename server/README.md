@@ -378,7 +378,10 @@ Speech tools `say()` and `ask()` wait for browser playback (`playback_done`) wit
 | `voice` | optional `voice`: voice id to select; the server answers with `voices` |
 
 The agent route `/ws/agent` accepts `agent_hello`, `pick_folder`,
-`start_agent` (optional `mode`), `turn_text`, `turn_audio`, `permission_response`,
+`start_agent` (optional `mode`), `turn_text`, `turn_audio` (optional `review: true`: the server
+answers with `transcript_draft` and `text`, the text as Whisper heard it, instead of starting a turn;
+the page puts it in the composer and the user sends it with Enter, a setting in the menu; scene
+steering and speech during a mode switch ignore it), `permission_response`,
 `interrupt`, `playback_done` (optional `seq`), `walkthrough_control`, `voice`,
 `switch_mode` (`mode`) and `mode_switch_response` (`mode`, `allow`); the server
 answers a switch with `agent_switching`, `agent_mode_changed`,

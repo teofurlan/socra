@@ -3,7 +3,7 @@ import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AgentApp from './AgentApp'
 import { FakeAudioContext, FakeWebSocket } from '@/test/fakeSocket'
-import { STORAGE_KEY_AGENT_FOLDER, STORAGE_KEY_AGENT_SELECTION } from '@/lib/storage'
+import { STORAGE_KEY_AGENT_FOLDER, STORAGE_KEY_AGENT_SELECTION, STORAGE_KEY_REVIEW_DICTATION } from '@/lib/storage'
 
 // Real capture needs a microphone and WebAudio; this page only wires it up.
 const micOptions: { protocolState?: string; onFinalize?: (b64: string) => void } = {}
@@ -410,6 +410,25 @@ describe('AgentApp', () => {
       { type: 'start_agent', backend: 'claude-code', model: 'sonnet', cwd: 'C:\\work\\socra', mode: 'mentor' },
       { type: 'turn_audio', format: 'wav', data: 'UklGRg==' },
     ])
+  })
+
+  it('sends spoken turns for review when the setting is on, and the draft waits in the composer for Enter', async () => {  // S3
+    const user = userEvent.setup()
+    window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\work\socra')
+    window.localStorage.setItem(STORAGE_KEY_REVIEW_DICTATION, 'true')
+    const { ws } = openPage()
+    act(() => ws.receive({ type: 'agent_started', backend: 'claude-code', model: 'sonnet', cwd: 'C:\work\socra' }))
+
+    act(() => micOptions.onFinalize?.('UklGRg=='))
+    expect(ws.sent()).toContainEqual({ type: 'turn_audio', format: 'wav', data: 'UklGRg==', review: true })
+
+    act(() => ws.receive({ type: 'transcript_draft', text: 'fix the build' }))
+    const composer = screen.getByLabelText('Message Socra')
+    expect(composer).toHaveValue('fix the build')
+    expect(ws.sent()).not.toContainEqual(expect.objectContaining({ type: 'turn_text' }))
+
+    await user.type(composer, '{Enter}')
+    expect(ws.sent()).toContainEqual({ type: 'turn_text', text: 'fix the build' })
   })
 
   it('does not listen or submit voice before a required folder is chosen', () => {

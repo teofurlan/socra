@@ -35,6 +35,9 @@ export interface SettingsMenuProps {
   onThemeChange: (pref: ThemePref) => void
   /** Omit to hide the voice choice. */
   voicePicker?: ReactNode
+  /** Spoken turns wait in the composer for Enter. Omit onReviewDictationChange to hide the switch. */
+  reviewDictation?: boolean
+  onReviewDictationChange?: (review: boolean) => void
 }
 
 function Section({ title, children, testId }: { title: ReactNode; children: ReactNode; testId?: string }) {
@@ -64,6 +67,8 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
   themePref,
   onThemeChange,
   voicePicker,
+  reviewDictation = false,
+  onReviewDictationChange,
 }) => {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -201,6 +206,16 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                   aria-label="End-of-answer silence duration"
                 />
               </div>
+            )}
+            {onReviewDictationChange && (
+              <label className="t-small flex items-center gap-2" style={{ color: 'var(--label-2)' }} data-testid="review-dictation-control">
+                <input
+                  type="checkbox"
+                  checked={reviewDictation}
+                  onChange={(e) => onReviewDictationChange(e.target.checked)}
+                />
+                Review dictation before sending
+              </label>
             )}
           </Section>
 

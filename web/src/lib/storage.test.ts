@@ -21,6 +21,9 @@ import {
   setStoredAgentFolder,
   STORAGE_KEY_AGENT_FOLDER,
   SHARED_PREFERENCE_KEYS,
+  STORAGE_KEY_REVIEW_DICTATION,
+  getStoredReviewDictation,
+  setStoredReviewDictation,
 } from './storage'
 import { setStoredTheme, STORAGE_KEY_THEME } from './theme'
 import { sharePreference } from './preferences'
@@ -170,6 +173,7 @@ describe('storage (shared across page origins, #27)', () => {
     setStoredAgentFolder('C:/work')
     setStoredVoice('dora')
     setStoredTheme('light')
+    setStoredReviewDictation(true)
 
     expect(vi.mocked(sharePreference).mock.calls).toEqual([
       [STORAGE_KEY_MODE, 'push-to-talk'],
@@ -180,10 +184,24 @@ describe('storage (shared across page origins, #27)', () => {
       [STORAGE_KEY_AGENT_FOLDER, 'C:/work'],
       [STORAGE_KEY_VOICE, 'dora'],
       [STORAGE_KEY_THEME, 'light'],
+      [STORAGE_KEY_REVIEW_DICTATION, 'true'],
     ])
     expect([...SHARED_PREFERENCE_KEYS].sort()).toEqual(
       vi.mocked(sharePreference).mock.calls.map(([key]) => key).sort(),
     )
+  })
+
+  it('reviews dictation only when asked to: off by default, saved as true or false', () => {  // S3
+    vi.restoreAllMocks() // an earlier test leaves a blocked localStorage spy behind
+    window.localStorage.clear()
+    expect(getStoredReviewDictation()).toBe(false)
+    setStoredReviewDictation(true)
+    expect(window.localStorage.getItem(STORAGE_KEY_REVIEW_DICTATION)).toBe('true')
+    expect(getStoredReviewDictation()).toBe(true)
+    setStoredReviewDictation(false)
+    expect(getStoredReviewDictation()).toBe(false)
+    window.localStorage.setItem(STORAGE_KEY_REVIEW_DICTATION, 'maybe')
+    expect(getStoredReviewDictation()).toBe(false)
   })
 
   it('keeps the microphone on this origin: browsers scope device ids per origin', () => {

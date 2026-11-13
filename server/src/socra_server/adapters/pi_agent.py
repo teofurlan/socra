@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from socra_server.adapters.tool_summary import summarize_tool_input
+from socra_server.domain.modes import PLAIN_AGENT_INSTRUCTIONS
 from socra_server.domain.agent import (
     AgentError,
     AgentEvent,
@@ -478,7 +479,12 @@ class PiBackend:
             raise RuntimeError("Pi CLI not found.")
         # Always explicit: Pi's own default provider is never used implicitly.
         rpc = await self._start_rpc(
-            [self._cli_path, "--mode", "rpc", "--provider", provider, "--model", model_id], cwd
+            [
+                self._cli_path, "--mode", "rpc",
+                "--append-system-prompt", PLAIN_AGENT_INSTRUCTIONS,
+                "--provider", provider, "--model", model_id,
+            ],
+            cwd,
         )
         conversation = PiConversation(rpc, decide_permission)
         try:
