@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { CornerDownLeft, Square } from 'lucide-react'
 
 interface PromptLineProps {
@@ -21,11 +21,14 @@ interface PromptLineProps {
   liveTranscript?: string | null
 }
 
+/** The field grows with its text up to this many pixels, then scrolls (about eight lines). */
+const MAX_FIELD_HEIGHT_PX = 200
+
 /** The composer floating near the bottom of the conversation: typing is always one click away. */
 export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls, draft = null, liveTranscript = null }: PromptLineProps) {
   const [text, setText] = useState('')
   const [seenDraft, setSeenDraft] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   // A new draft joins what is already typed (adjusting state while rendering, not in an effect).
   if (draft && draft.id !== seenDraft) {
     setSeenDraft(draft.id)
@@ -34,6 +37,13 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
   useEffect(() => {
     if (draft) inputRef.current?.focus()
   }, [draft])
+  // Long dictation wraps onto more lines instead of scrolling sideways in one row.
+  useLayoutEffect(() => {
+    const field = inputRef.current
+    if (!field) return
+    field.style.height = 'auto'
+    field.style.height = `${Math.min(field.scrollHeight, MAX_FIELD_HEIGHT_PX)}px`
+  }, [text])
   const trimmed = text.trim()
   const canSend = !disabled && !busy && trimmed.length > 0
 
@@ -41,6 +51,13 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
     event.preventDefault()
     if (!canSend) return
     if (onSend(trimmed) !== false) setText('')
+  }
+
+  // Enter sends and Shift+Enter starts a new line, as in a chat; a word still being
+  // composed by an input method is never sent.
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    submit(event)
   }
 
   return (
@@ -57,16 +74,17 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
           </p>
         )}
         <form onSubmit={submit} className="composer">
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={1}
             value={text}
             onChange={(event) => setText(event.target.value)}
+            onKeyDown={onKeyDown}
             disabled={disabled}
             aria-label={label}
             placeholder={placeholder}
-            className="t-ui min-h-10 min-w-[8rem] flex-1 bg-transparent px-2.5 outline-none placeholder:text-[var(--label-2)] disabled:opacity-60"
-            style={{ color: 'var(--label)' }}
+            className="t-ui min-h-10 min-w-[8rem] flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-[var(--label-2)] disabled:opacity-60"
+            style={{ color: 'var(--label)', maxHeight: MAX_FIELD_HEIGHT_PX }}
           />
           <div className="flex shrink-0 items-center gap-2">
             {aside}

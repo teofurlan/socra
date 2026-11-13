@@ -76,3 +76,29 @@ describe('PromptLine live transcript', () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 })
+
+describe('PromptLine grows with long text', () => {
+  it('is a multi-line field: Shift+Enter starts a new line and Enter sends everything', async () => {
+    const user = userEvent.setup()
+    const { onSend, input } = setup()
+
+    expect(input()).toBeInstanceOf(HTMLTextAreaElement)
+    await user.type(input(), 'first line{Shift>}{Enter}{/Shift}second line')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(input()).toHaveValue('first line\nsecond line')
+
+    await user.keyboard('{Enter}')
+    expect(onSend).toHaveBeenCalledWith('first line\nsecond line')
+    expect(input()).toHaveValue('')
+  })
+
+  it('does not send while an input method is still composing a word', async () => {
+    const { onSend, input } = setup()
+    const { fireEvent } = await import('@testing-library/react')
+
+    fireEvent.change(input(), { target: { value: 'hola' } })
+    fireEvent.keyDown(input(), { key: 'Enter', isComposing: true })
+
+    expect(onSend).not.toHaveBeenCalled()
+  })
+})
