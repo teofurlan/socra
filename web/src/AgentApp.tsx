@@ -385,6 +385,7 @@ export const AgentApp: React.FC = () => {
               onSend={handleSendText}
               onStop={socket.interrupt}
               draft={socket.draft}
+              commands={socket.commands}
               liveTranscript={state.liveTranscript}
               aside={mode === 'push-to-talk' ? <PushToTalkControl onTalkingChange={onTalkingChange} /> : undefined}
               contextControls={

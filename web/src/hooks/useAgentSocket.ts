@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { wasReplaced } from '@/lib/replacedPage'
 import { PINNED_ATTEMPTS, pinnedToServer, socketUrl } from '@/lib/socketUrl'
-import type { AgentClientMessage, AgentMode, AgentSelection, AgentServerMessage } from '@/types/agent'
+import type { AgentClientMessage, AgentCommand, AgentMode, AgentSelection, AgentServerMessage } from '@/types/agent'
 import type { WalkthroughAction } from '@/types/exam'
 import { EMPTY_VOICE_CATALOG, type VoiceCatalog } from '@/types/voice'
 import { agentReducer, initialAgentState } from '@/state/agentReducer'
@@ -26,6 +26,8 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
   const [state, dispatch] = useReducer(agentReducer, initialAgentState)
   const [listeningEpoch, setListeningEpoch] = useState(0)
   const [voices, setVoices] = useState<VoiceCatalog>(EMPTY_VOICE_CATALOG)
+  // The slash commands and skills of the open session, as the server lists them.
+  const [commands, setCommands] = useState<AgentCommand[]>([])
   // The latest dictated text sent back for review; the id changes on every draft.
   const [draft, setDraft] = useState<{ id: number; text: string } | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
@@ -138,6 +140,11 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
         dispatch(message) // also clears the provisional transcript
         return
       }
+      if (message.type === 'agent_commands') {
+        setCommands(message.commands)
+        return
+      }
+      if (message.type === 'agent_started') setCommands([])
       if (message.type === 'voices') {
         setVoices({ voices: message.voices, current: message.current })
         return
@@ -251,5 +258,6 @@ export function useAgentSocket({ url = socketUrl('/ws/agent') }: UseAgentSocketO
     voices,
     setVoice,
     draft,
+    commands,
   }
 }
