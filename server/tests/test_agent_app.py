@@ -16,6 +16,7 @@ from socra_server.domain.agent import (
     AgentError,
     AgentEvent,
     BackendStatus,
+    CommandOption,
     ModelOption,
     PermissionRequest,
     ReplyDone,
@@ -77,9 +78,10 @@ class FakeLoader:
 class ScriptedConversation:
     """Replays events; a PermissionRequest in the script asks the decider."""
 
-    def __init__(self, script, decide) -> None:
+    def __init__(self, script, decide, listed=None) -> None:
         self.script = script
         self.decide = decide
+        self.listed = listed if listed is not None else []
         self.turns: list[str] = []
         self.decisions: list[bool] = []
         self.interrupted = False
@@ -93,6 +95,11 @@ class ScriptedConversation:
             else:
                 yield item
 
+    async def commands(self) -> list[CommandOption]:
+        if isinstance(self.listed, Exception):
+            raise self.listed
+        return self.listed
+
     async def interrupt(self) -> None:
         self.interrupted = True
 
@@ -101,7 +108,8 @@ class ScriptedConversation:
 
 
 class FakeBackend:
-    def __init__(self, script=None, fail_open: Exception | None = None) -> None:
+    def __init__(self, script=None, fail_open: Exception | None = None, listed=None) -> None:
+        self.listed = listed
         self.id = "fake"
         self.label = "Fake"
         self.supports_modes = True
@@ -124,7 +132,7 @@ class FakeBackend:
         self.opened.append((model, cwd))
         self.modes.append(mode)
         self.toolboxes.append(toolbox)
-        conversation = ScriptedConversation(self.script, decide_permission)
+        conversation = ScriptedConversation(self.script, decide_permission, self.listed)
         self.conversations.append(conversation)
         return conversation
 
@@ -462,7 +470,7 @@ async def test_text_turn_streams_events_and_speaks_the_clean_reply(tmp_path):
     await _finish_turn(app, channel)
 
     assert backend.conversations[0].turns == ["what is in app.py?"]
-    kinds = [m["type"] for m in channel.sent if m["type"] != "state"]
+    kinds = [m["type"] for m in channel.sent if m["type"] not in ("state", "agent_commands")]
     assert [k for k in kinds if k != "tts_audio"] == [
         "agent_text", "agent_tool", "agent_text", "agent_reply",
     ]
@@ -804,3 +812,90 @@ async def test_a_failure_to_save_turn_audio_does_not_break_the_turn(tmp_path, mo
     assert channel.of_type("transcript") == [{"type": "transcript", "text": "list the files", "final": True}]
     assert backend.conversations[0].turns == ["list the files"]
     assert channel.of_type("agent_error") == []
+
+
+TDD = CommandOption("tdd", "Test-driven development", "<feature>")
+CONTEXT = CommandOption("context", "Show context usage")
+
+
+async def _started(app: AgentApp) -> None:
+    await asyncio.wait_for(app._start_task, timeout=2)
+    if app._commands_task is not None:
+        await asyncio.wait_for(app._commands_task, timeout=2)
+
+
+async def test_the_page_gets_the_session_commands_once_it_is_open(tmp_path):  # S1
+    app, channel, _, _ = _app(FakeBackend(listed=[TDD, CONTEXT]))
+
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+
+    assert channel.of_type("agent_commands") == [{"type": "agent_commands", "commands": [
+        {"name": "tdd", "description": "Test-driven development", "hint": "<feature>"},
+        {"name": "context", "description": "Show context usage", "hint": ""},
+    ]}]
+
+
+async def test_the_page_gets_an_empty_list_when_the_session_cannot_list_commands(tmp_path):  # S4
+    app, channel, _, _ = _app(FakeBackend(listed=RuntimeError("no info")))
+
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+
+    assert channel.of_type("agent_commands") == [{"type": "agent_commands", "commands": []}]
+
+
+async def test_a_reconnected_page_gets_the_commands_again(tmp_path):
+    app, channel, _, _ = _app(FakeBackend(listed=[TDD]))
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    assert [c["name"] for c in channel.of_type("agent_commands")[0]["commands"]] == ["tdd"]
+
+
+async def test_a_spoken_known_command_is_sent_as_the_slash_command(tmp_path):  # S2
+    app, channel, backend, _ = _app(FakeBackend(listed=[TDD]), heard="Barra TDD arregla el login")
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert backend.conversations[0].turns == ["/tdd arregla el login"]
+    assert channel.of_type("transcript")[-1]["text"] == "/tdd arregla el login"
+
+
+async def test_a_spoken_command_in_review_comes_back_as_the_slash_draft(tmp_path):  # S2
+    app, channel, backend, _ = _app(FakeBackend(listed=[TDD]), heard="slash tdd fix it")
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode(), review=True)
+
+    assert channel.of_type("transcript_draft") == [{"type": "transcript_draft", "text": "/tdd fix it"}]
+
+
+@pytest.mark.parametrize("heard", ["barra desconocido arregla", "arregla la barra tdd"])
+async def test_speech_that_names_no_known_command_is_sent_as_heard(tmp_path, heard):  # S2, S5
+    app, channel, backend, _ = _app(FakeBackend(listed=[TDD]), heard=heard)
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert backend.conversations[0].turns == [heard]
+
+
+async def test_a_session_without_commands_never_rewrites_speech(tmp_path):  # S4
+    app, channel, backend, _ = _app(FakeBackend(listed=[]), heard="barra tdd arregla")
+    await app.handle_start("fake", "small", str(tmp_path))
+    await _started(app)
+
+    await app.handle_turn_audio(base64.b64encode(_wav(0.5)).decode())
+    await _finish_turn(app, channel)
+
+    assert backend.conversations[0].turns == ["barra tdd arregla"]

@@ -22,6 +22,15 @@ class ModelOption:
 
 
 @dataclasses.dataclass(frozen=True)
+class CommandOption:
+    """A slash command or skill the open session accepts, as the composer lists it."""
+
+    name: str  # without the leading slash
+    description: str = ""
+    hint: str = ""  # what to type after the name, e.g. "<feature>"
+
+
+@dataclasses.dataclass(frozen=True)
 class BackendStatus:
     """Whether a backend can run now; ``message`` explains anything but ready."""
 

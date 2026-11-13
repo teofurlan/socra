@@ -28,12 +28,14 @@ from socra_server.app import get_wav_duration
 from socra_server.domain.agent import (
     AgentError,
     AgentSelection,
+    CommandOption,
     PermissionRequest,
     ReplyDone,
     TextChunk,
     TextDelta,
     ToolActivity,
 )
+from socra_server.domain.commands import spoken_command
 from socra_server.domain.handoff import (
     SUMMARY_PROMPT,
     HandoffSummary,
@@ -55,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 FolderPicker = Callable[[], str | None]
 PLAYBACK_GRACE_S = 2.0
+# A session that does not list its commands this fast is used without them.
+COMMANDS_TIMEOUT_S = 10.0
 # Sentences already complete are spoken together, up to these lengths (#85 S13, S14). The
 # first clip of a reply stays short so speech starts quickly; later clips can be longer
 # because they are synthesized while the previous one plays. A single longer sentence still
@@ -123,6 +127,9 @@ class AgentApp:
         self.switch_task: asyncio.Task | None = None
         self._pending: dict[str, asyncio.Future[bool]] = {}
         self._start_task: asyncio.Task | None = None
+        # What the open session accepts as /commands; the page lists them and speech names them.
+        self._commands: list[CommandOption] = []
+        self._commands_task: asyncio.Task | None = None
         self._start_generation = 0
         self._queued_turn: str | None = None
         # Live transcript: the utterance being spoken, the newest partial audio waiting for the
@@ -155,6 +162,8 @@ class AgentApp:
 
     async def handle_hello(self) -> None:
         await self._send_hello()
+        if self._session is not None and self._commands:
+            await self._send_commands()
         for message in self.walkthrough.snapshot():
             await self.channel.send(message)
 
@@ -211,6 +220,7 @@ class AgentApp:
         self._transcript = self._transcripts.start(folder) if self._transcripts else None
         self._session = {"backend": backend_id, "model": model, "cwd": str(folder), "mode": mode}
         await self.channel.send({"type": "agent_started", **self._session})
+        self._commands = []  # the page forgets the old list on agent_started
         await self._state("idle")
         self._start_generation += 1
         generation = self._start_generation
@@ -325,6 +335,8 @@ class AgentApp:
                 "type": "notice", "text": "Wait for the current reply or interrupt it.",
             })
             return
+        # "barra tdd ..." becomes "/tdd ..." when the open session has a command of that name.
+        text = spoken_command(text, [c.name for c in self._commands])
         if review:
             # The text is Whisper's, as heard; the user edits it and sends it with Enter.
             await self.channel.send({"type": "transcript_draft", "text": text})
@@ -481,15 +493,44 @@ class AgentApp:
                 logger.warning("Closing a stale agent conversation failed: %s", exc)
             return
         self._conversation = conversation
+        self._commands_task = asyncio.create_task(
+            self._load_commands(conversation, generation), name="agent-commands"
+        )
         queued_turn, self._queued_turn = self._queued_turn, None
         if queued_turn is not None:
             self._start_turn(queued_turn)
         else:
             await self._state("listening")
 
+    async def _load_commands(self, conversation: AgentConversation, generation: int) -> None:
+        """List the session's /commands for the page; a failure leaves the list empty."""
+        try:
+            listed = await asyncio.wait_for(conversation.commands(), COMMANDS_TIMEOUT_S)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Could not list the session's commands: %s", exc)
+            listed = []
+        if generation != self._start_generation:
+            return
+        self._commands = list(listed)
+        await self._send_commands()
+
+    async def _send_commands(self) -> None:
+        await self.channel.send({
+            "type": "agent_commands",
+            "commands": [
+                {"name": c.name, "description": c.description, "hint": c.hint}
+                for c in self._commands
+            ],
+        })
+
     async def _cancel_start(self) -> None:
         self._start_generation += 1
         self._queued_turn = None
+        task, self._commands_task = self._commands_task, None
+        if task is not None and not task.done():
+            task.cancel()
         task, self._start_task = self._start_task, None
         if task is not None and not task.done():
             task.cancel()

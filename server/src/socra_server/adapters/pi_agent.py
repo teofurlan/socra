@@ -28,6 +28,7 @@ from socra_server.domain.agent import (
     AgentError,
     AgentEvent,
     BackendStatus,
+    CommandOption,
     ModelOption,
     PermissionRequest,
     ReplyDone,
@@ -308,6 +309,18 @@ class PiConversation:
         finally:
             if self._events is events:
                 self._events = None
+
+    async def commands(self) -> list[CommandOption]:
+        """Prompt templates, skills and extension commands Pi runs when sent as ``/name``."""
+        response = await self._request({"type": "get_commands"})
+        if not response.get("success"):
+            return []
+        listed = (response.get("data") or {}).get("commands")
+        return [
+            CommandOption(name, str(entry.get("description") or ""))
+            for entry in listed or []
+            if isinstance(entry, dict) and isinstance(name := entry.get("name"), str) and name
+        ]
 
     async def interrupt(self) -> None:
         if self._exited:

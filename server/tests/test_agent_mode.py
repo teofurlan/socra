@@ -48,6 +48,9 @@ class Convo:
             else:
                 yield item
 
+    async def commands(self):
+        return []
+
     async def interrupt(self):
         self.interrupted = True
 

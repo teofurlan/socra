@@ -21,6 +21,9 @@ class FakeConversation:
     async def send(self, text: str) -> AsyncIterator[AgentEvent]:
         yield ReplyDone(text=f"echo: {text}")
 
+    async def commands(self):
+        return []
+
     async def interrupt(self) -> None:
         pass
 

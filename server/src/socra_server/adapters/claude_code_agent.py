@@ -38,6 +38,7 @@ from socra_server.domain.agent import (
     AgentError,
     AgentEvent,
     BackendStatus,
+    CommandOption,
     ModelOption,
     PermissionRequest,
     ReplyDone,
@@ -133,6 +134,18 @@ class ClaudeCodeConversation:
     def __init__(self, client: Any) -> None:
         self._client = client
         self._interrupted = False
+
+    async def commands(self) -> list[CommandOption]:
+        """The session's slash commands and skills; Claude Code runs them when sent as text."""
+        info = await self._client.get_server_info()
+        listed = info.get("commands") if isinstance(info, dict) else None
+        return [
+            CommandOption(
+                name, str(entry.get("description") or ""), str(entry.get("argumentHint") or "")
+            )
+            for entry in listed or []
+            if isinstance(entry, dict) and isinstance(name := entry.get("name"), str) and name
+        ]
 
     async def send(self, text: str) -> AsyncIterator[AgentEvent]:
         self._interrupted = False
