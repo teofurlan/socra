@@ -137,3 +137,63 @@ async def test_standalone_stops_and_frees_the_ports_when_idle(monkeypatch):
     await asyncio.wait_for(main_mod._standalone(launch=lambda url: None, idle_s=0.05, poll_s=0.01), timeout=2)
 
     assert events[-3:] == ["http down", "ws down", "agent shutdown"]
+
+
+# --- The desktop shortcut runs under pythonw, which has no console. ----------------------
+
+class _Kernel32:
+    """Records console calls; ``window`` is what GetConsoleWindow returns."""
+
+    def __init__(self, window: int) -> None:
+        self.window = window
+        self.calls: list[tuple] = []
+
+    def GetConsoleWindow(self) -> int:
+        self.calls.append(("GetConsoleWindow",))
+        return self.window
+
+    def AllocConsole(self) -> int:
+        self.calls.append(("AllocConsole",))
+        self.window = 4242
+        return 1
+
+
+class _User32:
+    def __init__(self, kernel32: _Kernel32) -> None:
+        self.kernel32 = kernel32
+
+    def ShowWindow(self, hwnd: int, cmd: int) -> int:
+        self.kernel32.calls.append(("ShowWindow", hwnd, cmd))
+        return 1
+
+
+def test_without_a_console_children_share_one_hidden_console():
+    # Pi and the Claude CLI are console programs: started from pythonw, each would open
+    # its own terminal window, and closing that window would kill it.
+    kernel32 = _Kernel32(window=0)
+
+    main_mod._hide_console_for_children(kernel32, _User32(kernel32), platform="win32")
+
+    assert kernel32.calls == [("GetConsoleWindow",), ("AllocConsole",), ("GetConsoleWindow",), ("ShowWindow", 4242, 0)]
+
+
+def test_a_visible_console_is_left_alone():
+    kernel32 = _Kernel32(window=77)  # started from a terminal: keep it as it is
+
+    main_mod._hide_console_for_children(kernel32, _User32(kernel32), platform="win32")
+
+    assert kernel32.calls == [("GetConsoleWindow",)]
+
+
+def test_other_platforms_do_nothing():
+    kernel32 = _Kernel32(window=0)
+
+    main_mod._hide_console_for_children(kernel32, _User32(kernel32), platform="linux")
+
+    assert kernel32.calls == []
+
+
+def test_closing_the_page_stops_agent_mode_quickly_by_default():
+    # A reload reconnects within a couple of seconds; a closed page should not keep Socra
+    # running for minutes.
+    assert main_mod.DEFAULT_AGENT_IDLE_S <= 15
