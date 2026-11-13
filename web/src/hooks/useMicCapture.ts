@@ -183,6 +183,8 @@ export function useMicCapture({
       if (!emit || !isCurrent()) return
       const { chunks, sampleRate } = collect()
       const merged = AnswerSegmenter.merge(chunks)
+      // Shorter than what was sent: the last utterance was discarded and a new one began.
+      if (merged.length < sentLength) sentLength = 0
       if (merged.length <= sentLength) return
       sentLength = merged.length
       const tail = merged.length > sampleRate * PARTIAL_MAX_SECONDS

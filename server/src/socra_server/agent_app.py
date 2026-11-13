@@ -389,6 +389,9 @@ class AgentApp:
             self.walkthrough.command(action)  # type: ignore[arg-type]
 
     async def handle_disconnect(self) -> None:
+        # A partial still decoding belongs to the page that left, never to the next one.
+        self._utterance += 1
+        self._pending_partial = None
         self.walkthrough.abort()
         self._scene_on_screen = None
         self._screen_state = None
@@ -403,6 +406,9 @@ class AgentApp:
 
     async def shutdown(self) -> None:
         await self.handle_disconnect()
+        if self._partial_task is not None and not self._partial_task.done():
+            self._partial_task.cancel()
+            await asyncio.gather(self._partial_task, return_exceptions=True)
         await self._cancel_switch()
         await self._cancel_start()
         await self._cancel_turn()

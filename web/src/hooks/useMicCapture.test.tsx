@@ -926,6 +926,30 @@ describe('live partials', () => {
     expect(wavBytes(onPartial.mock.calls[0][0] as string)).toBe(44 + 16000 * 30 * 2)
   })
 
+  it('sends partials of the next utterance after one that ended without speech', async () => {
+    // review R3-partial-sentlength-stale: the interval outlives a discarded utterance
+    const onPartial = vi.fn()
+    renderHook(() => useMicCapture({ ...makeOpts('listening', 'auto'), onPartial }))
+    await act(async () => {})
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      lastVADCallbacks.onSpeechEnd?.(new Float32Array(16000 * 2)) // silence: discarded at finalize
+      vi.advanceTimersByTime(1000)
+    })
+    expect(onPartial).toHaveBeenCalledOnce()
+    act(() => vi.advanceTimersByTime(5000)) // the silence timer finalizes it as no speech
+    onPartial.mockClear()
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      speechFrame()
+      vi.advanceTimersByTime(1000)
+    })
+    expect(onPartial).toHaveBeenCalledOnce()
+    expect(wavBytes(onPartial.mock.calls[0][0] as string)).toBe(44 + 1536 * 2)
+  })
+
   it('stops sending partials once the answer is finalized', async () => {
     const onFinalize = vi.fn()
     const onPartial = vi.fn()

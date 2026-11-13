@@ -167,3 +167,29 @@ async def test_partial_audio_is_never_saved(tmp_path, monkeypatch):
     await _until(lambda: _partials(channel))
 
     assert saved == []
+
+
+async def test_a_partial_decoded_after_the_page_left_never_reaches_the_next_page(tmp_path):
+    # review R3-partial-task-not-cancelled: the decode outlives the page that asked for it
+    app, channel, _, stt = await _started(tmp_path)
+    stt.gate.clear()
+    await app.handle_turn_audio_partial(_b64(0.1))
+    await asyncio.to_thread(stt.started.wait, 2)
+
+    await app.handle_disconnect()
+    stt.gate.set()
+    await asyncio.sleep(0.1)
+
+    assert _partials(channel) == []
+
+
+async def test_shutdown_stops_the_partial_worker(tmp_path):
+    app, channel, _, stt = await _started(tmp_path)
+    stt.gate.clear()
+    await app.handle_turn_audio_partial(_b64(0.1))
+    await asyncio.to_thread(stt.started.wait, 2)
+
+    await app.shutdown()
+    stt.gate.set()
+
+    assert app._partial_task is None or app._partial_task.done()
