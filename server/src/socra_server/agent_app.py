@@ -73,6 +73,8 @@ NEEDS_CLAUDE_CODE = (
 
 
 MAX_REPLAY_SAY_CHARS = 600
+# Timeline entries kept for a page that connects later (a reload or a second tab).
+HISTORY_LIMIT = 500
 
 
 def _replay_say(raw: Any, original: str) -> tuple[str, list[str]]:
@@ -106,6 +108,8 @@ class AgentApp:
         self._backend: AgentBackend | None = None
         # What the page needs to resync after a reconnect; None without a conversation.
         self._session: dict[str, str] | None = None
+        # What the page timeline shows, entry by entry, so a reloaded or second page gets it back.
+        self._history: list[dict[str, str]] = []
         # Mode switching: what Socra records for the handoff, and the switch in flight.
         self._facts = SessionFacts()
         self._turns: list[Turn] = []
@@ -162,6 +166,8 @@ class AgentApp:
 
     async def handle_hello(self) -> None:
         await self._send_hello()
+        if self._session is not None and self._history:
+            await self.channel.send({"type": "agent_history", "entries": list(self._history)})
         if self._session is not None and self._commands:
             await self._send_commands()
         for message in self.walkthrough.snapshot():
@@ -219,6 +225,7 @@ class AgentApp:
         self._previous_transcript = None
         self._transcript = self._transcripts.start(folder) if self._transcripts else None
         self._session = {"backend": backend_id, "model": model, "cwd": str(folder), "mode": mode}
+        self._history = []
         await self.channel.send({"type": "agent_started", **self._session})
         self._commands = []  # the page forgets the old list on agent_started
         await self._state("idle")
@@ -234,6 +241,7 @@ class AgentApp:
     async def handle_turn_text(self, text: str) -> None:
         if not text.strip():
             return
+        self._record("user", text)
         if self.walkthrough.active:
             await self._route_scene_speech(text)
             return
@@ -323,11 +331,11 @@ class AgentApp:
             await self._state("listening")
             return
         if scene_playing:
-            await self.channel.send({"type": "transcript", "text": text, "final": True})
+            await self._send_final_transcript(text)
             await self._route_scene_speech(text)
             return
         if self._switching:
-            await self.channel.send({"type": "transcript", "text": text, "final": True})
+            await self._send_final_transcript(text)
             self._switch_turns.append(text)
             return
         if self._turn_running or self._queued_turn is not None:
@@ -342,7 +350,7 @@ class AgentApp:
             await self.channel.send({"type": "transcript_draft", "text": text})
             await self._state("listening")
             return
-        await self.channel.send({"type": "transcript", "text": text, "final": True})
+        await self._send_final_transcript(text)
         if self._conversation is None and starting and self._startup_pending:
             self._queued_turn = text
             await self._state("thinking")
@@ -575,6 +583,7 @@ class AgentApp:
                 if isinstance(event, TextChunk):
                     speech.feed(event.text)
                 elif isinstance(event, TextDelta):
+                    self._record("text", event.text)
                     await self.channel.send({"type": "agent_text", "text": event.text})
                     if event.spoken:
                         # The block is complete: its last sentence must not run into the next block.
@@ -585,6 +594,7 @@ class AgentApp:
                     self._facts.record_tool(event)
                     # Words before a tool call sound now, not after the tool finishes.
                     speech.flush()
+                    self._record("tool", event.summary, tool=event.tool)
                     await self.channel.send({
                         "type": "agent_tool", "tool": event.tool, "summary": event.summary,
                     })
@@ -745,6 +755,7 @@ class AgentApp:
         self._session = {**session, "mode": target}
         self._previous_transcript = self._transcript
         self._transcript = self._transcripts.start(session["cwd"]) if self._transcripts else None
+        self._record("handoff", f"Context condensed · {get_mode(target).label}")
         await self.channel.send({"type": "agent_mode_changed", **self._session})
         if CLEAR_SCENE not in get_mode(target).tools:
             # The new mode cannot clear a finished scene itself, so it would stay on screen.
@@ -880,6 +891,11 @@ class AgentApp:
         return bool(self._scene_on_screen) and not self.walkthrough.active and "```" in text
 
     async def _send_reply(self, text: str) -> None:
+        # The page turns the text block that carried this reply into the reply itself.
+        if self._history and self._history[-1]["kind"] == "text" and self._history[-1]["text"] == text:
+            self._history[-1] = {"kind": "reply", "text": text}
+        else:
+            self._record("reply", text)
         await self.channel.send({"type": "agent_reply", "text": text})
         if self._reply_releases_scene(text):
             # The page drops the scene by itself on this reply; forget it as clear_scene does.
@@ -983,7 +999,20 @@ class AgentApp:
         self._state_name = state
         await self.channel.send({"type": "state", "state": state})
 
+    async def _send_final_transcript(self, text: str) -> None:
+        self._record("user", text)
+        await self.channel.send({"type": "transcript", "text": text, "final": True})
+
+    def _record(self, kind: str, text: str, *, tool: str | None = None) -> None:
+        """Remember a timeline entry for a page that connects later; the oldest ones fall away."""
+        entry = {"kind": kind, "text": text}
+        if tool is not None:
+            entry["tool"] = tool
+        self._history.append(entry)
+        del self._history[:-HISTORY_LIMIT]
+
     async def _error(self, message: str) -> None:
+        self._record("error", message)
         await self.channel.send({"type": "agent_error", "message": message})
 
 

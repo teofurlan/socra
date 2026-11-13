@@ -70,6 +70,13 @@ export function agentReducer(state: AgentState, action: AgentAction): AgentState
             permissions: [],
           }
     }
+    case 'agent_history':
+      // The server's record of this session's timeline replaces what the page shows; nothing else moves.
+      return {
+        ...state,
+        timeline: action.entries.map((entry, index) => ({ ...entry, id: state.nextEntryId + index })),
+        nextEntryId: state.nextEntryId + action.entries.length,
+      }
     case 'agent_folder':
       // A cancelled dialog (null) keeps the folder already chosen.
       return { ...state, pickingFolder: false, folder: action.path ?? state.folder }

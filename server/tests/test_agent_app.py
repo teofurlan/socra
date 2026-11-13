@@ -899,3 +899,91 @@ async def test_a_session_without_commands_never_rewrites_speech(tmp_path):  # S4
     await _finish_turn(app, channel)
 
     assert backend.conversations[0].turns == ["barra tdd arregla"]
+
+
+# --- History replay: a reloaded or second page gets the conversation back (S7) ---
+
+
+async def test_hello_replays_the_timeline_after_the_backends(tmp_path):
+    script = [TextDelta("Looking."), ToolActivity("Read", "app.py"), TextDelta("Done."), ReplyDone("Done.")]
+    app, channel, _, _ = _app(FakeBackend(script))
+    await app.handle_start("fake", "small", str(tmp_path))
+    await app.handle_turn_text("what is in app.py?")
+    await _finish_turn(app, channel)
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    types = [m["type"] for m in channel.sent]
+    assert types.index("agent_history") > types.index("agent_backends")
+    assert len(channel.of_type("agent_history")) == 1
+    assert channel.of_type("agent_history")[0]["entries"] == [
+        {"kind": "user", "text": "what is in app.py?"},
+        {"kind": "text", "text": "Looking."},
+        {"kind": "tool", "text": "app.py", "tool": "Read"},
+        {"kind": "reply", "text": "Done."},
+    ]
+
+
+async def test_a_spoken_turn_is_part_of_the_history(tmp_path):
+    app, channel, _, _ = _app(FakeBackend([ReplyDone("Two files.")]), heard="list files")
+    await app.handle_start("fake", "small", str(tmp_path))
+    await app.handle_turn_audio(base64.b64encode(_wav()).decode())
+    await _finish_turn(app, channel)
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    assert channel.of_type("agent_history")[0]["entries"] == [
+        {"kind": "user", "text": "list files"},
+        {"kind": "reply", "text": "Two files."},
+    ]
+
+
+async def test_errors_are_part_of_the_history(tmp_path):
+    app, channel, _, _ = _app()
+    await app.handle_start("fake", "small", str(tmp_path))
+    await app._error("Rate limited")
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    assert channel.of_type("agent_history")[0]["entries"] == [{"kind": "error", "text": "Rate limited"}]
+
+
+async def test_hello_sends_no_history_without_entries_or_session(tmp_path):
+    app, channel, _, _ = _app()
+    await app.handle_hello()
+    await app.handle_start("fake", "small", str(tmp_path))
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    assert not channel.of_type("agent_history")
+
+
+async def test_a_new_session_starts_with_an_empty_history(tmp_path):
+    app, channel, _, _ = _app()
+    await app.handle_start("fake", "small", str(tmp_path))
+    await app.handle_turn_text("first")
+    await _finish_turn(app, channel)
+    await app.handle_start("fake", "large", str(tmp_path))
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    assert not channel.of_type("agent_history")
+
+
+async def test_the_history_keeps_only_the_newest_entries(tmp_path):
+    app, channel, _, _ = _app()
+    await app.handle_start("fake", "small", str(tmp_path))
+    for number in range(520):
+        await app._error(f"e{number}")
+    channel.sent.clear()
+
+    await app.handle_hello()
+
+    entries = channel.of_type("agent_history")[0]["entries"]
+    assert len(entries) == 500
+    assert entries[0]["text"] == "e20" and entries[-1]["text"] == "e519"

@@ -87,6 +87,8 @@ export type AgentServerMessage =
   | { type: 'agent_folder'; path: string | null }
   /** The session's slash commands and skills, listed once it is open (empty when it lists none). */
   | { type: 'agent_commands'; commands: AgentCommand[] }
+  /** The session's timeline so far, sent after `agent_backends` to a page that connects to it again. */
+  | { type: 'agent_history'; entries: Omit<TimelineEntry, 'id'>[] }
   | { type: 'agent_started'; backend: string; model: string; cwd: string; mode?: AgentMode }
   | { type: 'agent_switching'; mode: AgentMode }
   | { type: 'agent_mode_changed'; backend: string; model: string; cwd: string; mode: AgentMode }
