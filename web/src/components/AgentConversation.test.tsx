@@ -200,4 +200,21 @@ describe('PromptLine', () => {
 
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
   })
+
+  it('shows Send and Stop as square icon-only buttons that keep their accessible names', () => {
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} busy onSend={vi.fn()} onStop={vi.fn()} />)
+
+    for (const name of ['Send', 'Stop']) {
+      const button = screen.getByRole('button', { name })
+      expect(button).toHaveAttribute('data-shape', 'square')
+      expect(button.textContent).toBe('')
+      expect(button.querySelector('svg')).not.toBeNull()
+    }
+  })
+
+  it("opts the field out of the browser's writing suggestions (Edge Compose)", () => {
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} onSend={vi.fn()} />)
+
+    expect(screen.getByRole('textbox', { name: 'Message Socra' })).toHaveAttribute('writingsuggestions', 'false')
+  })
 })

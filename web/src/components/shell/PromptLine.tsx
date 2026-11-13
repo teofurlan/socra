@@ -127,6 +127,9 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
             onKeyDown={onKeyDown}
             disabled={disabled}
             aria-label={label}
+            // Edge's own "Ask Edge to help me write" popup would cover the composer.
+            // `writingsuggestions` is not in React's typings yet, but is passed through as is.
+            {...{ writingsuggestions: 'false' }}
             aria-controls={menuOpen ? COMMAND_MENU_ID : undefined}
             aria-activedescendant={menuOpen ? commandOptionId(highlighted) : undefined}
             placeholder={placeholder}
@@ -136,14 +139,12 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
           <div className="flex shrink-0 items-center gap-2">
             {aside}
             {busy && onStop && (
-              <button type="button" onClick={onStop} aria-label="Stop" title="Stop (interrupts the reply)" className="key min-h-10" data-tone="danger">
-                <Square aria-hidden="true" className="h-3 w-3" fill="currentColor" strokeWidth={0} />
-                Stop
+              <button type="button" onClick={onStop} aria-label="Stop" title="Stop (interrupts the reply)" className="key" data-shape="square" data-tone="danger">
+                <Square aria-hidden="true" className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
               </button>
             )}
-            <button type="submit" aria-label="Send" disabled={!canSend} className="key min-h-10" data-tone="primary">
-              <CornerDownLeft aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
-              Send
+            <button type="submit" aria-label="Send" title="Send (Enter)" disabled={!canSend} className="key" data-shape="square" data-tone="primary">
+              <CornerDownLeft aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
         </form>

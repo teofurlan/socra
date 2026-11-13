@@ -3,6 +3,15 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { PushToTalkControl } from './PushToTalkControl'
 
 describe('PushToTalkControl', () => {
+  it('is a square icon-only button named for assistive technology', () => {
+    render(<PushToTalkControl />)
+    const button = screen.getByRole('button', { name: 'Hold to speak (or Space)' })
+
+    expect(button).toHaveAttribute('data-shape', 'square')
+    expect(button.textContent).toBe('')
+    expect(button.querySelector('svg')).not.toBeNull()
+  })
+
   it('toggles talking state with mouse down and up', () => {
     const onTalkingChange = vi.fn()
     render(<PushToTalkControl onTalkingChange={onTalkingChange} />)

@@ -91,12 +91,14 @@ export const PushToTalkControl: React.FC<PushToTalkControlProps> = ({
           setTalking(false)
         }}
         onTouchCancel={() => setTalking(false)}
+        aria-label={isPressed ? 'Transcribing answer...' : 'Hold to speak (or Space)'}
+        title={isPressed ? 'Transcribing answer...' : 'Hold to speak (or Space)'}
         className="key select-none"
+        data-shape="square"
         data-tone={isPressed ? 'danger' : undefined}
         style={isPressed ? { background: 'color-mix(in srgb, var(--danger) 16%, transparent)' } : undefined}
       >
-        <Mic aria-hidden="true" className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
-        <span>{isPressed ? 'Transcribing answer...' : 'Hold to speak (or Space)'}</span>
+        <Mic aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />
       </button>
     </div>
   )
