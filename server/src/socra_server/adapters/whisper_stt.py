@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from collections import Counter
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import numpy as np
 import soundfile as sf
 
 from socra_server.domain.speech import SILENCE_HALLUCINATIONS, SPEECH_LANGUAGE
+from socra_server.domain.vocabulary import correct_terms
 
 DEFAULT_WHISPER_MODEL = "large-v3-turbo"
 PRODUCT_NAME = "Socra"
@@ -137,6 +139,9 @@ class WhisperSTT:
         # Base glossary terms from the voice stack (set by the loader)
         self._base_terms: list[str] = glossary_terms or []
         self._model_size: str = DEFAULT_WHISPER_MODEL
+        # One decode at a time: a live partial and the final never share the model, and
+        # the CPU fallback swaps the model only once. Reentrant: the fallback decodes again.
+        self._decode_lock = threading.RLock()
 
     def set_base_terms(self, terms: list[str]) -> None:
         self._base_terms = terms
@@ -158,6 +163,22 @@ class WhisperSTT:
             compute_type=compute_type,
         )
 
+    def warm_up(self) -> None:
+        """Decode one second of silence so the first spoken turn does not pay model start-up.
+
+        VAD is off on purpose: it would drop the silence and skip the decoder. Failures are
+        logged only; the first real turn still has the CPU fallback."""
+        if self._transcriber is None:
+            return
+        try:
+            segments, _info = self._transcriber.model.transcribe(
+                np.zeros(16000, dtype=np.float32), language=SPEECH_LANGUAGE, vad_filter=False, beam_size=1,
+            )
+            for _segment in segments:
+                pass
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Whisper warm-up failed: %s", exc)
+
     def _build_prompt(self, extra_glossary: list[str] | None) -> str:
         """Combine base terms and any per-call extra terms into an initial_prompt string."""
         combined = list(self._base_terms)
@@ -171,7 +192,7 @@ class WhisperSTT:
         combined.append(PRODUCT_NAME)
         return ", ".join(combined)
 
-    def transcribe(self, wav_bytes: bytes, prompt: str = "") -> str:
+    def transcribe(self, wav_bytes: bytes, prompt: str = "", beam_size: int | None = None) -> str:
         """Transcribe WAV bytes to text.
 
         ``prompt`` is used as the Whisper initial_prompt when provided;
@@ -189,13 +210,21 @@ class WhisperSTT:
         # initial_prompt, language, and vad_filter (S4: never call Ollama cleaner).
         initial_prompt = prompt if prompt else self._build_prompt(None)
 
+        with self._decode_lock:
+            return self._decode(audio_array, initial_prompt, beam_size)
+
+    def _decode(self, audio_array: np.ndarray, initial_prompt: str, beam_size: int | None) -> str:
+        """Decode under the lock held by transcribe(), falling back to CPU once if CUDA fails."""
         try:
+            options = {} if beam_size is None else {"beam_size": beam_size}
             segments, _info = self._transcriber.model.transcribe(
                 audio_array,
                 language=SPEECH_LANGUAGE,
                 vad_filter=True,
                 initial_prompt=initial_prompt or None,
+                **options,
             )
+            segments = list(segments)  # the decode is lazy: finish it while the lock is held
             parts = []
             for seg in segments:
                 text = seg.text.strip()
@@ -231,11 +260,20 @@ class WhisperSTT:
                     compute_type="int8",
                     download_root=self._transcriber.download_root,
                 )
-            return self.transcribe(wav_bytes, prompt=initial_prompt)
+            return self._decode(audio_array, initial_prompt, beam_size)
 
     def transcribe_with_glossary(
         self, wav_bytes: bytes, extra_glossary: list[str] | None = None
     ) -> str:
         """Transcribe with base terms + optional extra glossary as initial_prompt."""
         prompt = self._build_prompt(extra_glossary)
-        return self.transcribe(wav_bytes, prompt=prompt)
+        return self._with_known_terms(self.transcribe(wav_bytes, prompt=prompt), extra_glossary)
+
+    def transcribe_partial(self, wav_bytes: bytes, extra_glossary: list[str] | None = None) -> str:
+        """A quick, greedy decode of an utterance still being spoken, for the live transcript."""
+        prompt = self._build_prompt(extra_glossary)
+        return self._with_known_terms(self.transcribe(wav_bytes, prompt=prompt, beam_size=1), extra_glossary)
+
+    def _with_known_terms(self, text: str, extra_glossary: list[str] | None) -> str:
+        """Write near misses of known terms as the terms; project words and the product name win."""
+        return correct_terms(text, [*(extra_glossary or []), PRODUCT_NAME, *self._base_terms])

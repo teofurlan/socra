@@ -457,3 +457,58 @@ async def test_a_mode_without_a_toolbox_only_appends_instructions(tmp_path):
     assert options.system_prompt["append"] == get_mode("mentor").instructions
     assert not options.mcp_servers
     assert not options.allowed_tools
+
+
+def _text_delta_event(text: str, parent_tool_use_id: str | None = None):
+    from claude_agent_sdk import StreamEvent
+
+    return StreamEvent(
+        uuid="u1",
+        session_id="session-1",
+        event={"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}},
+        parent_tool_use_id=parent_tool_use_id,
+    )
+
+
+async def test_open_asks_the_sdk_for_partial_messages(tmp_path):  # S3
+    await _backend().open("opus", tmp_path, _never_asked)
+
+    assert FakeClient.instances[-1].options.include_partial_messages is True
+
+
+async def test_partial_text_streams_as_chunks_before_the_whole_block(tmp_path):  # S3
+    from socra_server.domain.agent import TextChunk
+
+    script = [
+        _text_delta_event("Hola. "),
+        _text_delta_event("Ya miro."),
+        AssistantMessage(content=[TextBlock(text="Hola. Ya miro.")], model="opus"),
+        _result("Hola. Ya miro."),
+    ]
+    conversation = await _backend(script=script).open("opus", tmp_path, _never_asked)
+
+    events = await _collect(conversation)
+
+    assert events == [
+        TextChunk("Hola. "),
+        TextChunk("Ya miro."),
+        TextDelta("Hola. Ya miro.", spoken=True),
+        ReplyDone("Hola. Ya miro."),
+    ]
+
+
+async def test_subagent_and_non_text_stream_events_are_not_chunks(tmp_path):  # S3
+    from claude_agent_sdk import StreamEvent
+
+    script = [
+        _text_delta_event("inner", parent_tool_use_id="t9"),
+        StreamEvent(uuid="u2", session_id="s", event={"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": "{"}}),
+        StreamEvent(uuid="u3", session_id="s", event={"type": "message_start"}),
+        AssistantMessage(content=[TextBlock(text="Done.")], model="opus"),
+        _result("Done."),
+    ]
+    conversation = await _backend(script=script).open("opus", tmp_path, _never_asked)
+
+    events = await _collect(conversation)
+
+    assert events == [TextDelta("Done."), ReplyDone("Done.")]

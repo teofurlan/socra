@@ -54,6 +54,9 @@ class FakeAgentApp:
         await self.audio_gate.wait()
         self._record("turn_audio_done", data)
 
+    async def handle_turn_audio_partial(self, data):
+        self._record("turn_audio_partial", data)
+
     async def handle_permission_response(self, request_id, allow):
         self._record("permission", request_id, allow)
 
@@ -152,6 +155,17 @@ async def test_turn_audio_asks_for_a_draft_only_when_the_page_says_so(server):  
     assert ("turn_audio_review", "BBBB") in agent.calls
     assert ("turn_audio_review", "AAAA") not in agent.calls
     assert ("turn_audio_review", "CCCC") not in agent.calls
+
+
+async def test_turn_audio_partial_reaches_the_agent_and_malformed_ones_do_not(server):
+    base, agent = server
+    async with connect(f"{base}/ws/agent") as ws:
+        await ws.send(json.dumps({"type": "turn_audio_partial", "format": "mp3", "data": "AAAA"}))
+        await ws.send(json.dumps({"type": "turn_audio_partial", "format": "wav"}))
+        await ws.send(json.dumps({"type": "turn_audio_partial", "format": "wav", "data": "BBBB"}))
+        await _wait_for(agent, lambda: ("turn_audio_partial", "BBBB") in agent.calls)
+
+    assert [c for c in agent.calls if c[0] == "turn_audio_partial"] == [("turn_audio_partial", "BBBB")]
 
 
 async def test_permission_answer_is_not_blocked_by_a_running_transcription(server):

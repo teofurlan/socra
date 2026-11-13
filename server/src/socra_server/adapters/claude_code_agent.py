@@ -25,6 +25,7 @@ from claude_agent_sdk import (
     PermissionResultDeny,
     ResultMessage,
     SdkMcpTool,
+    StreamEvent,
     TextBlock,
     ToolPermissionContext,
     ToolUseBlock,
@@ -40,6 +41,7 @@ from socra_server.domain.agent import (
     ModelOption,
     PermissionRequest,
     ReplyDone,
+    TextChunk,
     TextDelta,
     ToolActivity,
 )
@@ -115,6 +117,18 @@ def _is_interrupted_result(message: ResultMessage) -> bool:
     return False
 
 
+def _text_chunk(message: StreamEvent) -> str:
+    """Text the main agent just wrote, from a raw API stream event ('' for anything else)."""
+    if message.parent_tool_use_id is not None:  # a subagent's text is not the reply
+        return ""
+    event = message.event or {}
+    if event.get("type") != "content_block_delta":
+        return ""
+    delta = event.get("delta") or {}
+    text = delta.get("text") if delta.get("type") == "text_delta" else None
+    return text if isinstance(text, str) else ""
+
+
 class ClaudeCodeConversation:
     def __init__(self, client: Any) -> None:
         self._client = client
@@ -123,16 +137,23 @@ class ClaudeCodeConversation:
     async def send(self, text: str) -> AsyncIterator[AgentEvent]:
         self._interrupted = False
         last_text = ""
+        streamed = False  # text chunks arrived since the last whole message
         try:
             await self._client.query(text)
             async for message in self._client.receive_response():
-                if isinstance(message, AssistantMessage):
+                if isinstance(message, StreamEvent):
+                    chunk = _text_chunk(message)
+                    if chunk:
+                        streamed = True
+                        yield TextChunk(chunk)
+                elif isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock) and block.text:
                             last_text = block.text
-                            yield TextDelta(block.text)
+                            yield TextDelta(block.text, spoken=streamed)
                         elif isinstance(block, ToolUseBlock):
                             yield ToolActivity(block.name, _summarize(block.input), tool_path(block.input))
+                    streamed = False
                 elif isinstance(message, ResultMessage):
                     if self._interrupted or _is_interrupted_result(message):
                         yield AgentError("The turn was interrupted.")
@@ -253,6 +274,8 @@ class ClaudeCodeBackend:
             system_prompt=system_prompt,
             mcp_servers=mcp_servers,
             allowed_tools=allowed_tools,
+            # Text arrives as it is written, so speech starts at the first sentence.
+            include_partial_messages=True,
         )
         client = self._client_factory(options)
         await client.connect()

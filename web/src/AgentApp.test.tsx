@@ -73,6 +73,33 @@ describe('AgentApp', () => {
     })
   }
 
+  describe('live transcript', () => {
+    it('shows what is heard while speaking, replaces it with each partial and clears it with the final', () => {
+      const { ws } = openPage()
+      startSession(ws)
+
+      act(() => ws.receive({ type: 'transcript', text: 'list the', final: false }))
+      expect(screen.getByTestId('live-transcript')).toHaveTextContent('list the')
+      act(() => ws.receive({ type: 'transcript', text: 'list the files', final: false }))
+      expect(screen.getByTestId('live-transcript')).toHaveTextContent('list the files')
+      expect(screen.getByLabelText('Message Socra')).toHaveValue('')
+
+      act(() => ws.receive({ type: 'transcript', text: 'list the files', final: true }))
+      expect(screen.queryByTestId('live-transcript')).not.toBeInTheDocument()
+    })
+
+    it('clears it when the transcribed text goes to the composer as a draft', () => {
+      const { ws } = openPage()
+      startSession(ws)
+      act(() => ws.receive({ type: 'transcript', text: 'list the', final: false }))
+
+      act(() => ws.receive({ type: 'transcript_draft', text: 'list the files' }))
+
+      expect(screen.queryByTestId('live-transcript')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Message Socra')).toHaveValue('list the files')
+    })
+  })
+
   describe('scenes', () => {
     const playScene = (ws: FakeWebSocket) => {
       startSession(ws)

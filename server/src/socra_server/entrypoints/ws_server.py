@@ -193,6 +193,12 @@ async def _handle_agent(ws: ServerConnection) -> None:
                         logger.warning("Malformed turn_audio (expected base64 WAV)")
                         continue
                     spawn(agent.handle_turn_audio(data, review=msg.get("review") is True), msg_type)
+                elif msg_type == "turn_audio_partial":
+                    data = _agent_text(msg, "data")
+                    if msg.get("format") != "wav" or data is None:
+                        logger.warning("Malformed turn_audio_partial (expected base64 WAV)")
+                        continue
+                    await agent.handle_turn_audio_partial(data)
                 elif msg_type == "permission_response":
                     request_id = _agent_text(msg, "id")
                     if request_id is None:
@@ -337,6 +343,11 @@ async def _handle(ws: ServerConnection) -> None:
         )
 
 
+# A spoken turn arrives as one base64 WAV: 30 s of push-to-talk at 48 kHz is about 3.8 MB,
+# far over the websockets default of 1 MiB, which would close the socket mid-turn.
+MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+
+
 def serve_pages(host: str = WS_HOST, port: int = WS_PORT):
     """Bind the page WebSocket server; port=0 picks a free port."""
     return serve(
@@ -346,6 +357,7 @@ def serve_pages(host: str = WS_HOST, port: int = WS_PORT):
         process_request=_check_path,
         ping_interval=20,
         ping_timeout=60,
+        max_size=MAX_MESSAGE_BYTES,
     )
 
 
@@ -361,7 +373,7 @@ async def serve_on_port(
     host: str, port: int, started_event: asyncio.Event | None = None
 ) -> None:
     """Serve on an explicit host/port; optionally signal when ready (for tests)."""
-    async with serve(_dispatch, host, port, process_request=_check_path) as server:
+    async with serve(_dispatch, host, port, process_request=_check_path, max_size=MAX_MESSAGE_BYTES) as server:
         if started_event is not None:
             started_event.set()
         await asyncio.Future()

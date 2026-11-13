@@ -26,11 +26,12 @@ class _FakeWhisperModel:
         self.reply = reply
         self.last_call: dict = {}
 
-    def transcribe(self, audio, language="en", vad_filter=True, initial_prompt=None, **kw):
+    def transcribe(self, audio, language="en", vad_filter=True, initial_prompt=None, beam_size=None, **kw):
         self.last_call = {
             "language": language,
             "vad_filter": vad_filter,
             "initial_prompt": initial_prompt,
+            "beam_size": beam_size,
         }
         return iter([_FakeSegment(self.reply)]), None
 
@@ -135,3 +136,57 @@ def test_prompt_does_not_duplicate_socra():
     prompt = stt._build_prompt(["Socra", "thread"])
     assert prompt.count("Socra") == 1
     assert prompt.endswith("Socra")
+
+
+def test_partial_transcription_decodes_cheaply_with_a_greedy_beam():
+    stt = WhisperSTT()
+    stt._transcriber = _FakeTranscriber(reply="so far")
+
+    text = stt.transcribe_partial(make_wav_bytes(), extra_glossary=["socra"])
+
+    assert text == "so far"
+    assert stt._transcriber.model.last_call["beam_size"] == 1
+    assert stt._transcriber.model.last_call["vad_filter"] is True
+
+
+def test_a_final_decode_keeps_the_default_beam():
+    stt = WhisperSTT()
+    stt._transcriber = _FakeTranscriber()
+
+    stt.transcribe_with_glossary(make_wav_bytes())
+
+    assert stt._transcriber.model.last_call["beam_size"] is None
+
+
+def test_a_partial_and_a_final_never_run_on_the_model_at_the_same_time():
+    import threading
+    import time
+
+    stt = WhisperSTT()
+    active = {"now": 0, "max": 0}
+    guard = threading.Lock()
+
+    class _Model(_FakeWhisperModel):
+        def transcribe(self, audio, **kw):
+            with guard:
+                active["now"] += 1
+                active["max"] = max(active["max"], active["now"])
+            time.sleep(0.05)
+            with guard:
+                active["now"] -= 1
+            return super().transcribe(audio, **kw)
+
+    class _T:
+        model = _Model()
+
+    stt._transcriber = _T()
+    threads = [
+        threading.Thread(target=stt.transcribe_partial, args=(make_wav_bytes(), None)),
+        threading.Thread(target=stt.transcribe_with_glossary, args=(make_wav_bytes(), None)),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert active["max"] == 1

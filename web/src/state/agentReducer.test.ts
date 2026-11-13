@@ -294,4 +294,39 @@ describe('agentReducer mode switching', () => {
       expect(agentReducer(playing, { type: 'state', state: 'thinking' }).spoken).not.toBeNull()
     })
   })
+
+  describe('live transcript', () => {
+    const partial = { type: 'transcript', text: 'list the', final: false } as const satisfies AgentAction
+
+    it('shows the provisional text without adding a turn, and replaces it with the next partial', () => {
+      const state = run(started, partial, { type: 'transcript', text: 'list the files in', final: false })
+
+      expect(state.liveTranscript).toBe('list the files in')
+      expect(state.timeline).toEqual([])
+    })
+
+    it('is cleared by the final transcript, which becomes the turn', () => {
+      const state = run(started, partial, { type: 'transcript', text: 'list the files', final: true })
+
+      expect(state.liveTranscript).toBeNull()
+      expect(state.timeline.map(({ kind, text }) => [kind, text])).toEqual([['user', 'list the files']])
+    })
+
+    it.each([
+      ['a dictation draft', { type: 'transcript_draft', text: 'list the files' } as AgentAction],
+      ['a notice', { type: 'notice', text: "Didn't catch that." } as AgentAction],
+      ['an error', { type: 'agent_error', message: 'Rate limited' } as AgentAction],
+      ['a state change', { type: 'state', state: 'thinking' } as AgentAction],
+      ['a lost connection', { type: 'set_status', status: 'reconnecting' } as AgentAction],
+      ['a discarded capture', { type: 'live_transcript_discarded' } as AgentAction],
+    ])('is cleared by %s', (_name, action) => {
+      expect(run(started, partial, action).liveTranscript).toBeNull()
+    })
+
+    it('ignores a partial that arrives once the turn is no longer being spoken', () => {
+      const state = run(started, { type: 'state', state: 'thinking' }, partial)
+
+      expect(state.liveTranscript).toBeNull()
+    })
+  })
 })

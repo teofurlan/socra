@@ -166,6 +166,8 @@ export const AgentApp: React.FC = () => {
     listeningEpoch: socket.listeningEpoch,
     deviceId: micDeviceId,
     onFinalize: handleSendAudio,
+    onPartial: socket.sendAudioPartial,
+    onPartialDiscard: () => dispatch({ type: 'live_transcript_discarded' }),
   })
 
   const handleSelectionChange = (next: AgentSelection) => {
@@ -383,6 +385,7 @@ export const AgentApp: React.FC = () => {
               onSend={handleSendText}
               onStop={socket.interrupt}
               draft={socket.draft}
+              liveTranscript={state.liveTranscript}
               aside={mode === 'push-to-talk' ? <PushToTalkControl onTalkingChange={onTalkingChange} /> : undefined}
               contextControls={
                 <AgentComposerControls

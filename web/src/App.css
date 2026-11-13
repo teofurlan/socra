@@ -153,7 +153,8 @@
 .composer {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  /* The field grows upward with long text; the buttons stay on its last line. */
+  align-items: flex-end;
   gap: 8px;
   width: min(calc(100% - 32px), max(55%, 520px), 780px);
   padding: 7px;
@@ -167,7 +168,8 @@
   border-color: var(--accent);
 }
 /* The rounded composer supplies the field's focus indicator; buttons keep their own. */
-.composer > input:focus-visible {
+.composer > input:focus-visible,
+.composer > textarea:focus-visible {
   outline: none;
 }
 

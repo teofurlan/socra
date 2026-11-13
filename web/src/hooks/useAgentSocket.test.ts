@@ -463,5 +463,23 @@ describe('useAgentSocket', () => {
     expect(ws.sent()).toContainEqual({ type: 'voice', voice: 'santa' })
     expect(result.current.voices.current).toBe('santa')
   })
+
+  it('streams the utterance so far as a partial turn', () => {
+    const { result, ws } = connected()
+
+    act(() => result.current.sendAudioPartial('UklGRg=='))
+
+    expect(ws.sent().slice(2)).toEqual([{ type: 'turn_audio_partial', format: 'wav', data: 'UklGRg==' }])
+  })
+
+  it('exposes the provisional transcript the server sends and clears it with the final', () => {
+    const { result, ws } = connected()
+
+    act(() => ws.receive({ type: 'transcript', text: 'list the', final: false }))
+    expect(result.current.state.liveTranscript).toBe('list the')
+
+    act(() => ws.receive({ type: 'transcript', text: 'list the files', final: true }))
+    expect(result.current.state.liveTranscript).toBeNull()
+  })
 })
 

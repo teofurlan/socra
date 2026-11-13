@@ -60,7 +60,19 @@ class PermissionRequest:
 
 @dataclasses.dataclass(frozen=True)
 class TextDelta:
-    """A piece of the reply text, in order."""
+    """A piece of the reply text, in order.
+
+    ``spoken`` is True when the same text already came as TextChunks (speech has it)."""
+
+    text: str
+    spoken: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class TextChunk:
+    """Part of a text block still being written, in order; only for speaking early.
+
+    The whole block still follows as a TextDelta, which the page shows."""
 
     text: str
 
@@ -89,4 +101,4 @@ class AgentError:
     message: str
 
 
-AgentEvent = TextDelta | ToolActivity | ReplyDone | AgentError
+AgentEvent = TextChunk | TextDelta | ToolActivity | ReplyDone | AgentError

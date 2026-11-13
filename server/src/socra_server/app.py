@@ -137,6 +137,9 @@ class ModelLoader:
             if getattr(self.stt, "_transcriber", None) is None:
                 logger.debug("Loading Whisper STT…")
                 self.stt.load()
+                warm_up = getattr(self.stt, "warm_up", None)
+                if warm_up is not None:
+                    warm_up()
             self._loaded = True
             self._error = None
         except Exception as exc:
