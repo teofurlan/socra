@@ -458,6 +458,22 @@ describe('AgentApp', () => {
     expect(ws.sent()).toContainEqual({ type: 'turn_text', text: 'fix the build' })
   })
 
+  it('offers the session commands when the user types a slash, and sends the completed command as a turn', async () => {  // S1
+    const user = userEvent.setup()
+    window.localStorage.setItem(STORAGE_KEY_AGENT_FOLDER, 'C:\work\socra')
+    const { ws } = openPage()
+    act(() => ws.receive({ type: 'agent_started', backend: 'claude-code', model: 'sonnet', cwd: 'C:\work\socra' }))
+    act(() => ws.receive({ type: 'agent_commands', commands: [
+      { name: 'tdd', description: 'Test-driven development', hint: '<feature>' },
+      { name: 'context', description: 'Show context usage', hint: '' },
+    ] }))
+    const composer = screen.getByLabelText('Message Socra')
+
+    await user.type(composer, '/td{Tab}fix the login{Enter}')
+
+    expect(ws.sent()).toContainEqual({ type: 'turn_text', text: '/tdd fix the login' })
+  })
+
   it('does not listen or submit voice before a required folder is chosen', () => {
     const { ws } = openPage()
 

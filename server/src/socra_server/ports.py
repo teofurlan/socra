@@ -8,6 +8,7 @@ from typing import Any, Protocol, runtime_checkable
 from socra_server.domain.agent import (
     AgentEvent,
     BackendStatus,
+    CommandOption,
     ModelOption,
     PermissionRequest,
 )
@@ -49,6 +50,10 @@ class AgentConversation(Protocol):
 
     async def interrupt(self) -> None:
         """Stop the turn in progress, if any."""
+        ...
+
+    async def commands(self) -> list[CommandOption]:
+        """Slash commands and skills this session accepts as text; empty when it lists none."""
         ...
 
     async def close(self) -> None:

@@ -330,3 +330,68 @@ describe('agentReducer mode switching', () => {
     })
   })
 })
+
+describe('agent_history', () => {
+  const entries = [
+    { kind: 'user', text: 'what is in app.py?' },
+    { kind: 'tool', text: 'app.py', tool: 'Read' },
+    { kind: 'reply', text: 'Done.' },
+  ] as const
+  const sessionOf = { backend: 'claude-code', model: 'sonnet', cwd: 'C:\work', mode: 'mentor' } as const
+  const connected = { ...backends, session: sessionOf } as const satisfies AgentAction
+
+  it('sets the timeline with ids assigned in order and the next id advanced', () => {
+    const state = run(connected, { type: 'agent_history', entries: [...entries] })
+
+    expect(state.timeline).toEqual([
+      { id: 1, kind: 'user', text: 'what is in app.py?' },
+      { id: 2, kind: 'tool', text: 'app.py', tool: 'Read' },
+      { id: 3, kind: 'reply', text: 'Done.' },
+    ])
+    expect(state.nextEntryId).toBe(4)
+  })
+
+  it('leaves the protocol state, speech, permissions and scene alone', () => {
+    const before = run(
+      connected,
+      { type: 'state', state: 'speaking' },
+      { type: 'speech_started', id: 1, text: 'Hello' },
+      { type: 'permission_request', id: 'p1', tool: 'Bash', title: 'Run', detail: 'ls' },
+    )
+
+    const after = agentReducer(before, { type: 'agent_history', entries: [...entries] })
+
+    expect({ ...after, timeline: [], nextEntryId: 0 }).toEqual({ ...before, timeline: [], nextEntryId: 0 })
+  })
+
+  it('gives the same timeline on a reconnect of the same page, without duplicates', () => {
+    const shown = run(
+      connected,
+      { type: 'user_text', text: 'what is in app.py?' },
+      { type: 'agent_tool', tool: 'Read', summary: 'app.py' },
+      { type: 'agent_text', text: 'Done.' },
+      { type: 'agent_reply', text: 'Done.' },
+    )
+
+    const again = run(connected, { type: 'agent_history', entries: [...entries] })
+    const reconnected = agentReducer(
+      agentReducer(shown, connected),
+      { type: 'agent_history', entries: [...entries] },
+    )
+
+    expect(reconnected.timeline.map(({ kind, text, tool }) => ({ kind, text, tool }))).toEqual(
+      shown.timeline.map(({ kind, text, tool }) => ({ kind, text, tool })),
+    )
+    expect(reconnected.timeline).toHaveLength(again.timeline.length)
+  })
+
+  it('replaces what the page shows with the server record', () => {
+    const state = run(
+      connected,
+      { type: 'user_text', text: 'stale' },
+      { type: 'agent_history', entries: [...entries] },
+    )
+
+    expect(state.timeline.map((entry) => entry.text)).toEqual(['what is in app.py?', 'app.py', 'Done.'])
+  })
+})

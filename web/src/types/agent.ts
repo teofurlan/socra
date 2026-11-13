@@ -9,6 +9,13 @@ import type {
 } from '@/types/exam'
 import type { VoiceMessage, VoicesMessage } from '@/types/voice'
 
+/** A slash command or skill the open session accepts as text; name has no leading slash. */
+export interface AgentCommand {
+  name: string
+  description: string
+  hint: string
+}
+
 /** What the user picks and the page persists: a backend and one of its models. */
 export interface AgentSelection {
   backend: string
@@ -78,6 +85,10 @@ export type AgentServerMessage =
       session?: (AgentSelection & { cwd: string; mode?: AgentMode }) | null
     }
   | { type: 'agent_folder'; path: string | null }
+  /** The session's slash commands and skills, listed once it is open (empty when it lists none). */
+  | { type: 'agent_commands'; commands: AgentCommand[] }
+  /** The session's timeline so far, sent after `agent_backends` to a page that connects to it again. */
+  | { type: 'agent_history'; entries: Omit<TimelineEntry, 'id'>[] }
   | { type: 'agent_started'; backend: string; model: string; cwd: string; mode?: AgentMode }
   | { type: 'agent_switching'; mode: AgentMode }
   | { type: 'agent_mode_changed'; backend: string; model: string; cwd: string; mode: AgentMode }

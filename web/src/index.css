@@ -170,6 +170,13 @@ textarea {
     cursor: pointer;
     transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out), color 150ms var(--ease-out);
   }
+  /* Icon-only: a square the height of a text field row. */
+  .key[data-shape="square"] {
+    width: 40px;
+    height: 40px;
+    min-height: 0;
+    padding: 0;
+  }
   .key:hover:not(:disabled) {
     background: var(--raise);
     color: var(--label);

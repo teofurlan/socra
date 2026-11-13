@@ -124,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File server\install-shortcut.ps1
 | `SOCRA_WHISPER_DEVICE` | `auto` | `auto`, `cuda`, or `cpu` |
 | `SOCRA_STT_SAVE_DIR` | unset | Diagnostic: save each spoken turn in a project session as a WAV plus its transcript in this folder |
 | `SOCRA_PREFERENCES_FILE` | `%LOCALAPPDATA%/Socra/preferences.json` | Shared page preferences |
-| `SOCRA_AGENT_IDLE_S` | `120` | Agent mode exits after this many seconds with no page open |
+| `SOCRA_AGENT_IDLE_S` | `15` | Agent mode exits after this many seconds with no page open |
 | `SOCRA_LOG_FILE` | `server/logs/socra.log` | Server log: page connections, agent turns and each step of a mode switch |
 
 See [`server/README.md`](server/README.md) for the MCP tool flow, the

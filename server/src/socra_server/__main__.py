@@ -57,8 +57,29 @@ logger = logging.getLogger(__name__)
 
 
 SERVER_PROBE_TIMEOUT_S = 0.5
-# Agent mode stops after this long without an agent page, freeing the ports.
-AGENT_IDLE_S = float(os.environ.get("SOCRA_AGENT_IDLE_S", "120"))
+# Agent mode stops after this long without an agent page, freeing the ports. A reload
+# reconnects within a couple of seconds, so closing the page ends Socra soon after.
+DEFAULT_AGENT_IDLE_S = 15.0
+AGENT_IDLE_S = float(os.environ.get("SOCRA_AGENT_IDLE_S", str(DEFAULT_AGENT_IDLE_S)))
+SW_HIDE = 0
+
+
+def _hide_console_for_children(kernel32=None, user32=None, *, platform: str = sys.platform) -> None:
+    """Under pythonw (the desktop shortcut) Socra has no console, so every console program it
+    starts (Pi, the Claude CLI) would open a terminal window of its own, and closing that
+    window would kill it. One hidden console, inherited by all of them, avoids both."""
+    if platform != "win32":
+        return
+    if kernel32 is None or user32 is None:
+        import ctypes
+
+        kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    if kernel32.GetConsoleWindow():
+        return  # started from a terminal: leave it visible
+    if kernel32.AllocConsole():
+        window = kernel32.GetConsoleWindow()
+        if window:
+            user32.ShowWindow(window, SW_HIDE)
 
 
 def agent_backends() -> list[AgentBackend]:
@@ -223,6 +244,7 @@ def main() -> None:
         setup_main(sys.argv[2:])
         return
     if "--agent" in sys.argv[1:]:
+        _hide_console_for_children()
         try:
             asyncio.run(_standalone())
         except KeyboardInterrupt:

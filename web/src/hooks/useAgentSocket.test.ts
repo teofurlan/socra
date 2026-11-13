@@ -144,6 +144,17 @@ describe('useAgentSocket', () => {
     expect(result.current.state.timeline.at(-1)).toMatchObject({ kind: 'reply', text: 'Done.' })
   })
 
+  it('keeps the session commands the server lists and forgets them when another session starts', () => {
+    const { result, ws } = connected()
+    const listed = [{ name: 'tdd', description: 'Test-driven development', hint: '<feature>' }]
+
+    act(() => ws.receive({ type: 'agent_commands', commands: listed }))
+    expect(result.current.commands).toEqual(listed)
+
+    act(() => ws.receive({ type: 'agent_started', backend: 'claude-code', model: 'opus', cwd: 'C:\work' }))
+    expect(result.current.commands).toEqual([])
+  })
+
   it('ignores malformed messages', () => {
     const { result, ws } = connected()
     const before = result.current.state

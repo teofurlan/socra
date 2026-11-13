@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AgentTimeline } from './AgentTimeline'
+import { PushToTalkControl } from './PushToTalkControl'
 import { PermissionPromptCard } from './PermissionPromptCard'
 import { PromptLine } from './shell/PromptLine'
 import type { TimelineEntry } from '@/types/agent'
@@ -199,5 +200,101 @@ describe('PromptLine', () => {
     render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} busy={false} onSend={vi.fn()} onStop={vi.fn()} />)
 
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
+  it('shows Send and Stop as square icon-only buttons that keep their accessible names', () => {
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} busy onSend={vi.fn()} onStop={vi.fn()} />)
+
+    for (const name of ['Send', 'Stop']) {
+      const button = screen.getByRole('button', { name })
+      expect(button).toHaveAttribute('data-shape', 'square')
+      expect(button.textContent).toBe('')
+      expect(button.querySelector('svg')).not.toBeNull()
+    }
+  })
+
+  describe('holding Space to talk', () => {
+    // jsdom neither types the space nor auto-repeats, so both are simulated.
+    const typeSpace = (field: HTMLElement, value: string) => {
+      fireEvent.keyDown(field, { code: 'Space', key: ' ' })
+      fireEvent.change(field, { target: { value } })
+    }
+    const setup = (holdSpaceToTalk: boolean) => {
+      const onTalkingChange = vi.fn()
+      render(
+        <PromptLine
+          label="Message Socra"
+          placeholder="Type"
+          disabled={false}
+          onSend={vi.fn()}
+          holdSpaceToTalk={holdSpaceToTalk}
+          aside={<PushToTalkControl onTalkingChange={onTalkingChange} />}
+        />,
+      )
+      const field = screen.getByLabelText('Message Socra') as HTMLTextAreaElement
+      fireEvent.change(field, { target: { value: 'hello' } })
+      field.setSelectionRange(5, 5)
+      return { field, onTalkingChange }
+    }
+
+    it('keeps a single tap as one typed space', () => {
+      const { field, onTalkingChange } = setup(true)
+      typeSpace(field, 'hello ')
+      fireEvent.keyUp(field, { code: 'Space' })
+
+      expect(field).toHaveValue('hello ')
+      expect(onTalkingChange).not.toHaveBeenCalled()
+    })
+
+    it('starts push-to-talk on a hold and restores the text and caret from before it', () => {
+      const { field, onTalkingChange } = setup(true)
+      typeSpace(field, 'hello ')
+      expect(fireEvent.keyDown(field, { code: 'Space', key: ' ', repeat: true })).toBe(false)
+      fireEvent.keyDown(field, { code: 'Space', key: ' ', repeat: true })
+
+      expect(field).toHaveValue('hello')
+      expect(field.selectionStart).toBe(5)
+      expect(field.selectionEnd).toBe(5)
+      expect(onTalkingChange.mock.calls).toEqual([[true]])
+
+      fireEvent.keyUp(field, { code: 'Space' })
+      expect(onTalkingChange.mock.calls).toEqual([[true], [false]])
+      expect(field).toHaveValue('hello')
+    })
+
+    it('restores a caret in the middle of the text', () => {
+      const { field } = setup(true)
+      field.setSelectionRange(2, 2)
+      typeSpace(field, 'he llo')
+      fireEvent.keyDown(field, { code: 'Space', key: ' ', repeat: true })
+
+      expect(field).toHaveValue('hello')
+      expect(field.selectionStart).toBe(2)
+    })
+
+    it('types a space again after a hold has ended', () => {
+      const { field } = setup(true)
+      typeSpace(field, 'hello ')
+      fireEvent.keyDown(field, { code: 'Space', key: ' ', repeat: true })
+      fireEvent.keyUp(field, { code: 'Space' })
+      typeSpace(field, 'hello ')
+
+      expect(field).toHaveValue('hello ')
+    })
+
+    it('leaves the text alone when holding Space is not for talking', () => {
+      const { field } = setup(false)
+      typeSpace(field, 'hello ')
+      fireEvent.keyDown(field, { code: 'Space', key: ' ', repeat: true })
+      fireEvent.change(field, { target: { value: 'hello  ' } })
+
+      expect(field).toHaveValue('hello  ')
+    })
+  })
+
+  it("opts the field out of the browser's writing suggestions (Edge Compose)", () => {
+    render(<PromptLine label="Message Socra" placeholder="Type" disabled={false} onSend={vi.fn()} />)
+
+    expect(screen.getByRole('textbox', { name: 'Message Socra' })).toHaveAttribute('writingsuggestions', 'false')
   })
 })

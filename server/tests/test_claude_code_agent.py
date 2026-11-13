@@ -20,6 +20,7 @@ from socra_server.adapters.claude_code_agent import ClaudeCodeBackend, ClaudeCod
 from socra_server.domain.agent import (
     AgentError,
     BackendStatus,
+    CommandOption,
     PermissionRequest,
     ReplyDone,
     TextDelta,
@@ -53,10 +54,13 @@ class FakeClient:
 
     instances: list["FakeClient"] = []
 
-    def __init__(self, options=None, script=None, fail_with: Exception | None = None):
+    def __init__(self, options=None, script=None, fail_with: Exception | None = None,
+                 info=None, info_error: Exception | None = None):
         self.options = options
         self.script = list(script or [])
         self.fail_with = fail_with
+        self.info = info
+        self.info_error = info_error
         self.queries: list[str] = []
         self.connected = False
         self.interrupted = False
@@ -78,13 +82,20 @@ class FakeClient:
     async def interrupt(self):
         self.interrupted = True
 
+    async def get_server_info(self):
+        if self.info_error is not None:
+            raise self.info_error
+        return self.info
+
     async def disconnect(self):
         self.disconnected = True
 
 
-def _backend(script=None, fail_with=None, status_output=None, status_error=None):
+def _backend(script=None, fail_with=None, status_output=None, status_error=None, info=None,
+             info_error=None):
     def factory(options):
-        return FakeClient(options=options, script=script, fail_with=fail_with)
+        return FakeClient(options=options, script=script, fail_with=fail_with, info=info,
+                          info_error=info_error)
 
     async def run_status(cli_path: str) -> str:
         if status_error is not None:
@@ -512,3 +523,33 @@ async def test_subagent_and_non_text_stream_events_are_not_chunks(tmp_path):  # 
     events = await _collect(conversation)
 
     assert events == [TextDelta("Done."), ReplyDone("Done.")]
+
+
+async def test_commands_are_the_ones_the_session_reports_with_their_hints(tmp_path):
+    info = {"commands": [
+        {"name": "tdd", "description": "Test-driven development", "argumentHint": "<feature>"},
+        {"name": "context", "description": "Show context usage"},
+        {"description": "no name"},
+    ], "other": 1}
+    conversation = await _backend(info=info).open("opus", tmp_path, _never_asked)
+
+    assert await conversation.commands() == [
+        CommandOption("tdd", "Test-driven development", "<feature>"),
+        CommandOption("context", "Show context usage", ""),
+    ]
+
+
+@pytest.mark.parametrize("info", [None, {}, {"commands": None}, "nope"])
+async def test_commands_are_empty_when_the_session_reports_none(tmp_path, info):
+    conversation = await _backend(info=info).open("opus", tmp_path, _never_asked)
+
+    assert await conversation.commands() == []
+
+
+async def test_commands_failure_is_raised_for_the_caller_to_handle(tmp_path):
+    conversation = await _backend(info_error=RuntimeError("no info")).open(
+        "opus", tmp_path, _never_asked
+    )
+
+    with pytest.raises(RuntimeError):
+        await conversation.commands()

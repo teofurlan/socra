@@ -28,12 +28,14 @@ from socra_server.app import get_wav_duration
 from socra_server.domain.agent import (
     AgentError,
     AgentSelection,
+    CommandOption,
     PermissionRequest,
     ReplyDone,
     TextChunk,
     TextDelta,
     ToolActivity,
 )
+from socra_server.domain.commands import spoken_command
 from socra_server.domain.handoff import (
     SUMMARY_PROMPT,
     HandoffSummary,
@@ -55,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 FolderPicker = Callable[[], str | None]
 PLAYBACK_GRACE_S = 2.0
+# A session that does not list its commands this fast is used without them.
+COMMANDS_TIMEOUT_S = 10.0
 # Sentences already complete are spoken together, up to these lengths (#85 S13, S14). The
 # first clip of a reply stays short so speech starts quickly; later clips can be longer
 # because they are synthesized while the previous one plays. A single longer sentence still
@@ -69,6 +73,8 @@ NEEDS_CLAUDE_CODE = (
 
 
 MAX_REPLAY_SAY_CHARS = 600
+# Timeline entries kept for a page that connects later (a reload or a second tab).
+HISTORY_LIMIT = 500
 
 
 def _replay_say(raw: Any, original: str) -> tuple[str, list[str]]:
@@ -102,6 +108,8 @@ class AgentApp:
         self._backend: AgentBackend | None = None
         # What the page needs to resync after a reconnect; None without a conversation.
         self._session: dict[str, str] | None = None
+        # What the page timeline shows, entry by entry, so a reloaded or second page gets it back.
+        self._history: list[dict[str, str]] = []
         # Mode switching: what Socra records for the handoff, and the switch in flight.
         self._facts = SessionFacts()
         self._turns: list[Turn] = []
@@ -123,6 +131,9 @@ class AgentApp:
         self.switch_task: asyncio.Task | None = None
         self._pending: dict[str, asyncio.Future[bool]] = {}
         self._start_task: asyncio.Task | None = None
+        # What the open session accepts as /commands; the page lists them and speech names them.
+        self._commands: list[CommandOption] = []
+        self._commands_task: asyncio.Task | None = None
         self._start_generation = 0
         self._queued_turn: str | None = None
         # Live transcript: the utterance being spoken, the newest partial audio waiting for the
@@ -155,6 +166,10 @@ class AgentApp:
 
     async def handle_hello(self) -> None:
         await self._send_hello()
+        if self._session is not None and self._history:
+            await self.channel.send({"type": "agent_history", "entries": list(self._history)})
+        if self._session is not None and self._commands:
+            await self._send_commands()
         for message in self.walkthrough.snapshot():
             await self.channel.send(message)
 
@@ -210,7 +225,9 @@ class AgentApp:
         self._previous_transcript = None
         self._transcript = self._transcripts.start(folder) if self._transcripts else None
         self._session = {"backend": backend_id, "model": model, "cwd": str(folder), "mode": mode}
+        self._history = []
         await self.channel.send({"type": "agent_started", **self._session})
+        self._commands = []  # the page forgets the old list on agent_started
         await self._state("idle")
         self._start_generation += 1
         generation = self._start_generation
@@ -224,6 +241,7 @@ class AgentApp:
     async def handle_turn_text(self, text: str) -> None:
         if not text.strip():
             return
+        self._record("user", text)
         if self.walkthrough.active:
             await self._route_scene_speech(text)
             return
@@ -313,11 +331,11 @@ class AgentApp:
             await self._state("listening")
             return
         if scene_playing:
-            await self.channel.send({"type": "transcript", "text": text, "final": True})
+            await self._send_final_transcript(text)
             await self._route_scene_speech(text)
             return
         if self._switching:
-            await self.channel.send({"type": "transcript", "text": text, "final": True})
+            await self._send_final_transcript(text)
             self._switch_turns.append(text)
             return
         if self._turn_running or self._queued_turn is not None:
@@ -325,12 +343,14 @@ class AgentApp:
                 "type": "notice", "text": "Wait for the current reply or interrupt it.",
             })
             return
+        # "barra tdd ..." becomes "/tdd ..." when the open session has a command of that name.
+        text = spoken_command(text, [c.name for c in self._commands])
         if review:
             # The text is Whisper's, as heard; the user edits it and sends it with Enter.
             await self.channel.send({"type": "transcript_draft", "text": text})
             await self._state("listening")
             return
-        await self.channel.send({"type": "transcript", "text": text, "final": True})
+        await self._send_final_transcript(text)
         if self._conversation is None and starting and self._startup_pending:
             self._queued_turn = text
             await self._state("thinking")
@@ -481,15 +501,44 @@ class AgentApp:
                 logger.warning("Closing a stale agent conversation failed: %s", exc)
             return
         self._conversation = conversation
+        self._commands_task = asyncio.create_task(
+            self._load_commands(conversation, generation), name="agent-commands"
+        )
         queued_turn, self._queued_turn = self._queued_turn, None
         if queued_turn is not None:
             self._start_turn(queued_turn)
         else:
             await self._state("listening")
 
+    async def _load_commands(self, conversation: AgentConversation, generation: int) -> None:
+        """List the session's /commands for the page; a failure leaves the list empty."""
+        try:
+            listed = await asyncio.wait_for(conversation.commands(), COMMANDS_TIMEOUT_S)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Could not list the session's commands: %s", exc)
+            listed = []
+        if generation != self._start_generation:
+            return
+        self._commands = list(listed)
+        await self._send_commands()
+
+    async def _send_commands(self) -> None:
+        await self.channel.send({
+            "type": "agent_commands",
+            "commands": [
+                {"name": c.name, "description": c.description, "hint": c.hint}
+                for c in self._commands
+            ],
+        })
+
     async def _cancel_start(self) -> None:
         self._start_generation += 1
         self._queued_turn = None
+        task, self._commands_task = self._commands_task, None
+        if task is not None and not task.done():
+            task.cancel()
         task, self._start_task = self._start_task, None
         if task is not None and not task.done():
             task.cancel()
@@ -534,6 +583,7 @@ class AgentApp:
                 if isinstance(event, TextChunk):
                     speech.feed(event.text)
                 elif isinstance(event, TextDelta):
+                    self._record("text", event.text)
                     await self.channel.send({"type": "agent_text", "text": event.text})
                     if event.spoken:
                         # The block is complete: its last sentence must not run into the next block.
@@ -544,6 +594,7 @@ class AgentApp:
                     self._facts.record_tool(event)
                     # Words before a tool call sound now, not after the tool finishes.
                     speech.flush()
+                    self._record("tool", event.summary, tool=event.tool)
                     await self.channel.send({
                         "type": "agent_tool", "tool": event.tool, "summary": event.summary,
                     })
@@ -704,6 +755,7 @@ class AgentApp:
         self._session = {**session, "mode": target}
         self._previous_transcript = self._transcript
         self._transcript = self._transcripts.start(session["cwd"]) if self._transcripts else None
+        self._record("handoff", f"Context condensed · {get_mode(target).label}")
         await self.channel.send({"type": "agent_mode_changed", **self._session})
         if CLEAR_SCENE not in get_mode(target).tools:
             # The new mode cannot clear a finished scene itself, so it would stay on screen.
@@ -839,6 +891,11 @@ class AgentApp:
         return bool(self._scene_on_screen) and not self.walkthrough.active and "```" in text
 
     async def _send_reply(self, text: str) -> None:
+        # The page turns the text block that carried this reply into the reply itself.
+        if self._history and self._history[-1]["kind"] == "text" and self._history[-1]["text"] == text:
+            self._history[-1] = {"kind": "reply", "text": text}
+        else:
+            self._record("reply", text)
         await self.channel.send({"type": "agent_reply", "text": text})
         if self._reply_releases_scene(text):
             # The page drops the scene by itself on this reply; forget it as clear_scene does.
@@ -942,7 +999,20 @@ class AgentApp:
         self._state_name = state
         await self.channel.send({"type": "state", "state": state})
 
+    async def _send_final_transcript(self, text: str) -> None:
+        self._record("user", text)
+        await self.channel.send({"type": "transcript", "text": text, "final": True})
+
+    def _record(self, kind: str, text: str, *, tool: str | None = None) -> None:
+        """Remember a timeline entry for a page that connects later; the oldest ones fall away."""
+        entry = {"kind": kind, "text": text}
+        if tool is not None:
+            entry["tool"] = tool
+        self._history.append(entry)
+        del self._history[:-HISTORY_LIMIT]
+
     async def _error(self, message: str) -> None:
+        self._record("error", message)
         await self.channel.send({"type": "agent_error", "message": message})
 
 

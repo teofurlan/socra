@@ -12,6 +12,7 @@ from socra_server.adapters.pi_agent import PiBackend, SubprocessRpc
 from socra_server.domain.agent import (
     AgentError,
     BackendStatus,
+    CommandOption,
     ModelOption,
     PermissionRequest,
     ReplyDone,
@@ -87,6 +88,7 @@ class FakePi:
         prompt_response=None,
         exit_on_start=False,
         stderr="",
+        commands=None,
     ):
         self.args = list(args)
         self.cwd = cwd
@@ -97,6 +99,7 @@ class FakePi:
         self.turns = [list(turn) for turn in turns]
         self.prompt_response = prompt_response
         self.stderr = stderr
+        self.command_list = commands
         self.sent: list[dict] = []
         self.closed = False
         self._out: asyncio.Queue = asyncio.Queue()
@@ -112,6 +115,13 @@ class FakePi:
             self._respond(record, {"model": self.default} if self.default else {})
         elif kind == "get_available_models":
             self._respond(record, {"models": self.models})
+        elif kind == "get_commands":
+            if self.command_list is None:
+                self._out.put_nowait({"id": record.get("id"), "type": "response",
+                                      "command": "get_commands", "success": False,
+                                      "error": "Unknown command: get_commands"})
+            else:
+                self._respond(record, {"commands": self.command_list})
         elif kind == "prompt":
             if self.prompt_response is not None:
                 self._out.put_nowait({"id": record.get("id"), "type": "response", **self.prompt_response})
@@ -700,3 +710,31 @@ async def test_text_deltas_stream_as_chunks_and_mark_their_block_spoken(tmp_path
         TextDelta("Listo."),
         ReplyDone("Listo."),
     ]
+
+
+PI_COMMANDS = [
+    {"name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "path": "/p/fix.md"},
+    {"name": "skill:brave-search", "description": "Web search", "source": "skill"},
+    {"name": "session-name", "source": "extension"},
+    {"description": "no name", "source": "prompt"},
+]
+
+
+async def test_commands_are_the_ones_pi_lists_without_paths_or_sources(tmp_path):
+    conversation = await _backend(tmp_path, commands=PI_COMMANDS).open(
+        "openai-codex/gpt-6.1-sol", tmp_path, _never_asked
+    )
+
+    assert await conversation.commands() == [
+        CommandOption("fix-tests", "Fix failing tests", ""),
+        CommandOption("skill:brave-search", "Web search", ""),
+        CommandOption("session-name", "", ""),
+    ]
+
+
+async def test_a_pi_that_cannot_list_commands_has_none(tmp_path):
+    conversation = await _backend(tmp_path).open(
+        "openai-codex/gpt-6.1-sol", tmp_path, _never_asked
+    )
+
+    assert await conversation.commands() == []

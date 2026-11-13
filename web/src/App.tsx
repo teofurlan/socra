@@ -203,6 +203,7 @@ export const App: React.FC = () => {
             placeholder={walkthroughRunning ? 'Type repeat, back, next or stop' : canAnswer ? 'Type your answer' : 'Waiting for a question'}
             disabled={!canAnswer}
             onSend={sendText}
+            holdSpaceToTalk={!state.finished && state.mode === 'push-to-talk'}
             aside={!state.finished && state.mode === 'push-to-talk' ? <PushToTalkControl onTalkingChange={onTalkingChange} /> : undefined}
           />
         </Panel>
