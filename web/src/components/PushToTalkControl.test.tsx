@@ -80,6 +80,22 @@ describe('PushToTalkControl', () => {
     expect(screen.getByRole('button', { name: 'Hold to speak (or Space)' })).toBeVisible()
   })
 
+  it('starts a hold when Space auto-repeats inside a text field, and the release ends it', () => {
+    const onTalkingChange = vi.fn()
+    render(<><textarea aria-label="Answer" /><PushToTalkControl onTalkingChange={onTalkingChange} /></>)
+    const field = screen.getByRole('textbox', { name: 'Answer' })
+
+    expect(fireEvent.keyDown(field, { code: 'Space' })).toBe(true)
+    expect(onTalkingChange).not.toHaveBeenCalled()
+    expect(fireEvent.keyDown(field, { code: 'Space', repeat: true })).toBe(false)
+    expect(fireEvent.keyDown(field, { code: 'Space', repeat: true })).toBe(false)
+    expect(onTalkingChange.mock.calls).toEqual([[true]])
+    expect(screen.getByTestId('ptt-button')).toHaveAttribute('data-talking', 'true')
+
+    fireEvent.keyUp(field, { code: 'Space' })
+    expect(onTalkingChange.mock.calls).toEqual([[true], [false]])
+  })
+
   it('ignores Space key if focused inside an input element', () => {
     const onTalkingChange = vi.fn()
     render(

@@ -32,6 +32,12 @@ export const PushToTalkControl: React.FC<PushToTalkControlProps> = ({
             target.tagName === 'TEXTAREA' ||
             target.isContentEditable)
         ) {
+          // A tap types a space; a hold (the browser auto-repeats the key) is push-to-talk.
+          // The field that owns the text undoes the spaces typed before the repeat began.
+          if (e.repeat) {
+            e.preventDefault()
+            setTalking(true)
+          }
           return
         }
         e.preventDefault()

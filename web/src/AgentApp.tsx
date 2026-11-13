@@ -387,6 +387,7 @@ export const AgentApp: React.FC = () => {
               draft={socket.draft}
               commands={socket.commands}
               liveTranscript={state.liveTranscript}
+              holdSpaceToTalk={mode === 'push-to-talk'}
               aside={mode === 'push-to-talk' ? <PushToTalkControl onTalkingChange={onTalkingChange} /> : undefined}
               contextControls={
                 <AgentComposerControls

@@ -23,6 +23,19 @@ interface PromptLineProps {
   liveTranscript?: string | null
   /** Slash commands to offer while the text is just "/name"; without them there is no menu. */
   commands?: AgentCommand[]
+  /**
+   * Holding Space in the field is push-to-talk (the `aside` control starts the recording):
+   * the text goes back to what it was before the hold, and a single tap still types a space.
+   */
+  holdSpaceToTalk?: boolean
+}
+
+/** The field as it was just before a Space key went down; a hold restores it. */
+interface FieldSnapshot {
+  value: string
+  start: number
+  end: number
+  restored: boolean
 }
 
 /** A command being typed: a slash and name characters, no space or new line yet. */
@@ -32,13 +45,14 @@ const COMMAND_QUERY = /^\/(\S*)$/
 const MAX_FIELD_HEIGHT_PX = 200
 
 /** The composer floating near the bottom of the conversation: typing is always one click away. */
-export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls, draft = null, liveTranscript = null, commands }: PromptLineProps) {
+export function PromptLine({ label, placeholder, disabled, busy = false, onSend, onStop, aside, contextControls, draft = null, liveTranscript = null, commands, holdSpaceToTalk = false }: PromptLineProps) {
   const [text, setText] = useState('')
   const [seenDraft, setSeenDraft] = useState(0)
   const [active, setActive] = useState(0)
   // The text for which Escape closed the menu; typing on opens it again.
   const [dismissedFor, setDismissedFor] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const spaceSnapshot = useRef<FieldSnapshot | null>(null)
   // A new draft joins what is already typed (adjusting state while rendering, not in an effect).
   if (draft && draft.id !== seenDraft) {
     setSeenDraft(draft.id)
@@ -77,6 +91,23 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
   // Enter sends and Shift+Enter starts a new line, as in a chat; a word still being
   // composed by an input method is never sent.
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (holdSpaceToTalk && event.code === 'Space' && !event.nativeEvent.isComposing) {
+      const field = event.currentTarget
+      if (!event.repeat) {
+        spaceSnapshot.current = { value: field.value, start: field.selectionStart, end: field.selectionEnd, restored: false }
+      } else if (spaceSnapshot.current) {
+        // The hold has begun: no more spaces, and the one typed by the first press goes away.
+        event.preventDefault()
+        const snapshot = spaceSnapshot.current
+        if (!snapshot.restored) {
+          snapshot.restored = true
+          setText(snapshot.value)
+          field.value = snapshot.value
+          field.setSelectionRange(snapshot.start, snapshot.end)
+        }
+        return
+      }
+    }
     if (menuOpen && !event.nativeEvent.isComposing) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
@@ -125,6 +156,9 @@ export function PromptLine({ label, placeholder, disabled, busy = false, onSend,
               setActive(0)
             }}
             onKeyDown={onKeyDown}
+            onKeyUp={(event) => {
+              if (event.code === 'Space') spaceSnapshot.current = null
+            }}
             disabled={disabled}
             aria-label={label}
             // Edge's own "Ask Edge to help me write" popup would cover the composer.
