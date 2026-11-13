@@ -847,6 +847,36 @@ describe('#9 — microphone selection', () => {
   })
 })
 
+// ─── Review dictation: the server answers a draft, then listening ────────────────
+
+describe('auto mode after a reviewed draft', () => {
+  it('listens again for a second dictation when the server says listening', async () => {
+    // review R3-review-rearm-untested: a draft starts no turn, so the state stays listening
+    const onFinalize = vi.fn()
+    const { rerender } = renderHook((props: { epoch: number }) =>
+      useMicCapture({ ...makeOpts('listening', 'auto', onFinalize), listeningEpoch: props.epoch }), { initialProps: { epoch: 0 } })
+    await act(async () => {})
+
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      lastVADCallbacks.onSpeechEnd?.(new Float32Array(16000).fill(0.3))
+      vi.advanceTimersByTime(3000)
+    })
+    expect(onFinalize).toHaveBeenCalledOnce()
+
+    rerender({ epoch: 1 }) // transcript_draft, then {"state": "listening"}
+    await act(async () => {})
+    act(() => {
+      lastVADCallbacks.onSpeechStart?.()
+      lastVADCallbacks.onSpeechEnd?.(new Float32Array(16000).fill(0.3))
+      vi.advanceTimersByTime(3000)
+    })
+
+    expect(MicVAD.new).toHaveBeenCalledTimes(2)
+    expect(onFinalize).toHaveBeenCalledTimes(2)
+  })
+})
+
 // ─── Live partials: the growing utterance, resent about every second ────────────
 
 describe('live partials', () => {
